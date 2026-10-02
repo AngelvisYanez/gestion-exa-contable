@@ -1,0 +1,161 @@
+%PDF-1.4
+1 0 obj
+<< /Length 3392 >>
+stream
+BT
+/F1 10 Tf
+14 TL
+50 786 Td
+(Prueba brief anticipos CxPP lotes) Tj
+T* (=================================) Tj
+T* () Tj
+T* (EXA OFSERCONT) Tj
+T* (BRIEF DE MEJORA DE MÓDULOS) Tj
+T* () Tj
+T* (• **Título:** Prueba brief anticipos CxPP lotes \(Tarea #999001\)) Tj
+T* (• **Proceso:** Tesorería) Tj
+T* (• **Módulo:** Cancelación por lotes) Tj
+T* (• **Directorio:** `tesoreria`) Tj
+T* (• **Audiencia:** Equipo de desarrollo) Tj
+T* (• **Fecha:** 18 de mayo de 2025 \(America/Guayaquil\)) Tj
+T* () Tj
+T* (---) Tj
+T* () Tj
+T* (1. Qué tiene que quedar resuelto) Tj
+T* (En el proceso de cancelación por lotes a proveedores \(cuentas por pagar - CxP\), se debe) Tj
+T* (impedir y validar que no se crucen ni apliquen anticipos cuya fecha \(`Atp_Fec`\) sea) Tj
+T* (posterior a la fecha del comprobante o factura de compra \(`Cop_Fec`\). La regla de negocio) Tj
+T* (estricta a exigir es:) Tj
+T* ($$\\text{Atp\\_Fec} \\le \\text{Cop\\_Fec}$$) Tj
+T* (Cualquier intento de liquidar o cruzar un anticipo con fecha posterior a la fecha del) Tj
+T* (documento por pagar debe ser bloqueado con un mensaje de validación claro para el usuario) Tj
+T* (antes y durante el procesamiento.) Tj
+T* () Tj
+T* (---) Tj
+T* () Tj
+T* (2. Esquema y módulo actual \(o flujo\)) Tj
+T* (• **FRONT / Interfaz:** Pantalla del flujo de cancelación por lotes a proveedores \(ruta) Tj
+T* (exacta a confirmar en código dentro del módulo de Tesorería\).) Tj
+T* (• **COMPONENTES / AJAX:** Componentes de consulta de deudas y cruces en) Tj
+T* (`tesoreria/COMPONENTES/` \(tales como `tes_com_deudas.php`, `ajax_com_deudas.php` o afines de) Tj
+T* (cruce por lotes, a confirmar en código\).) Tj
+T* (• **LOGICA / Backend:** Rutinas de procesamiento y validación SQL/PHP de cancelación masiva) Tj
+T* (o cruce de anticipos de proveedores \(rutas de backend/lógica a confirmar en código\).) Tj
+T* (• **Flujo operativo:**) Tj
+T* (1. El operador selecciona el lote de facturas pendientes a proveedores \(`Cop_Fec`\).) Tj
+T* (2. Se seleccionan o asignan los anticipos registrados \(`Atp_Fec`\).) Tj
+T* (3. Actualmente, el flujo permite procesar el cruce sin validar la cronología contable entre) Tj
+T* (la emisión del anticipo y la emisión de la obligación.) Tj
+T* () Tj
+T* (---) Tj
+T* () Tj
+T* (3. Causa raíz / alcance funcional) Tj
+T* (• **Causa raíz:** Ausencia de validación lógica y de frontend que compare temporalmente) Tj
+T* (`Atp_Fec` contra `Cop_Fec` previo a consolidar la transacción de cancelación en lote. Esto) Tj
+T* (genera inconsistencias cronológicas y distorsión en la antigüedad de saldos y reportes) Tj
+T* (tributarios/contables de CxP.) Tj
+T* (• **Alcance funcional:**) Tj
+T* (- Control de consistencia en el formulario de selección/asignación del lote.) Tj
+T* (- Validación de servidor \(PHP\) al momento de ejecutar la sentencia o procedimiento de) Tj
+T* (cancelación por lotes.) Tj
+T* (- Rechazo transaccional si `Atp_Fec > Cop_Fec`.) Tj
+T* () Tj
+T* (---) Tj
+T* () Tj
+T* (4. Impacto) Tj
+T* (• **Impacto funcional:** Garantiza coherencia contable y evita cruces indebidos de anticipos) Tj
+T* (creados en fechas posteriores a las compras que pretenden cancelar.) Tj
+T* (• **Impacto técnico:** Modificación puntual en capas de validación \(JS/FRONT\) y control) Tj
+T* (previo en controlador/lógica \(PHP\). No altera esquemas de base de datos ni afecta tablas) Tj
+ET
+endstream
+endobj
+2 0 obj
+<< /Length 2803 >>
+stream
+BT
+/F1 10 Tf
+14 TL
+50 786 Td
+(maestras.) Tj
+T* (• **Riesgo:** Bajo. Si la validación no se maneja adecuadamente, podría bloquear cruces) Tj
+T* (legítimos de misma fecha; por ende, se debe permitir explícitamente la igualdad \(`Atp_Fec ==) Tj
+T* (Cop_Fec`\).) Tj
+T* () Tj
+T* (---) Tj
+T* () Tj
+T* (5. Alcance de la corrección / entrega \(orden de trabajo numerado\)) Tj
+T* (1. **Identificación de scripts afectados:** Localizar en el repositorio los scripts exactos) Tj
+T* (de FRONT y LOGICA correspondientes a la cancelación por lotes a proveedores \(a confirmar en) Tj
+T* (código bajo `tesoreria/`\).) Tj
+T* (2. **Validación en capa FRONT / Cliente:**) Tj
+T* (- Incorporar control JavaScript en la grilla/formulario de asignación de lotes para) Tj
+T* (verificar que, por cada registro vinculado, `Atp_Fec <= Cop_Fec`.) Tj
+T* (- Mostrar alerta descriptiva y deshabilitar el botón de procesamiento si se detecta un) Tj
+T* (anticipo con fecha posterior a la factura.) Tj
+T* (3. **Validación en capa LOGICA / Backend:**) Tj
+T* (- En el script receptor de la transacción \(a confirmar en código\), agregar validación) Tj
+T* (estricta previa a la inserción/actualización:) Tj
+T* (```php) Tj
+T* (if \(strtotime\($Atp_Fec\) > strtotime\($Cop_Fec\)\) {) Tj
+T* (// Denegar procesamiento y retornar mensaje de error) Tj
+T* (}) Tj
+T* (```) Tj
+T* (- Abortar la transacción mediante rollback en caso de inconsistencia temporal.) Tj
+T* (4. **Respuesta visual:** Retornar notificación estándar mediante las clases de alerta del) Tj
+T* (ERP \(`Alertas3` / `gtk-no.gif`\) indicando la imposibilidad de aplicar anticipos con fecha) Tj
+T* (mayor a la fecha del comprobante.) Tj
+T* () Tj
+T* (---) Tj
+T* () Tj
+T* (6. Fuera de este cambio) Tj
+T* (• Modificaciones en la estructura de tablas de anticipos o compras.) Tj
+T* (• Cancelaciones individuales o pagos directos fuera del flujo de cancelación por lotes.) Tj
+T* (• Modificaciones en cheques o retenciones \(`tesoreria/COMPONENTES/tes_com_cheques.php`,) Tj
+T* (`ajax_com_con_numret.php`, etc.\).) Tj
+T* () Tj
+T* (---) Tj
+T* () Tj
+T* (7. Criterio de hecho \(checklist\)) Tj
+T* (• [ ] Scripts de FRONT y LOGICA de cancelación por lotes identificados formalmente en el) Tj
+T* (árbol de archivos.) Tj
+T* (• [ ] Validación en cliente implementada impidiendo el envío cuando `Atp_Fec > Cop_Fec`.) Tj
+T* (• [ ] Validación en backend implementada rechazando la solicitud si `strtotime\($Atp_Fec\) >) Tj
+T* (strtotime\($Cop_Fec\)`.) Tj
+T* (• [ ] Verificado que registros con `Atp_Fec == Cop_Fec` procesen correctamente sin bloqueos) Tj
+T* (indebidos.) Tj
+T* (• [ ] Verificado que registros con `Atp_Fec < Cop_Fec` procesen con normalidad.) Tj
+T* (• [ ] No se introducen errores de sintaxis ni incompatibilidades con PHP legacy.) Tj
+ET
+endstream
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 6 0 R /MediaBox [0 0 595 842] /Contents 1 0 R /Resources << /Font << /F1 3 0 R >> >> >>
+endobj
+5 0 obj
+<< /Type /Page /Parent 6 0 R /MediaBox [0 0 595 842] /Contents 2 0 R /Resources << /Font << /F1 3 0 R >> >> >>
+endobj
+6 0 obj
+<< /Type /Pages /Kids [ 4 0 R 5 0 R ] /Count 2 >>
+endobj
+7 0 obj
+<< /Type /Catalog /Pages 6 0 R >>
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000009 00000 n 
+0000003453 00000 n 
+0000006308 00000 n 
+0000006378 00000 n 
+0000006504 00000 n 
+0000006630 00000 n 
+0000006695 00000 n 
+trailer
+<< /Size 8 /Root 7 0 R >>
+startxref
+6744
+%%EOF

@@ -1,0 +1,283 @@
+"use client";
+
+import { CalendarDays, CalendarRange } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
+import { Label } from "@/components/ui/label";
+import { fechaEnZona, hoyFecha, startOfDayZona } from "@/lib/timezone";
+import { cn } from "@/lib/utils";
+
+export type DateRangeValue = {
+  desde: string;
+  hasta: string;
+};
+
+export type DateRangePresetId = "ayer" | "hoy" | "semana" | "mes";
+export type DayPresetId = "hoy" | "ayer" | "anteayer" | "hace3" | "hace7";
+
+const DAY_MS = 24 * 3600 * 1000;
+
+function shiftFecha(fecha: string, deltaDays: number): string {
+  const base = startOfDayZona(fecha.slice(0, 10));
+  return fechaEnZona(new Date(base.getTime() + deltaDays * DAY_MS));
+}
+
+function clampFecha(fecha: string, min?: string, max?: string) {
+  let f = fecha.slice(0, 10);
+  if (min && f < min) f = min;
+  if (max && f > max) f = max;
+  return f;
+}
+
+export function rangoDesdePreset(
+  id: DateRangePresetId,
+  opts?: { min?: string; max?: string; hoy?: string }
+): DateRangeValue {
+  const hoy = (opts?.hoy || hoyFecha()).slice(0, 10);
+  let desde = hoy;
+  let hasta = hoy;
+  if (id === "ayer") {
+    desde = shiftFecha(hoy, -1);
+    hasta = desde;
+  } else if (id === "semana") {
+    desde = shiftFecha(hoy, -6);
+    hasta = hoy;
+  } else if (id === "mes") {
+    desde = shiftFecha(hoy, -29);
+    hasta = hoy;
+  }
+  desde = clampFecha(desde, opts?.min, opts?.max);
+  hasta = clampFecha(hasta, opts?.min, opts?.max);
+  if (desde > hasta) desde = hasta;
+  return { desde, hasta };
+}
+
+/** Un solo dia (desde = hasta). */
+export function diaDesdePreset(
+  id: DayPresetId,
+  opts?: { min?: string; max?: string; hoy?: string }
+): DateRangeValue {
+  const hoy = (opts?.hoy || hoyFecha()).slice(0, 10);
+  const delta: Record<DayPresetId, number> = {
+    hoy: 0,
+    ayer: -1,
+    anteayer: -2,
+    hace3: -3,
+    hace7: -7,
+  };
+  const d = clampFecha(shiftFecha(hoy, delta[id]), opts?.min, opts?.max);
+  return { desde: d, hasta: d };
+}
+
+function detectPreset(value: DateRangeValue, hoy = hoyFecha()): DateRangePresetId | null {
+  const ids: DateRangePresetId[] = ["hoy", "ayer", "semana", "mes"];
+  for (const id of ids) {
+    const p = rangoDesdePreset(id, { hoy });
+    if (p.desde === value.desde && p.hasta === value.hasta) return id;
+  }
+  return null;
+}
+
+function detectDayPreset(value: DateRangeValue, hoy = hoyFecha()): DayPresetId | null {
+  if (value.desde !== value.hasta) return null;
+  const ids: DayPresetId[] = ["hoy", "ayer", "anteayer", "hace3", "hace7"];
+  for (const id of ids) {
+    const p = diaDesdePreset(id, { hoy });
+    if (p.desde === value.desde) return id;
+  }
+  return null;
+}
+
+const RANGE_PRESETS: Array<{ id: DateRangePresetId; label: string }> = [
+  { id: "ayer", label: "Ayer" },
+  { id: "hoy", label: "Hoy" },
+  { id: "semana", label: "1 Semana" },
+  { id: "mes", label: "1 Mes" },
+];
+
+const DAY_PRESETS: Array<{ id: DayPresetId; label: string }> = [
+  { id: "hoy", label: "Hoy" },
+  { id: "ayer", label: "Ayer" },
+  { id: "anteayer", label: "Anteayer" },
+  { id: "hace3", label: "Hace 3d" },
+  { id: "hace7", label: "Hace 7d" },
+];
+
+type Props = {
+  value: DateRangeValue;
+  onChange: (next: DateRangeValue) => void;
+  min?: string;
+  max?: string;
+  onResetMax?: () => void;
+  disabled?: boolean;
+  className?: string;
+  compact?: boolean;
+  /** Botones Ayer / Hoy / 1 Semana / 1 Mes (modo rango). */
+  showPresets?: boolean;
+  /**
+   * `day`: solo filtros por un dia.
+   * `range`: Desde/Hasta (default).
+   * `day-and-range`: filtros rapidos por dia + calendarios de rango.
+   */
+  variant?: "range" | "day" | "day-and-range";
+};
+
+export function DateRangeFilter({
+  value,
+  onChange,
+  min,
+  max,
+  onResetMax,
+  disabled,
+  className,
+  compact,
+  showPresets,
+  variant = "range",
+}: Props) {
+  const hoy = hoyFecha();
+  const isDayOnly = variant === "day";
+  const isDayAndRange = variant === "day-and-range";
+  const showDayBar = isDayOnly || isDayAndRange;
+  const activeRangePreset = !showDayBar && showPresets ? detectPreset(value, hoy) : null;
+  const activeDayPreset = showDayBar ? detectDayPreset(value, hoy) : null;
+  const isMax =
+    !!min &&
+    !!max &&
+    value.desde === min &&
+    value.hasta === max;
+  const diaActivo = value.desde === value.hasta ? value.desde : value.hasta || value.desde;
+
+  const chip =
+    "inline-flex h-8 items-center rounded-md px-2.5 text-xs font-bold transition-colors whitespace-nowrap";
+
+  const dayPresetsBar = showDayBar ? (
+    <div className="inline-flex h-10 items-center gap-2 rounded-lg border border-border/70 bg-card px-2 shadow-sm">
+      <CalendarDays className="size-4 shrink-0 text-muted-foreground" />
+      {!compact && (
+        <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Dia</span>
+      )}
+      <div className="inline-flex items-center gap-0.5 rounded-md bg-muted/50 p-0.5">
+        {DAY_PRESETS.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            disabled={disabled}
+            onClick={() => onChange(diaDesdePreset(p.id, { min, max, hoy }))}
+            className={cn(
+              chip,
+              activeDayPreset === p.id
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+              disabled && "opacity-50"
+            )}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  ) : null;
+
+  const maxButton = onResetMax ? (
+    <Button
+      type="button"
+      variant={isMax ? "secondary" : "outline"}
+      size="sm"
+      className="h-8 px-3"
+      disabled={disabled || isMax}
+      onClick={onResetMax}
+      title={isDayOnly || isDayAndRange ? "Ver todo el historial disponible" : "Usar el rango máximo disponible"}
+    >
+      {isDayOnly || isDayAndRange ? "Todo" : "Máximo"}
+    </Button>
+  ) : null;
+
+  if (isDayOnly) {
+    return (
+      <div className={cn("flex flex-wrap items-center gap-3", className)}>
+        {dayPresetsBar}
+        <div className="inline-flex h-10 items-center gap-2 rounded-lg border border-border/70 bg-card px-2 shadow-sm">
+          <Label htmlFor="filtro-dia" className="mb-0 normal-case tracking-normal">
+            Fecha
+          </Label>
+          <DatePicker
+            id="filtro-dia"
+            size="sm"
+            className="h-8 w-[9.5rem]"
+            value={diaActivo}
+            min={min}
+            max={max}
+            disabled={disabled}
+            onChange={(dia) => {
+              const d = clampFecha(dia, min, max);
+              onChange({ desde: d, hasta: d });
+            }}
+          />
+          {maxButton}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn("flex flex-wrap items-center gap-3", className)}>
+      {dayPresetsBar}
+
+      {showPresets && !showDayBar && (
+        <div className="inline-flex h-10 items-center gap-0.5 rounded-lg border border-border/70 bg-muted/40 px-1 shadow-sm">
+          {RANGE_PRESETS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              disabled={disabled}
+              onClick={() => onChange(rangoDesdePreset(p.id, { min, max, hoy }))}
+              className={cn(
+                chip,
+                activeRangePreset === p.id
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+                disabled && "opacity-50"
+              )}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="inline-flex h-10 items-center gap-2 rounded-lg border border-border/70 bg-card px-2 shadow-sm">
+        <CalendarRange className="size-4 shrink-0 text-muted-foreground" />
+        {!compact && (
+          <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Rango</span>
+        )}
+        <Label htmlFor="rango-desde" className="mb-0 normal-case tracking-normal">
+          Desde
+        </Label>
+        <DatePicker
+          id="rango-desde"
+          size="sm"
+          className="h-8 w-[9.5rem]"
+          value={value.desde}
+          min={min}
+          max={value.hasta || max}
+          disabled={disabled}
+          onChange={(desde) => onChange({ ...value, desde })}
+        />
+        <Label htmlFor="rango-hasta" className="mb-0 normal-case tracking-normal">
+          Hasta
+        </Label>
+        <DatePicker
+          id="rango-hasta"
+          size="sm"
+          className="h-8 w-[9.5rem]"
+          value={value.hasta}
+          min={value.desde || min}
+          max={max}
+          disabled={disabled}
+          onChange={(hasta) => onChange({ ...value, hasta })}
+        />
+        {maxButton}
+      </div>
+    </div>
+  );
+}

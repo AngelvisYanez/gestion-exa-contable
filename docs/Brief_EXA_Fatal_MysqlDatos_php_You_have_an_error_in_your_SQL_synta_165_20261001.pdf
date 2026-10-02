@@ -1,0 +1,208 @@
+%PDF-1.4
+1 0 obj
+<< /Length 2711 >>
+stream
+BT
+/F1 10 Tf
+14 TL
+50 786 Td
+([EXA Fatal] MysqlDatos.php: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB serv) Tj
+T* (========================================================================) Tj
+T* () Tj
+T* (> **Nota:** No se pudo completar con Gemini \(This model is currently experiencing high) Tj
+T* (demand. Spikes in demand are usually temporary. Please try again later.\). Brief plantilla +) Tj
+T* (inventario.) Tj
+T* () Tj
+T* (EXA OFSERCONT) Tj
+T* () Tj
+T* (BRIEF DE MEJORA DE MÓDULOS) Tj
+T* () Tj
+T* ([EXA Fatal] MysqlDatos.php: You have an error in your SQL syntax; check the manual that) Tj
+T* (corresponds to your MariaDB serv) Tj
+T* () Tj
+T* (**Tarea:** #165) Tj
+T* (**Proceso:** Gestion) Tj
+T* (**Módulo:** Panel tareas) Tj
+T* (**Directorio:** gestion) Tj
+T* (**Audiencia:** Yanez Angelvis) Tj
+T* (**Fecha:** 01 de octubre de 2026 | Uso interno) Tj
+T* () Tj
+T* (---) Tj
+T* () Tj
+T* (1. Qué tiene que quedar resuelto) Tj
+T* () Tj
+T* (Prueba E2E local del boton Generar brief con Gemini 3. Validar MD/PDF y metadatos.) Tj
+T* () Tj
+T* (Mensaje para el equipo) Tj
+T* () Tj
+T* (Este brief define el alcance de **mejora de modulos** a partir de la tarea #165.) Tj
+T* (Las correcciones deben caber en las pantallas, la lógica y el SQL que ya existen. No se abre) Tj
+T* (un módulo paralelo salvo que el alcance lo exija explícitamente.) Tj
+T* () Tj
+T* (Tres hechos que el equipo debe tener claros) Tj
+T* () Tj
+T* (1. El alcance parte del **proceso** `Gestion` y del **módulo** `Panel tareas`.) Tj
+T* (2. El código a revisar vive bajo **directorio** `gestion` en el sistema EXA OFSERCONT.) Tj
+T* (3. Primero se corta el alta/edición incorrecta \(o se entrega el alta del módulo\); el) Tj
+T* (histórico se trata en un pase aparte si aplica.) Tj
+T* () Tj
+T* (Orden de trabajo) Tj
+T* () Tj
+T* (| Orden | Entrega | Para qué |) Tj
+T* (|------:|---------|----------|) Tj
+T* (| 1 | Confirmar pantallas y casos SQL del directorio | Anclar el cambio al código real |) Tj
+T* (| 2 | Diagnosticar causa raíz y huecos de validación | Evitar trabajo paralelo o inventado |) Tj
+T* (| 3 | Implementar en cliente y servidor | Paridad UI + persistencia |) Tj
+T* (| 4 | Prueba operativa / corte | Verificar el criterio de hecho de la tarea |) Tj
+T* (| 5 | Documentar fuera de alcance | Separar histórico y deuda |) Tj
+T* () Tj
+T* (Fuera de este cambio) Tj
+T* () Tj
+T* (No rehacer el histórico en el mismo cambio salvo que la tarea lo pida. Los casos ya grabados) Tj
+T* (se listan y corrigen en un pase aparte, documento por documento.) Tj
+T* () Tj
+T* (---) Tj
+T* () Tj
+T* (2. Esquema y módulo actual) Tj
+T* () Tj
+T* (| Campo | Valor |) Tj
+T* (|-------|-------|) Tj
+ET
+endstream
+endobj
+2 0 obj
+<< /Length 2764 >>
+stream
+BT
+/F1 10 Tf
+14 TL
+50 786 Td
+(| Proceso | Gestion |) Tj
+T* (| Módulo | Panel tareas |) Tj
+T* (| Directorio | gestion |) Tj
+T* (| Raíz OFSERCONT | `C:\\Users\\ismaa\\OneDrive\\Documentos\\GitHub\\exa-ofsercont` |) Tj
+T* (| Subruta resuelta | `gestion` |) Tj
+T* () Tj
+T* (Inventario bajo gestion \(max 80\).) Tj
+T* () Tj
+T* (Archivos relevantes detectados) Tj
+T* () Tj
+T* (• `gestion/agente_monitoreo/build_new/ExaMonitor/xref-ExaMonitor.html`) Tj
+T* (• `gestion/agente_monitoreo/build/ExaMonitor/xref-ExaMonitor.html`) Tj
+T* (• `gestion/exa_monitor_reflex/AGENTS.md`) Tj
+T* (• `gestion/exa_monitor_reflex/build/ExaMonitorReflex/xref-ExaMonitorReflex.html`) Tj
+T* (• `gestion/exa_monitor_reflex/CLAUDE.md`) Tj
+T* (• `gestion/exa_monitor_reflex/README.md`) Tj
+T* (• `gestion/FRONT/ges_dashboard_modern.css`) Tj
+T* (• `gestion/FRONT/ges_mod_avances_1.0.php`) Tj
+T* (• `gestion/FRONT/ges_mod_dashboard_tareas_1.0.php`) Tj
+T* (• `gestion/FRONT/ges_zoom.css`) Tj
+T* (• `gestion/LOGICA/ges_log_dashboard_tareas_1.0.php`) Tj
+T* (• `gestion/LOGICA/ges_migrar_per_cod.php`) Tj
+T* (• `gestion/LOGICA/ges_pdf_reporte_tareas.php`) Tj
+T* (• `gestion/LOGICA/ges_sql_dashboard_tareas_1.0.php`) Tj
+T* (• `gestion/RECURSOS/ges_dashboard_modern.css`) Tj
+T* (• `gestion/RECURSOS/ges_zoom.css`) Tj
+T* (• `gestion/TEST/ges_register_menu.php`) Tj
+T* (• `gestion/VALIDACIONES/ges_par_dashboard_tareas_1.0.js`) Tj
+T* (• `gestion/VALIDACIONES/ges_val_dashboard_tareas_1.0.js`) Tj
+T* () Tj
+T* (Qué valida hoy y qué no valida) Tj
+T* () Tj
+T* (| Sí entra hoy \(a confirmar en código\) | No entra hoy \(hueco a cerrar\) |) Tj
+T* (|--------------------------------------|-------------------------------|) Tj
+T* (| Flujos FRONT/LOGICA listados arriba | Reglas de negocio de la descripción de la tarea |) Tj
+T* (| Persistencia existente del módulo | Revalidación servidor si solo hay JS |) Tj
+T* (| Consultas/reportes del proceso | Paridad en pantallas de modificación |) Tj
+T* () Tj
+T* () Tj
+T* () Tj
+T* (---) Tj
+T* () Tj
+T* (3. Causa raíz / alcance funcional) Tj
+T* () Tj
+T* (Partir de la descripción de la tarea y del inventario de archivos. Completar en) Tj
+T* (implementación:) Tj
+T* () Tj
+T* (1. ¿Qué pantalla o caso SQL reproduce el problema \(o el alta del módulo\)?) Tj
+T* (2. ¿Qué campo/tabla guarda el estado incorrecto o el nuevo dato?) Tj
+T* (3. ¿Hay validación solo en cliente, solo en servidor, o en ninguno?) Tj
+T* () Tj
+T* (---) Tj
+T* () Tj
+T* (4. Impacto) Tj
+T* () Tj
+T* (• Operativo: proceso **Gestion**, módulo **Panel tareas**.) Tj
+T* (• Técnico: directorio `gestion` en EXA OFSERCONT.) Tj
+T* (• Riesgo si no se cierra: la tarea #165 queda sin criterio de hecho documentado.) Tj
+T* () Tj
+T* (---) Tj
+T* () Tj
+ET
+endstream
+endobj
+3 0 obj
+<< /Length 701 >>
+stream
+BT
+/F1 10 Tf
+14 TL
+50 786 Td
+(5. Alcance de la corrección / entrega) Tj
+T* () Tj
+T* (1. Actualizar o crear pantallas y lógica bajo `gestion`.) Tj
+T* (2. Validar en cliente y servidor según el tipo de brief.) Tj
+T* (3. Probar el caso descrito en la tarea #165.) Tj
+T* (4. Dejar evidencia \(avance + brief en `docs/`\).) Tj
+T* () Tj
+T* (---) Tj
+T* () Tj
+T* (6. Criterio de hecho) Tj
+T* () Tj
+T* (• [ ] Brief revisado por encargado) Tj
+T* (• [ ] Cambios en el directorio indicado) Tj
+T* (• [ ] Prueba del caso de la descripción) Tj
+T* (• [ ] Avance registrado en el panel de gestión) Tj
+T* () Tj
+T* (---) Tj
+T* () Tj
+T* (*Generado desde EXA Tareas \(gestion\) · Tar_Cod 165*) Tj
+T* () Tj
+ET
+endstream
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Type /Page /Parent 8 0 R /MediaBox [0 0 595 842] /Contents 1 0 R /Resources << /Font << /F1 4 0 R >> >> >>
+endobj
+6 0 obj
+<< /Type /Page /Parent 8 0 R /MediaBox [0 0 595 842] /Contents 2 0 R /Resources << /Font << /F1 4 0 R >> >> >>
+endobj
+7 0 obj
+<< /Type /Page /Parent 8 0 R /MediaBox [0 0 595 842] /Contents 3 0 R /Resources << /Font << /F1 4 0 R >> >> >>
+endobj
+8 0 obj
+<< /Type /Pages /Kids [ 5 0 R 6 0 R 7 0 R ] /Count 3 >>
+endobj
+9 0 obj
+<< /Type /Catalog /Pages 8 0 R >>
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000009 00000 n 
+0000002772 00000 n 
+0000005588 00000 n 
+0000006340 00000 n 
+0000006410 00000 n 
+0000006536 00000 n 
+0000006662 00000 n 
+0000006788 00000 n 
+0000006859 00000 n 
+trailer
+<< /Size 10 /Root 9 0 R >>
+startxref
+6908
+%%EOF

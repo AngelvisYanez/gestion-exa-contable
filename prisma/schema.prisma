@@ -1,0 +1,369 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-1.0.x"]
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// -----------------------------------------------------------------------------
+// Dominio: identidad y organizaci?n (ERP EXA legacy)
+// Soft-delete uniforme: *_Est = 'A' activo | 'I' inactivo
+// -----------------------------------------------------------------------------
+
+/// Persona f?sica (nombre, c?dula)
+model persona {
+  Prs_Cod Int     @id
+  Prs_Nom String? @db.VarChar(120)
+  Prs_Ape String? @db.VarChar(120)
+  Prs_Ced String? @db.VarChar(20)
+
+  personal personal[]
+  usuarios usuarios[]
+
+  @@index([Prs_Ced])
+}
+
+/// Ficha laboral / personal (login ExaMonitor por Per_Cod)
+model personal {
+  Per_Cod Int     @id
+  Prs_Cod Int
+  Emp_Cod Int?
+  Per_Car String? @db.VarChar(120)
+  Per_Est String  @default("A") @db.Char(1)
+
+  persona            persona                   @relation(fields: [Prs_Cod], references: [Prs_Cod])
+  empresa            empresas?                 @relation(fields: [Emp_Cod], references: [Emp_Cod])
+  config             aud_dev_monitoreo_config?
+  asignaciones       aud_tareas_asignadas[]
+  telemetria         aud_dev_telemetria[]
+  tickets_asignados  aud_tickets[]             @relation("TicketAsignado")
+
+  @@index([Prs_Cod])
+  @@index([Emp_Cod])
+  @@index([Per_Est])
+}
+
+/// Usuarios del sistema EXA (login por c?dula)
+model usuarios {
+  Usu_Cod Int     @id @default(autoincrement())
+  Prs_Cod Int
+  Suc_Cod Int?
+  Usu_Ced String? @db.VarChar(20)
+  /// Hash legacy (t?picamente MD5/SHA1, 32?40 chars). No migrar a bcrypt sin acuerdo ERP.
+  Usu_Pal String? @db.VarChar(64)
+  Usu_Est String  @default("A") @db.Char(1)
+  Usu_Tip String? @db.Char(1)
+  Usu_Men String? @db.Char(1)
+  Usu_Cad String? @db.Char(1)
+
+  persona           persona              @relation(fields: [Prs_Cod], references: [Prs_Cod])
+  sucursal          sucursal?            @relation(fields: [Suc_Cod], references: [Suc_Cod])
+  tareas_creadas    aud_tareas[]         @relation("TareaCreador")
+  avances           aud_tareas_avances[]
+  tickets_creados   aud_tickets[]        @relation("TicketCreador")
+
+  @@index([Usu_Ced])
+  @@index([Prs_Cod])
+  @@index([Usu_Est])
+}
+
+model empresas {
+  Emp_Cod Int     @id @default(autoincrement())
+  Emp_Nom String? @db.VarChar(180)
+  Emp_Est String  @default("A") @db.Char(1)
+
+  sucursales sucursal[]
+  personal   personal[]
+  tareas     aud_tareas[]
+  tickets    aud_tickets[]
+
+  @@index([Emp_Est])
+}
+
+model sucursal {
+  Suc_Cod Int     @id @default(autoincrement())
+  Emp_Cod Int?
+  Suc_Des String? @db.VarChar(120)
+  Suc_Est String  @default("A") @db.Char(1)
+
+  empresa  empresas?  @relation(fields: [Emp_Cod], references: [Emp_Cod])
+  usuarios usuarios[]
+
+  @@index([Emp_Cod])
+}
+
+// -----------------------------------------------------------------------------
+// Dominio: tareas
+// Estados usados en app: Pendiente | Asignado | En Proceso | Finalizada
+// Prioridades: Alta | Media | Baja
+// (se mantienen VARCHAR por compatibilidad con ERP; no ENUM MySQL)
+// -----------------------------------------------------------------------------
+
+/// Tareas de gesti?n (legacy EXA)
+model aud_tareas {
+  Tar_Cod               Int       @id @default(autoincrement())
+  Tar_Titulo            String    @db.VarChar(255)
+  /// En MySQL legacy es BLOB; no leer con Prisma Client (usar CONVERT/raw SQL).
+  Tar_Descripcion       String?   @db.Text
+  Tar_Prioridad         String    @default("Media") @db.VarChar(20)
+  /// Baja | Media | Alta | Muy alta (ver sql/add_tarea_complejidad.sql)
+  Tar_Complejidad       String?   @default("Media") @db.VarChar(20)
+  /// Proceso de negocio (Tesoreria, Facturacion…) — brief
+  Tar_Proceso           String?   @db.VarChar(120)
+  /// Modulo funcional dentro del proceso
+  Tar_Modulo            String?   @db.VarChar(120)
+  /// Ruta relativa en exa-ofsercont (ej. tesoreria, facturacion/FRONT)
+  Tar_Directorio        String?   @db.VarChar(255)
+  /// mejora | creacion
+  Tar_Brief_Tipo        String?   @db.VarChar(40)
+  Tar_Brief_Md          String?   @db.VarChar(500)
+  Tar_Brief_Pdf         String?   @db.VarChar(500)
+  Tar_Brief_Fecha       DateTime? @db.DateTime
+  Tar_Fecha_Inicio      DateTime? @db.Date
+  Tar_Fecha_Fin         DateTime? @db.Date
+  Tar_Fecha_Culminacion DateTime? @db.Date
+  Tar_Estado            String    @default("Pendiente") @db.VarChar(40)
+  Usu_Creador           Int?
+  Emp_Cod               Int?
+  Tar_Est               String    @default("A") @db.Char(1)
+
+  creador      usuarios?              @relation("TareaCreador", fields: [Usu_Creador], references: [Usu_Cod])
+  empresa      empresas?              @relation(fields: [Emp_Cod], references: [Emp_Cod])
+  asignaciones aud_tareas_asignadas[]
+  avances      aud_tareas_avances[]
+  telemetria   aud_dev_telemetria[]
+  tickets      aud_tickets[]
+
+  @@index([Emp_Cod, Tar_Estado, Tar_Est])
+  @@index([Usu_Creador])
+  @@index([Tar_Estado, Tar_Est])
+  @@index([Tar_Fecha_Fin])
+}
+
+/// Usuarios de la empresa habilitados en el panel (ver sql/add_panel_usuarios.sql).
+/// Pan_Rol: manager | developer | atencion. Pan_Est A=en gestion, I=retirado.
+model aud_panel_usuarios {
+  Pan_Cod         Int       @id @default(autoincrement())
+  Usu_Cod         Int       @unique
+  Per_Cod         Int?
+  Prs_Cod         Int?
+  Pan_Nombre      String    @db.VarChar(180)
+  Pan_Cedula      String?   @db.VarChar(20)
+  Pan_Rol         String    @default("developer") @db.VarChar(20)
+  Pan_Est         String    @default("A") @db.Char(1)
+  Pan_Creado      DateTime? @db.DateTime
+  Pan_Actualizado DateTime? @db.DateTime
+
+  @@index([Pan_Est, Pan_Rol])
+  @@index([Per_Cod])
+  @@index([Prs_Cod])
+}
+
+/// Incidencias detectadas desde logs de error EXA (tabla auxiliar; ver sql/add_incidencias.sql)
+model aud_incidencias {
+  Inc_Cod          Int       @id @default(autoincrement())
+  Inc_Fingerprint  String    @unique @db.VarChar(64)
+  Inc_Nivel        String    @default("Error") @db.VarChar(20)
+  Inc_Titulo       String    @db.VarChar(255)
+  Inc_Mensaje      String?   @db.Text
+  Inc_Archivo      String?   @db.VarChar(500)
+  Inc_Linea        Int?
+  Inc_Primera_Vez  DateTime? @db.DateTime
+  Inc_Ultima_Vez   DateTime? @db.DateTime
+  Inc_Ocurrencias  Int       @default(1)
+  Inc_Estado       String    @default("Nueva") @db.VarChar(40)
+  Tar_Cod          Int?
+  Usu_Creador      Int?
+  Inc_Fuente       String?   @db.VarChar(255)
+  Inc_Est          String    @default("A") @db.Char(1)
+
+  @@index([Inc_Estado, Inc_Est])
+  @@index([Inc_Ultima_Vez])
+  @@index([Tar_Cod])
+  @@index([Inc_Nivel])
+}
+
+model aud_tareas_asignadas {
+  Tas_Cod              Int       @id @default(autoincrement())
+  Tar_Cod              Int
+  Per_Cod              Int
+  Tas_Fecha_Asignacion DateTime? @db.DateTime
+  Tas_Est              String    @default("A") @db.Char(1)
+
+  tarea    aud_tareas @relation(fields: [Tar_Cod], references: [Tar_Cod])
+  personal personal   @relation(fields: [Per_Cod], references: [Per_Cod])
+
+  /// ?ndice compuesto (no UNIQUE): soft-delete permite reasignar tras Tas_Est='I'
+  @@index([Tar_Cod, Per_Cod, Tas_Est])
+  @@index([Per_Cod, Tas_Est])
+  @@index([Tar_Cod])
+}
+
+model aud_tareas_avances {
+  Ava_Cod         Int       @id @default(autoincrement())
+  Tar_Cod         Int
+  Usu_Cod         Int?
+  Ava_Descripcion String?   @db.Text
+  Ava_Porcentaje  Int       @default(0)
+  Ava_Fecha       DateTime? @db.DateTime
+  Ava_Est         String    @default("A") @db.Char(1)
+
+  tarea   aud_tareas @relation(fields: [Tar_Cod], references: [Tar_Cod])
+  usuario usuarios?  @relation(fields: [Usu_Cod], references: [Usu_Cod])
+
+  @@index([Tar_Cod, Ava_Est])
+  @@index([Usu_Cod])
+}
+
+// -----------------------------------------------------------------------------
+// Dominio: monitoreo (ExaMonitor)
+// Flags TinyInt 0/1 se modelan como Int para no romper comparaciones num?ricas
+// -----------------------------------------------------------------------------
+
+model aud_dev_monitoreo_config {
+  Per_Cod                  Int       @id
+  Mon_Activo               Int       @default(0) @db.TinyInt
+  Mon_Intervalo_Minutos    Int       @default(5)
+  Mon_Captura_Pantalla     Int       @default(1) @db.TinyInt
+  /// 1 = minimizar/cerrar van a bandeja del sistema (solo lo cambia el encargado)
+  Mon_Forzar_Bandeja       Int       @default(1) @db.TinyInt
+  /// 1 = el desarrollador puede salir del agente desde la bandeja
+  Mon_Permitir_Salir       Int       @default(0) @db.TinyInt
+  /// 1 = encender/apagar Mon_Activo seg?n horario laboral (Guayaquil)
+  Mon_Horario_Activo       Int       @default(0) @db.TinyInt
+  /// Inicio HH:MM (America/Guayaquil)
+  Mon_Hora_Inicio          String    @default("08:00") @db.VarChar(5)
+  /// Fin HH:MM (America/Guayaquil); puede ser menor que inicio (cruza medianoche)
+  Mon_Hora_Fin             String    @default("17:00") @db.VarChar(5)
+  /// D?as ISO 1=lun?7=dom, p.ej. "1,2,3,4,5"
+  Mon_Dias_Laborales       String    @default("1,2,3,4,5") @db.VarChar(20)
+  /// 1 = apagar monitoreo en ventana de almuerzo (t?picamente 1 h)
+  Mon_Almuerzo_Activo      Int       @default(0) @db.TinyInt
+  /// Inicio almuerzo HH:MM (America/Guayaquil)
+  Mon_Almuerzo_Inicio      String    @default("13:00") @db.VarChar(5)
+  /// Fin almuerzo HH:MM (America/Guayaquil)
+  Mon_Almuerzo_Fin         String    @default("14:00") @db.VarChar(5)
+  Mon_Ultima_Actualizacion DateTime? @updatedAt
+  Mon_Ultima_Conexion      DateTime? @db.DateTime
+  Mon_Ventana_Activa       String?   @db.VarChar(255)
+  Mon_Proceso_Activo       String?   @db.VarChar(100)
+  Mon_Es_IDE               Int?      @default(0) @db.TinyInt
+  Mon_Version_Agente       String?   @db.VarChar(20)
+  Mon_Mac_Address          String?   @db.VarChar(32)
+
+  personal personal @relation(fields: [Per_Cod], references: [Per_Cod])
+}
+
+/// Pol?ticas globales del agente (1 fila, Cfg_Cod = 1). Incluye retenci?n de screenshots.
+model aud_dev_monitoreo_global {
+  Cfg_Cod                    Int       @id @default(1)
+  Cap_Retencion_Activa       Int       @default(1) @db.TinyInt
+  /// 1d | 1w | 1m | 3m | custom ? aplica a capturas SIN tarea/ticket
+  Cap_Retencion_Preset       String    @default("1m") @db.VarChar(20)
+  Cap_Retencion_Dias         Int       @default(30)
+  Cap_Auto_Purga             Int       @default(1) @db.TinyInt
+  /// 1 = conservar capturas ligadas a Tar_Cod / Tic_Cod (historial admin)
+  Cap_Preservar_Asignaciones Int       @default(1) @db.TinyInt
+  /// Dias tras cierre para seguir conservando; 0 = indefinido
+  Cap_Post_Cierre_Dias       Int       @default(90)
+  Cap_Ultima_Purga           DateTime? @db.DateTime
+  Cap_Ultimo_Resultado       String?   @db.VarChar(255)
+  Cfg_Actualizado            DateTime? @updatedAt
+}
+
+model aud_dev_telemetria {
+  Tel_Cod              Int       @id @default(autoincrement())
+  Per_Cod              Int
+  Tar_Cod              Int?
+  /// Ticket EXA cuando el agente trabaja en un ticket (no aud_tareas)
+  Tic_Cod              Int?
+  Tel_Fecha_Hora       DateTime  @db.DateTime
+  Tel_Clicks           Int       @default(0)
+  Tel_Teclas           Int       @default(0)
+  Tel_Segundos_Activos Int       @default(0)
+  Tel_Porc_Actividad   Decimal   @default(0) @db.Decimal(5, 2)
+  Tel_Ventana_Activa   String?   @db.VarChar(255)
+  Tel_Proceso_Activo   String?   @db.VarChar(100)
+  Tel_Es_IDE           Int       @default(0) @db.TinyInt
+  Tel_Lineas_Estimadas Int       @default(0)
+  Tel_Captura_Ruta     String?   @db.VarChar(255)
+  Tel_Estado           String    @default("OK") @db.VarChar(20)
+  Tel_Mac_Address      String?   @db.VarChar(32)
+
+  personal personal    @relation(fields: [Per_Cod], references: [Per_Cod])
+  tarea    aud_tareas? @relation(fields: [Tar_Cod], references: [Tar_Cod])
+
+  @@index([Per_Cod, Tel_Fecha_Hora])
+  @@index([Tar_Cod])
+  @@index([Tic_Cod])
+  @@index([Tel_Fecha_Hora])
+}
+
+// -----------------------------------------------------------------------------
+// Dominio: tickets
+// - `tickets`: tabla legacy EXA (Tic_Est 0/1/2/3). Emp_Cod/Usu_Cod son BigInt
+//   en BD; sin FK Prisma hacia empresas/usuarios (tipos Int).
+// - `aud_tickets`: bandeja opcional del panel (ver prisma/sql/add_tickets.sql)
+// -----------------------------------------------------------------------------
+
+/// Tickets de soporte EXA (tabla legacy)
+model tickets {
+  Tic_Cod     BigInt    @id @default(autoincrement())
+  Tic_Des     String    @db.Text
+  Tic_Fec_Cre DateTime? @db.DateTime
+  Tic_Fec_Ter DateTime? @db.DateTime
+  Tic_Tem     String?   @db.VarChar(255)
+  Tic_Evi_Pro String?   @db.VarChar(100)
+  Tic_Evi_Sol String?   @db.VarChar(100)
+  Emp_Cod     BigInt    @default(0)
+  Usu_Cod     BigInt    @default(0)
+  /// 0=Nuevo 1=En Proceso 2=Asignado 3=Cerrado
+  Tic_Est     String    @default("0") @db.Char(1)
+  Org_Cod     BigInt    @default(0)
+  Tic_Cal     Int       @default(0)
+  Tic_Cal_Des String?   @db.VarChar(100)
+  Tic_Obs     String?   @default("N/A") @db.VarChar(255)
+  Tic_Tel     String?   @db.VarChar(13)
+  Pcs_Cod     Int       @default(1000)
+  Ase_Cod     Int?
+  /// 0=Media 1=Alta (mapeo app)
+  Tic_Tip     Int       @default(0)
+
+  @@index([Emp_Cod, Tic_Est])
+  @@index([Usu_Cod])
+  @@index([Org_Cod])
+  @@index([Ase_Cod])
+  @@index([Tic_Fec_Cre])
+}
+
+/// Tickets de llegada / asignaci?n (panel EXA Tareas; tabla auxiliar utf8mb4)
+model aud_tickets {
+  Tic_Cod             Int       @id @default(autoincrement())
+  Tic_Titulo          String    @db.VarChar(255)
+  Tic_Descripcion     String?   @db.Text
+  Tic_Prioridad       String    @default("Media") @db.VarChar(20)
+  Tic_Estado          String    @default("Nuevo") @db.VarChar(40)
+  Tic_Origen          String    @default("Manual") @db.VarChar(40)
+  Per_Cod_Asignado    Int?
+  Tar_Cod             Int?
+  Emp_Cod             Int?
+  Usu_Creador         Int?
+  Tic_Fecha_Llegada   DateTime  @default(now()) @db.DateTime
+  Tic_Fecha_Asignacion DateTime? @db.DateTime
+  Tic_Est             String    @default("A") @db.Char(1)
+
+  asignado personal?   @relation("TicketAsignado", fields: [Per_Cod_Asignado], references: [Per_Cod])
+  tarea    aud_tareas? @relation(fields: [Tar_Cod], references: [Tar_Cod])
+  empresa  empresas?   @relation(fields: [Emp_Cod], references: [Emp_Cod])
+  creador  usuarios?   @relation("TicketCreador", fields: [Usu_Creador], references: [Usu_Cod])
+
+  @@index([Tic_Estado, Tic_Est])
+  @@index([Per_Cod_Asignado])
+  @@index([Emp_Cod])
+  @@index([Tar_Cod])
+  @@index([Usu_Creador])
+  @@index([Tic_Fecha_Llegada])
+}

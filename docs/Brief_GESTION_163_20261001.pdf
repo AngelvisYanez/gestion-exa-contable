@@ -1,0 +1,211 @@
+%PDF-1.4
+1 0 obj
+<< /Length 2878 >>
+stream
+BT
+/F1 10 Tf
+14 TL
+50 786 Td
+(GESTION) Tj
+T* (=======) Tj
+T* () Tj
+T* (EXA OFSERCONT) Tj
+T* (**BRIEF DE MEJORA DE MÓDULOS**) Tj
+T* () Tj
+T* (• **Título:** GESTION \(Cancelación por lotes\)) Tj
+T* (• **Proceso:** Tesorería) Tj
+T* (• **Módulo:** Cancelación por lotes) Tj
+T* (• **Directorio:** `tesoreria`) Tj
+T* (• **Asignado a:** Yanez Angelvis) Tj
+T* (• **Audiencia:** Equipo de Desarrollo / Analistas Funcionales / QA) Tj
+T* (• **Fecha:** 2025-03-30 \(America/Guayaquil\)) Tj
+T* () Tj
+T* (---) Tj
+T* () Tj
+T* (1. Qué tiene que quedar resuelto) Tj
+T* (El requerimiento funcional bajo el módulo de **Cancelación por lotes** \(tarea #163:) Tj
+T* ("GESTION"\) carece de descripción detallada en metadatos. Debe quedar formalizado,) Tj
+T* (estructurado y técnicamente alineado el flujo de gestión operativa de pagos/cancelaciones) Tj
+T* (masivas dentro del subsistema de tesorería, asegurando que:) Tj
+T* (• Se identifiquen y unifiquen las pantallas reales de carga, selección y procesamiento de) Tj
+T* (documentos por lote \(facturas de proveedores/deudas pendientes\).) Tj
+T* (• Se garantice el soporte de validación de comprobantes, asignación de medios de pago) Tj
+T* (\(transferencias, cheques, ajustes de caja chica\) y generación de movimientos asociados sin) Tj
+T* (romper la compatibilidad de variables globales \(`register_globals.php`\) y conexiones legacy) Tj
+T* (\(`@$obBD_conexion`\).) Tj
+T* (• Queden delimitados los componentes AJAX auxiliares utilizados en la consulta de deudas y) Tj
+T* (números de comprobante frente a la dispersión de versiones identificada en el inventario.) Tj
+T* () Tj
+T* (---) Tj
+T* () Tj
+T* (2. Esquema y módulo actual \(o flujo\)) Tj
+T* (El proceso de tesorería en EXA OFSERCONT opera mediante un esquema transaccional legacy) Tj
+T* (dividido entre componentes asíncronos y scripts directos:) Tj
+T* () Tj
+T* (```) Tj
+T* ([ FRONT / Interfaz Usuario ]) Tj
+T* (│) Tj
+T* (├─► Selección/Filtro por Proveedor/Período) Tj
+T* (│ │) Tj
+T* (│ ▼) Tj
+T* (├─► tesoreria/COMPONENTES/ajax_com_deudas.php \(o tes_com_deudas.php\)) Tj
+T* (│ Consultas de saldos, deudas y facturas por cancelar) Tj
+T* (│ │) Tj
+T* (│ ▼) Tj
+T* (├─► tesoreria/COMPONENTES/com_con_numcom.php / ajax_com_con_numcom.php) Tj
+T* (│ Validación de formato de documento \(999-999-9999999\) vía JS/AJAX) Tj
+T* (│ │) Tj
+T* (│ ▼) Tj
+T* ([ LÓGICA DE PROCESAMIENTO ]) Tj
+T* (│) Tj
+T* (├─► Asignación de Pagos / Cheques / Ajustes) Tj
+T* (│ - Emisión de cheques parametrizados por banco:) Tj
+T* (│ `tesoreria/FRONT/cheques/1/tes_pri_cheque_*.1.0.php`) Tj
+T* (│ - Cuentas de ajuste y caja chica:) Tj
+T* (│ `tesoreria/COMPONENTES/ajax_con_ctaAjuste.php`) Tj
+T* (│ `tesoreria/COMPONENTES/com_con_ctaCajaChica.php`) Tj
+T* (│ │) Tj
+T* (│ ▼) Tj
+T* ([ CIERRE DE LOTE ]) Tj
+ET
+endstream
+endobj
+2 0 obj
+<< /Length 3977 >>
+stream
+BT
+/F1 10 Tf
+14 TL
+50 786 Td
+(└─► Actualización de estado de cuentas por pagar y retenciones) Tj
+T* (\(`tesoreria/COMPONENTES/tes_com_fac_pagos.php` / `tesComNumRet.php`\)) Tj
+T* (```) Tj
+T* () Tj
+T* (---) Tj
+T* () Tj
+T* (3. Causa raíz / alcance funcional) Tj
+T* (1. **Falta de especificación inicial:** La tarea #163 fue registrada sin descripción \("\(sin) Tj
+T* (descripcion\)"\), lo que requiere delimitar de inmediato la operativa asignada para no) Tj
+T* (introducir código redundante o aislado.) Tj
+T* (2. **Duplicidad y disparidad de versiones de componentes:** Existen múltiples archivos) Tj
+T* (concurrentes para la misma función dentro de `tesoreria/COMPONENTES/` \(por ejemplo:) Tj
+T* (`tes_com_det_rolpagos_1.0.php` hasta `3.0.php`, `ajax_com_bus_renta_iva.php` vs) Tj
+T* (`tes_com_bus_renta_iva_2.0.php`, `com_con_numcom.php` vs `comConNumcom.php`\).) Tj
+T* (3. **Inconsistencias en validación de entradas:** Componentes como) Tj
+T* (`tesoreria/COMPONENTES/com_con_numcom.php` ejecutan validaciones puramente en el evento) Tj
+T* (`onblur` de JavaScript sin estandarización de manejo de respuestas asíncronas para) Tj
+T* (procesamiento masivo/por lotes.) Tj
+T* (4. **Dependencias del entorno legacy:** El código depende de directivas obsoletas como) Tj
+T* (`split\('[/.-]', $fecha\)` \(PHP 5.x\) y variables extraídas del entorno mediante) Tj
+T* (`register_globals.php`, propensas a fallos bajo actualizaciones del motor PHP.) Tj
+T* () Tj
+T* (---) Tj
+T* () Tj
+T* (4. Impacto) Tj
+T* (• **Operativo:** Riesgo de descuadres en carteras de proveedores por duplicidad en la) Tj
+T* (afectación de pagos cuando se cancelan lotes sin bloqueos de concurrencia adecuados.) Tj
+T* (• **Técnico:** Dispersión y deuda técnica acumulada por coexistencia de archivos camelCase y) Tj
+T* (snake_case con versiones numéricas flotantes \(`_1.0.php`, `_2.0.php`\).) Tj
+T* (• **Mantenibilidad:** Imposibilidad de trazabilidad si la cancelación por lotes ejecuta) Tj
+T* (scripts enrutados a diferentes versiones de componentes de pago/cheques.) Tj
+T* () Tj
+T* (---) Tj
+T* () Tj
+T* (5. Alcance de la corrección / entrega \(orden de trabajo numerado\)) Tj
+T* (1. **Confirmación de alcance funcional en código:**) Tj
+T* (- Levantar la pantalla principal que invoca la "Cancelación por lotes" \(*a confirmar en) Tj
+T* (código: verificar si corresponde a `tesoreria/COMPONENTES/tes_com_fac_pagos.php` o una vista) Tj
+T* (contenedora en `FRONT`*\).) Tj
+T* (- Validar con el asignado \(Yanez Angelvis\) si "GESTION" abarca la conciliación masiva, el) Tj
+T* (cambio de estado de lotes de cheques o la cancelación masiva de facturas comerciales.) Tj
+T* (2. **Estandarización de componentes de consulta:**) Tj
+T* (- Fijar el punto de entrada oficial para la validación de comprobantes, unificando el) Tj
+T* (consumo sobre `tesoreria/COMPONENTES/com_con_numcom.php` y su endpoint AJAX asociado) Tj
+T* (`tesoreria/COMPONENTES/ajax_com_con_numcom.php`.) Tj
+T* (- Homogeneizar la consulta de deudas pendientes sobre) Tj
+T* (`tesoreria/COMPONENTES/ajax_com_deudas.php`.) Tj
+T* (3. **Control de datos y reglas de negocio en la gestión de lotes:**) Tj
+T* (- Asegurar que la lógica de cancelación por lotes aplique sumatorias exactas con dos) Tj
+T* (decimales \(`number_format\(..., 2\)`\) coincidiendo con los formatos bancarios definidos en) Tj
+T* (`tesoreria/FRONT/cheques/1/`.) Tj
+T* (- Depurar llamados a funciones obsoletas detectadas en reportes auxiliares \(`split\(\)` a) Tj
+T* (reemplazar por `explode\(\)` o expresiones compatibles cuando se intervenga el flujo\).) Tj
+T* (4. **Verificación de cierre de conexión:**) Tj
+T* (- Garantizar que todo script del lote contemple la liberación de punteros y cierre de) Tj
+T* (conexiones \(`@$obBD_con1->liberar\(\)` y `@$obBD_conexion->cerrar\(\)`\) para evitar saturación) Tj
+T* (del pool de base de datos durante procesamientos masivos.) Tj
+T* () Tj
+T* (---) Tj
+T* () Tj
+T* (6. Fuera de este cambio) Tj
+ET
+endstream
+endobj
+3 0 obj
+<< /Length 1399 >>
+stream
+BT
+/F1 10 Tf
+14 TL
+50 786 Td
+(• Modificación del diseño físico de los formatos de cheques bancarios) Tj
+T* (\(`tesoreria/FRONT/cheques/1/tes_pri_cheque_*.php`\).) Tj
+T* (• Refactorización de módulos de liquidación de sueldos / roles de pago) Tj
+T* (\(`tesoreria/COMPONENTES/tes_com_det_rolpagos_*.php`\).) Tj
+T* (• Migración general de la librería `register_globals.php` en todo el ERP.) Tj
+T* (• Creación de nuevos reportes imprimibles fuera de los formatos ya existentes en el) Tj
+T* (repositorio.) Tj
+T* () Tj
+T* (---) Tj
+T* () Tj
+T* (7. Criterio de hecho \(checklist\)) Tj
+T* (• [ ] Alcance funcional específico de "GESTION" aclarado y confirmado con el desarrollador) Tj
+T* (asignado \(*a confirmar en código/requerimiento*\).) Tj
+T* (• [ ] Vista o script de cancelación por lotes identificada y apuntando exclusivamente a) Tj
+T* (componentes vigentes del inventario.) Tj
+T* (• [ ] Validación de número de comprobante ejecutada correctamente en lotes respetando la) Tj
+T* (máscara `999-999-9999999`.) Tj
+T* (• [ ] Ningún warning/deprecated generado por funciones de división de cadenas en el flujo) Tj
+T* (intervenido.) Tj
+T* (• [ ] Integridad referencial de comprobantes y deudas canceladas verificada en base de) Tj
+T* (datos.) Tj
+T* (• [ ] Conexiones a base de datos liberadas y cerradas adecuadamente tras procesar) Tj
+T* (transacciones por lote.) Tj
+ET
+endstream
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Type /Page /Parent 8 0 R /MediaBox [0 0 595 842] /Contents 1 0 R /Resources << /Font << /F1 4 0 R >> >> >>
+endobj
+6 0 obj
+<< /Type /Page /Parent 8 0 R /MediaBox [0 0 595 842] /Contents 2 0 R /Resources << /Font << /F1 4 0 R >> >> >>
+endobj
+7 0 obj
+<< /Type /Page /Parent 8 0 R /MediaBox [0 0 595 842] /Contents 3 0 R /Resources << /Font << /F1 4 0 R >> >> >>
+endobj
+8 0 obj
+<< /Type /Pages /Kids [ 5 0 R 6 0 R 7 0 R ] /Count 3 >>
+endobj
+9 0 obj
+<< /Type /Catalog /Pages 8 0 R >>
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000009 00000 n 
+0000002939 00000 n 
+0000006968 00000 n 
+0000008419 00000 n 
+0000008489 00000 n 
+0000008615 00000 n 
+0000008741 00000 n 
+0000008867 00000 n 
+0000008938 00000 n 
+trailer
+<< /Size 10 /Root 9 0 R >>
+startxref
+8987
+%%EOF

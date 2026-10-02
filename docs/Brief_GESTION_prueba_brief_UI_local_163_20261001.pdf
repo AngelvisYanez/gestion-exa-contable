@@ -1,0 +1,283 @@
+%PDF-1.4
+1 0 obj
+<< /Length 2551 >>
+stream
+BT
+/F1 10 Tf
+14 TL
+50 786 Td
+(GESTION - prueba brief UI local) Tj
+T* (===============================) Tj
+T* () Tj
+T* (> **Nota:** No se pudo completar con Gemini \(This model is currently experiencing high) Tj
+T* (demand. Spikes in demand are usually temporary. Please try again later.\). Brief plantilla +) Tj
+T* (inventario.) Tj
+T* () Tj
+T* (EXA OFSERCONT) Tj
+T* () Tj
+T* (BRIEF DE MEJORA DE MÓDULOS) Tj
+T* () Tj
+T* (GESTION - prueba brief UI local) Tj
+T* () Tj
+T* (**Tarea:** #163) Tj
+T* (**Proceso:** Tesoreria) Tj
+T* (**Módulo:** Cancelacion por lotes) Tj
+T* (**Directorio:** tesoreria) Tj
+T* (**Audiencia:** Yanez Angelvis) Tj
+T* (**Fecha:** 01 de octubre de 2026 | Uso interno) Tj
+T* () Tj
+T* (---) Tj
+T* () Tj
+T* (1. Qué tiene que quedar resuelto) Tj
+T* () Tj
+T* (Prueba E2E: brief de mejora para cancelacion por lotes / anticipos. Validar Gemini y docs/.) Tj
+T* () Tj
+T* (Mensaje para el equipo) Tj
+T* () Tj
+T* (Este brief define el alcance de **mejora de modulos** a partir de la tarea #163.) Tj
+T* (Las correcciones deben caber en las pantallas, la lógica y el SQL que ya existen. No se abre) Tj
+T* (un módulo paralelo salvo que el alcance lo exija explícitamente.) Tj
+T* () Tj
+T* (Tres hechos que el equipo debe tener claros) Tj
+T* () Tj
+T* (1. El alcance parte del **proceso** `Tesoreria` y del **módulo** `Cancelacion por lotes`.) Tj
+T* (2. El código a revisar vive bajo **directorio** `tesoreria` en el sistema EXA OFSERCONT.) Tj
+T* (3. Primero se corta el alta/edición incorrecta \(o se entrega el alta del módulo\); el) Tj
+T* (histórico se trata en un pase aparte si aplica.) Tj
+T* () Tj
+T* (Orden de trabajo) Tj
+T* () Tj
+T* (| Orden | Entrega | Para qué |) Tj
+T* (|------:|---------|----------|) Tj
+T* (| 1 | Confirmar pantallas y casos SQL del directorio | Anclar el cambio al código real |) Tj
+T* (| 2 | Diagnosticar causa raíz y huecos de validación | Evitar trabajo paralelo o inventado |) Tj
+T* (| 3 | Implementar en cliente y servidor | Paridad UI + persistencia |) Tj
+T* (| 4 | Prueba operativa / corte | Verificar el criterio de hecho de la tarea |) Tj
+T* (| 5 | Documentar fuera de alcance | Separar histórico y deuda |) Tj
+T* () Tj
+T* (Fuera de este cambio) Tj
+T* () Tj
+T* (No rehacer el histórico en el mismo cambio salvo que la tarea lo pida. Los casos ya grabados) Tj
+T* (se listan y corrigen en un pase aparte, documento por documento.) Tj
+T* () Tj
+T* (---) Tj
+T* () Tj
+T* (2. Esquema y módulo actual) Tj
+T* () Tj
+T* (| Campo | Valor |) Tj
+T* (|-------|-------|) Tj
+T* (| Proceso | Tesoreria |) Tj
+ET
+endstream
+endobj
+2 0 obj
+<< /Length 3489 >>
+stream
+BT
+/F1 10 Tf
+14 TL
+50 786 Td
+(| Módulo | Cancelacion por lotes |) Tj
+T* (| Directorio | tesoreria |) Tj
+T* (| Raíz OFSERCONT | `C:\\Users\\ismaa\\OneDrive\\Documentos\\GitHub\\exa-ofsercont` |) Tj
+T* (| Subruta resuelta | `tesoreria` |) Tj
+T* () Tj
+T* (Inventario bajo tesoreria \(max 80\).) Tj
+T* () Tj
+T* (Archivos relevantes detectados) Tj
+T* () Tj
+T* (• `tesoreria/backend/tes_alt_cliente_1.0.php`) Tj
+T* (• `tesoreria/COMPONENTES/ajax_com_bus_renta_iva.php`) Tj
+T* (• `tesoreria/COMPONENTES/ajax_com_con_numcom.php`) Tj
+T* (• `tesoreria/COMPONENTES/ajax_com_con_numret.php`) Tj
+T* (• `tesoreria/COMPONENTES/ajax_com_deudas_est.php`) Tj
+T* (• `tesoreria/COMPONENTES/ajax_com_deudas.php`) Tj
+T* (• `tesoreria/COMPONENTES/ajax_com_matriculactual.php`) Tj
+T* (• `tesoreria/COMPONENTES/ajax_com_mod_numret.php`) Tj
+T* (• `tesoreria/COMPONENTES/ajax_com_producto.php`) Tj
+T* (• `tesoreria/COMPONENTES/ajax_com_suc_mod_eta_per_car_all.php`) Tj
+T* (• `tesoreria/COMPONENTES/ajax_con_ctaAjuste.php`) Tj
+T* (• `tesoreria/COMPONENTES/ajax_con_ctaCajaChica_1.0.php`) Tj
+T* (• `tesoreria/COMPONENTES/ajax_con_ctaCajaChica.php`) Tj
+T* (• `tesoreria/COMPONENTES/ajax_con_ctaguia.php`) Tj
+T* (• `tesoreria/COMPONENTES/ajaxComBusRentaIva.php`) Tj
+T* (• `tesoreria/COMPONENTES/ajaxComConNumCom.php`) Tj
+T* (• `tesoreria/COMPONENTES/ajaxComConNumRet.php`) Tj
+T* (• `tesoreria/COMPONENTES/com_con_cta_compras_2.0.php`) Tj
+T* (• `tesoreria/COMPONENTES/com_con_ctaAjuste.php`) Tj
+T* (• `tesoreria/COMPONENTES/com_con_ctaCajaChica_1.0.php`) Tj
+T* (• `tesoreria/COMPONENTES/com_con_ctaCajaChica.php`) Tj
+T* (• `tesoreria/COMPONENTES/com_con_numcom.php`) Tj
+T* (• `tesoreria/COMPONENTES/comConNumcom.php`) Tj
+T* (• `tesoreria/COMPONENTES/con_con_anio_mes_fecha.php`) Tj
+T* (• `tesoreria/COMPONENTES/con_con_detalleCompr.php`) Tj
+T* (• `tesoreria/COMPONENTES/fac_alt_fac_ven_2.0.php`) Tj
+T* (• `tesoreria/COMPONENTES/index.php`) Tj
+T* (• `tesoreria/COMPONENTES/tes_com_ann_mes_ven.php`) Tj
+T* (• `tesoreria/COMPONENTES/tes_com_bus_renta_iva_2.0.php`) Tj
+T* (• `tesoreria/COMPONENTES/tes_com_bus_renta_iva.php`) Tj
+T* (• `tesoreria/COMPONENTES/tes_com_cheques_compra.php`) Tj
+T* (• `tesoreria/COMPONENTES/tes_com_cheques.php`) Tj
+T* (• `tesoreria/COMPONENTES/tes_com_con_cheque.php`) Tj
+T* (• `tesoreria/COMPONENTES/tes_com_det_rolpagos_1.0.php`) Tj
+T* (• `tesoreria/COMPONENTES/tes_com_det_rolpagos_2.0.php`) Tj
+T* (• `tesoreria/COMPONENTES/tes_com_det_rolpagos_2.1.php`) Tj
+T* (• `tesoreria/COMPONENTES/tes_com_det_rolpagos_3.0.php`) Tj
+T* (• `tesoreria/COMPONENTES/tes_com_det_rolpagos.php`) Tj
+T* (• `tesoreria/COMPONENTES/tes_com_detalle_com.php`) Tj
+T* (• `tesoreria/COMPONENTES/tes_com_detalle_ven.php`) Tj
+T* (• `tesoreria/COMPONENTES/tes_com_deudas.php`) Tj
+T* (• `tesoreria/COMPONENTES/tes_com_fac_consulta.php`) Tj
+T* (• `tesoreria/COMPONENTES/tes_com_fac_credito.php`) Tj
+T* (• `tesoreria/COMPONENTES/tes_com_fac_pagos.php`) Tj
+T* (• `tesoreria/COMPONENTES/tes_com_fact_proveedor.php`) Tj
+T* (• `tesoreria/COMPONENTES/tes_com_fec_corte.php`) Tj
+T* (• `tesoreria/COMPONENTES/tes_com_mod_cheques.php`) Tj
+T* (• `tesoreria/COMPONENTES/tes_com_mod_numret.php`) Tj
+T* (• `tesoreria/COMPONENTES/tes_com_numret.php`) Tj
+T* (• `tesoreria/COMPONENTES/tes_com_proyeccion.php`) Tj
+T* (• `tesoreria/COMPONENTES/tes_com_suc_mod_eta_per_car.php`) Tj
+T* (• `tesoreria/COMPONENTES/tes_com_tip_venc.php`) Tj
+ET
+endstream
+endobj
+3 0 obj
+<< /Length 3047 >>
+stream
+BT
+/F1 10 Tf
+14 TL
+50 786 Td
+(• `tesoreria/COMPONENTES/tes_con_anio_mes_fecha.php`) Tj
+T* (• `tesoreria/COMPONENTES/tesComAnnMesPrf.php`) Tj
+T* (• `tesoreria/COMPONENTES/tesComAnnMesVen.php`) Tj
+T* (• `tesoreria/COMPONENTES/tesComBusRentaIva.php`) Tj
+T* (• `tesoreria/COMPONENTES/tesComChequesCompra.php`) Tj
+T* (• `tesoreria/COMPONENTES/tesComConCheque.php`) Tj
+T* (• `tesoreria/COMPONENTES/tesComDetalleCom.php`) Tj
+T* (• `tesoreria/COMPONENTES/tesComDetalleCompr.php`) Tj
+T* (• `tesoreria/COMPONENTES/tesComDetalleVen.php`) Tj
+T* (• `tesoreria/COMPONENTES/tesComNumRet.php`) Tj
+T* (• `tesoreria/COMPONENTES/tesComRubrosConsulta_2.0.php`) Tj
+T* (• `tesoreria/COMPONENTES/tesComRubrosConsulta.php`) Tj
+T* (• `tesoreria/COMPONENTES/tesComRubrosConsulta1.php`) Tj
+T* (• `tesoreria/COMPONENTES/tesComRubrosConsulta2.php`) Tj
+T* (• `tesoreria/COMPONENTES/tesComRubrosConsultaCompras.php`) Tj
+T* (• `tesoreria/COMPONENTES/tesComRubrosFac.php`) Tj
+T* (• `tesoreria/COMPONENTES/tesComRubrosFac1.php`) Tj
+T* (• `tesoreria/COMPONENTES/tesComRubrosFac2.php`) Tj
+T* (• `tesoreria/COMPONENTES/tesConCtaCompras.php`) Tj
+T* (• `tesoreria/FRONT/cheques/1/index.php`) Tj
+T* (• `tesoreria/FRONT/cheques/1/tes_pri_cheque_gua_1.0.php`) Tj
+T* (• `tesoreria/FRONT/cheques/1/tes_pri_cheque_int_1.0.php`) Tj
+T* (• `tesoreria/FRONT/cheques/1/tes_pri_cheque_loj_1.0.php`) Tj
+T* (• `tesoreria/FRONT/cheques/1/tes_pri_cheque_mac_1.0.php`) Tj
+T* (• `tesoreria/FRONT/cheques/1/tes_pri_cheque_pac_1.0.php`) Tj
+T* (• `tesoreria/FRONT/cheques/1/tes_pri_cheque_pch_1.0.php`) Tj
+T* (• `tesoreria/FRONT/cheques/1/tes_pri_cheque_rum_1.0.php`) Tj
+T* (• `tesoreria/FRONT/cheques/10/index.php`) Tj
+T* () Tj
+T* (Qué valida hoy y qué no valida) Tj
+T* () Tj
+T* (| Sí entra hoy \(a confirmar en código\) | No entra hoy \(hueco a cerrar\) |) Tj
+T* (|--------------------------------------|-------------------------------|) Tj
+T* (| Flujos FRONT/LOGICA listados arriba | Reglas de negocio de la descripción de la tarea |) Tj
+T* (| Persistencia existente del módulo | Revalidación servidor si solo hay JS |) Tj
+T* (| Consultas/reportes del proceso | Paridad en pantallas de modificación |) Tj
+T* () Tj
+T* () Tj
+T* () Tj
+T* (---) Tj
+T* () Tj
+T* (3. Causa raíz / alcance funcional) Tj
+T* () Tj
+T* (Partir de la descripción de la tarea y del inventario de archivos. Completar en) Tj
+T* (implementación:) Tj
+T* () Tj
+T* (1. ¿Qué pantalla o caso SQL reproduce el problema \(o el alta del módulo\)?) Tj
+T* (2. ¿Qué campo/tabla guarda el estado incorrecto o el nuevo dato?) Tj
+T* (3. ¿Hay validación solo en cliente, solo en servidor, o en ninguno?) Tj
+T* () Tj
+T* (---) Tj
+T* () Tj
+T* (4. Impacto) Tj
+T* () Tj
+T* (• Operativo: proceso **Tesoreria**, módulo **Cancelacion por lotes**.) Tj
+T* (• Técnico: directorio `tesoreria` en EXA OFSERCONT.) Tj
+T* (• Riesgo si no se cierra: la tarea #163 queda sin criterio de hecho documentado.) Tj
+T* () Tj
+T* (---) Tj
+T* () Tj
+T* (5. Alcance de la corrección / entrega) Tj
+ET
+endstream
+endobj
+4 0 obj
+<< /Length 656 >>
+stream
+BT
+/F1 10 Tf
+14 TL
+50 786 Td
+() Tj
+T* (1. Actualizar o crear pantallas y lógica bajo `tesoreria`.) Tj
+T* (2. Validar en cliente y servidor según el tipo de brief.) Tj
+T* (3. Probar el caso descrito en la tarea #163.) Tj
+T* (4. Dejar evidencia \(avance + brief en `docs/`\).) Tj
+T* () Tj
+T* (---) Tj
+T* () Tj
+T* (6. Criterio de hecho) Tj
+T* () Tj
+T* (• [ ] Brief revisado por encargado) Tj
+T* (• [ ] Cambios en el directorio indicado) Tj
+T* (• [ ] Prueba del caso de la descripción) Tj
+T* (• [ ] Avance registrado en el panel de gestión) Tj
+T* () Tj
+T* (---) Tj
+T* () Tj
+T* (*Generado desde EXA Tareas \(gestion\) · Tar_Cod 163*) Tj
+T* () Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+6 0 obj
+<< /Type /Page /Parent 10 0 R /MediaBox [0 0 595 842] /Contents 1 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+7 0 obj
+<< /Type /Page /Parent 10 0 R /MediaBox [0 0 595 842] /Contents 2 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+8 0 obj
+<< /Type /Page /Parent 10 0 R /MediaBox [0 0 595 842] /Contents 3 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+9 0 obj
+<< /Type /Page /Parent 10 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+10 0 obj
+<< /Type /Pages /Kids [ 6 0 R 7 0 R 8 0 R 9 0 R ] /Count 4 >>
+endobj
+11 0 obj
+<< /Type /Catalog /Pages 10 0 R >>
+endobj
+xref
+0 12
+0000000000 65535 f 
+0000000009 00000 n 
+0000002612 00000 n 
+0000006153 00000 n 
+0000009252 00000 n 
+0000009959 00000 n 
+0000010029 00000 n 
+0000010156 00000 n 
+0000010283 00000 n 
+0000010410 00000 n 
+0000010537 00000 n 
+0000010615 00000 n 
+trailer
+<< /Size 12 /Root 11 0 R >>
+startxref
+10666
+%%EOF
