@@ -4,8 +4,6 @@ Repositorio: https://github.com/AngelvisYanez/gestion-exa-contable.git
 
 App **Next.js + TypeScript + Prisma** para gestión de tareas y monitoreo Hubstaff-like, conectada a las **bases MySQL distribuidas** del ERP EXA (`exa`, `servicios`).
 
-Producción (`https://gestion.exacontable.com`): [docs/PRODUCCION.md](docs/PRODUCCION.md) (Plesk). El hosting cPanel anterior está en [docs/PRODUCCION_CPANEL.md](docs/PRODUCCION_CPANEL.md).
-
 UI alineada al dashboard modern del módulo PHP (`ges_dashboard_modern.css` / `ges_mod_dashboard_tareas_1.0.php`).
 
 ## Arranque
@@ -24,14 +22,7 @@ Abrir http://localhost:3000 → redirige a `/login`.
 
 El login usa **cédula + contraseña EXA** (tabla `usuarios` de la BD), no usuarios ficticios.
 
-| Rol | Quién | Cómo entrar |
-|-----|--------|-------------|
-| Encargado | Francisco / Angelvis | Su cédula EXA + clave EXA |
-| Desarrollador | Leonel (Wilson), Jose, Patricio (Patrick), Nathaly | Su cédula EXA + clave EXA |
-
 Tras login, los desarrolladores van a `/mis-tareas` (tareas de `aud_tareas` + tickets con `Ase_Cod` = su `Usu_Cod`).
-
-Si no conoces la cédula/clave de un programador, pídesela a él o consulta su ficha en EXA (no están hardcodeadas en la app).
 
 Proyectos: **EXA** (`exa`) y **Servicios** (`servicios`).
 
