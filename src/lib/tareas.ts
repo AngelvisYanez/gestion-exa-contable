@@ -635,6 +635,29 @@ export async function updateTarea(
   };
 }
 
+/** Baja lógica: la tarea deja de listarse (Tar_Est = I) y se desasignan los responsables activos. */
+export async function deleteTarea(dbDis: string, tarCod: number) {
+  const prisma = getPrisma(dbDis);
+  const [exists] = await prisma.$queryRawUnsafe<Array<{ Tar_Cod: number; Tar_Titulo: string | null }>>(
+    `SELECT Tar_Cod, CONVERT(Tar_Titulo USING utf8mb4) AS Tar_Titulo
+     FROM aud_tareas WHERE Tar_Cod = ? AND Tar_Est = 'A' LIMIT 1`,
+    tarCod
+  );
+  if (!exists) throw new Error("Tarea no encontrada");
+
+  await prisma.$executeRawUnsafe(
+    `UPDATE aud_tareas_asignadas SET Tas_Est = 'I' WHERE Tar_Cod = ? AND Tas_Est = 'A'`,
+    tarCod
+  );
+  const updated = await prisma.$executeRawUnsafe(
+    `UPDATE aud_tareas SET Tar_Est = 'I' WHERE Tar_Cod = ? AND Tar_Est = 'A'`,
+    tarCod
+  );
+  if (!updated) throw new Error("No se pudo borrar la tarea");
+
+  return { Tar_Cod: tarCod, Tar_Titulo: exists.Tar_Titulo || "" };
+}
+
 export async function registrarAvance(
   dbDis: string,
   opts: { tarCod: number; usuCod?: number; descripcion?: string; porcentaje: number }
@@ -709,7 +732,8 @@ type AvanceRow = {
 async function loadAvances(
   prisma: ReturnType<typeof getPrisma>,
   tarCodes: number[],
-  desde?: Date
+  desde?: Date,
+  hasta?: Date
 ) {
   if (!tarCodes.length) return [];
   const rows = await prisma.$queryRawUnsafe<AvanceRow[]>(
@@ -734,6 +758,7 @@ async function loadAvances(
     prevByTar.set(tarCod, pct);
     const fecha = r.Ava_Fecha ? new Date(r.Ava_Fecha) : null;
     if (desde && (!fecha || fecha < desde)) continue;
+    if (hasta && fecha && fecha > hasta) continue;
     const parsed = parseAvanceDescripcion(r.Ava_Descripcion);
     out.push({
       Ava_Cod: Number(r.Ava_Cod),
@@ -967,28 +992,50 @@ export type TareaDetalle = NonNullable<Awaited<ReturnType<typeof getTareaDetalle
 /** Actividad reciente (avances + tiempo activo por tarea) para métricas y reportes de evidencia. */
 export async function actividadPersonal(
   dbDis: string,
-  opts: { perCod: number; tarCodes: number[]; dias?: number }
+  opts: { perCod: number; tarCodes: number[]; dias?: number; desde?: string; hasta?: string }
 ) {
   const prisma = getPrisma(dbDis);
   await ensureMonitoreoSchema(prisma);
-  const dias = Math.max(1, Math.min(90, opts.dias ?? 30));
-  const desde = new Date(Date.now() - dias * 24 * 3600 * 1000);
+  const ymd = /^\d{4}-\d{2}-\d{2}$/;
+  const hoy = hoyFecha();
+  let desdeDia: string;
+  let hastaDia: string;
+  if (opts.desde && opts.hasta && ymd.test(opts.desde) && ymd.test(opts.hasta)) {
+    desdeDia = opts.desde <= opts.hasta ? opts.desde : opts.hasta;
+    hastaDia = opts.desde <= opts.hasta ? opts.hasta : opts.desde;
+    if (hastaDia > hoy) hastaDia = hoy;
+    if (desdeDia > hastaDia) desdeDia = hastaDia;
+  } else {
+    const dias = Math.max(1, Math.min(366, opts.dias ?? 30));
+    hastaDia = hoy;
+    desdeDia = fechaEnZona(new Date(startOfDayZona(hoy).getTime() - (dias - 1) * 24 * 3600 * 1000));
+  }
+  const inicio = startOfDayZona(desdeDia);
+  const tope = new Date(inicio.getTime() + 365 * 24 * 3600 * 1000);
+  const fin = endOfDayZona(hastaDia);
+  if (fin > tope) hastaDia = fechaEnZona(tope);
+  const desde = startOfDayZona(desdeDia);
+  const hasta = endOfDayZona(hastaDia);
+  const dias = Math.max(1, Math.round((startOfDayZona(hastaDia).getTime() - desde.getTime()) / (24 * 3600 * 1000)) + 1);
 
-  const avances = await loadAvances(prisma, opts.tarCodes, desde);
+  const avances = await loadAvances(prisma, opts.tarCodes, desde, hasta);
 
   const tiempo = opts.perCod > 0
     ? await prisma.$queryRawUnsafe<Array<{ Tar_Cod: number | null; Dia: Date | string; segundos: bigint | number | null }>>(
         `SELECT Tar_Cod, DATE(Tel_Fecha_Hora) AS Dia, SUM(Tel_Segundos_Activos) AS segundos
          FROM aud_dev_telemetria
-         WHERE Per_Cod = ? AND Tel_Fecha_Hora >= ?
+         WHERE Per_Cod = ? AND Tel_Fecha_Hora >= ? AND Tel_Fecha_Hora <= ?
          GROUP BY Tar_Cod, DATE(Tel_Fecha_Hora)`,
         opts.perCod,
-        desde
+        desde,
+        hasta
       )
     : [];
 
   return {
     desde: desde.toISOString(),
+    desdeDia,
+    hastaDia,
     dias,
     avances,
     tiempo: tiempo.map((r) => ({

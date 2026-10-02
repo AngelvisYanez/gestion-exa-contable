@@ -2,9 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  CircleCheck,
+  ClipboardList,
   FileBarChart,
+  Gauge,
   History,
+  Layers,
   Loader2,
+  PlayCircle,
   RefreshCw,
   Search,
   Ticket,
@@ -16,7 +21,7 @@ import { KpiCarousel } from "@/components/kpi-carousel";
 import { PaginationBar, FilterBar, ViewModeToggle, type ListViewMode } from "@/components/list-controls";
 import { EstadoBadge, PrioridadBadge, fmtDate } from "@/components/status-badges";
 import { AvanceDialog } from "@/components/tareas/avance-dialog";
-import { MetricasPanel } from "@/components/tareas/metricas-panel";
+import { MetricasPanel, metricasKpiItems } from "@/components/tareas/metricas-panel";
 import { ReporteDialog } from "@/components/tareas/reporte-dialog";
 import { TareaDetalleDialog } from "@/components/tareas/tarea-detalle-dialog";
 import { TicketDetalleDialog } from "@/components/tareas/ticket-detalle-dialog";
@@ -36,7 +41,7 @@ import {
   tareaAbierta,
   type Actividad,
 } from "@/lib/metricas-avance";
-import { hoyFecha } from "@/lib/timezone";
+import { fechaEnZona, hoyFecha, startOfDayZona } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
 import { plainTextFromHtml } from "@/components/ui/rich-text";
 
@@ -68,6 +73,14 @@ const TIPO_TABS: Array<{ id: TipoFiltro; label: string }> = [
   { id: "ticket", label: "Tickets" },
 ];
 
+const PERIODOS = [7, 14, 30, 60, 90] as const;
+type PeriodoPreset = (typeof PERIODOS)[number] | "rango";
+
+function ymdHace(dias: number) {
+  const hoy = startOfDayZona(hoyFecha());
+  return fechaEnZona(new Date(hoy.getTime() - (dias - 1) * 24 * 3600 * 1000));
+}
+
 function esAtrasada(t: Tarea) {
   const fin = t.Tar_Fecha_Fin ? String(t.Tar_Fecha_Fin).slice(0, 10) : "";
   return tareaAbierta(t) && !!fin && fin < hoyFecha();
@@ -93,7 +106,9 @@ export default function MisTareasPage() {
   const [warning, setWarning] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [periodo, setPeriodo] = useState<7 | 30>(7);
+  const [periodo, setPeriodo] = useState<PeriodoPreset>(7);
+  const [desde, setDesde] = useState("");
+  const [hasta, setHasta] = useState("");
   const [filtro, setFiltro] = useState<Filtro>("abiertas");
   const [tipoFiltro, setTipoFiltro] = useState<TipoFiltro>("todos");
   const [viewMode, setViewMode] = useState<ListViewMode>("kanban");
@@ -112,7 +127,14 @@ export default function MisTareasPage() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`/api/mis-tareas?project=${encodeURIComponent(proj)}&dias=30`);
+      const params = new URLSearchParams({ project: proj });
+      if (periodo === "rango" && desde && hasta) {
+        params.set("desde", desde);
+        params.set("hasta", hasta);
+      } else {
+        params.set("dias", String(periodo === "rango" ? 7 : periodo));
+      }
+      const res = await fetch(`/api/mis-tareas?${params}`);
       const j = await res.json();
       if (!res.ok || !j.success) throw new Error(j.message || "No se pudieron cargar las tareas");
       setTareas(j.tareas || []);
@@ -124,7 +146,7 @@ export default function MisTareasPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [periodo, desde, hasta]);
 
   useEffect(() => {
     // Emp 96 / aud_tareas viven en exa; ignorar toggle de proyecto
@@ -139,8 +161,14 @@ export default function MisTareasPage() {
 
   const soloTareas = useMemo(() => tareas.filter((t) => !esTicket(t)), [tareas]);
   const metricas = useMemo(
-    () => calcularMetricas(soloTareas, actividad, periodo),
-    [soloTareas, actividad, periodo]
+    () =>
+      calcularMetricas(
+        soloTareas,
+        actividad,
+        periodo === "rango" ? 7 : periodo,
+        periodo === "rango" && desde && hasta ? { desde, hasta } : null
+      ),
+    [soloTareas, actividad, periodo, desde, hasta]
   );
 
   const porTipo = useMemo(() => {
@@ -257,20 +285,57 @@ export default function MisTareasPage() {
             Reporte de avance
           </Button>
           <div className="inline-flex shrink-0 rounded-lg border border-border bg-muted/40 p-0.5">
-            {([7, 30] as const).map((d) => (
+            {PERIODOS.map((d) => (
               <button
                 key={d}
                 type="button"
+                title={`Ultimos ${d} dias`}
                 onClick={() => setPeriodo(d)}
                 className={cn(
-                  "whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-bold transition-colors",
+                  "whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-bold transition-colors",
                   periodo === d ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                 )}
               >
-                Ultimos {d} dias
+                {d}d
               </button>
             ))}
+            <button
+              type="button"
+              onClick={() => {
+                setDesde((v) => v || ymdHace(7));
+                setHasta((v) => v || hoyFecha());
+                setPeriodo("rango");
+              }}
+              className={cn(
+                "whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-bold transition-colors",
+                periodo === "rango" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Rango
+            </button>
           </div>
+          {periodo === "rango" && (
+            <div className="inline-flex items-center gap-1.5">
+              <input
+                type="date"
+                aria-label="Desde"
+                value={desde}
+                max={hasta || hoyFecha()}
+                onChange={(e) => setDesde(e.target.value)}
+                className="h-9 rounded-md border border-border bg-background px-2 text-xs"
+              />
+              <span className="text-xs text-muted-foreground">a</span>
+              <input
+                type="date"
+                aria-label="Hasta"
+                value={hasta}
+                min={desde || undefined}
+                max={hoyFecha()}
+                onChange={(e) => setHasta(e.target.value)}
+                className="h-9 rounded-md border border-border bg-background px-2 text-xs"
+              />
+            </div>
+          )}
         </FilterBar>
 
         {error && (
@@ -284,16 +349,21 @@ export default function MisTareasPage() {
           </div>
         )}
 
-        {kpis && (
+        {(kpis || soloTareas.length > 0) && (
           <div className="mb-3">
             <KpiCarousel
               items={[
-                { label: "Total", value: kpis.total, tone: "info" },
-                { label: "Tareas", value: kpis.tareas ?? soloTareas.length, tone: "default" },
-                { label: "Tickets", value: kpis.tickets ?? conteosTipo.ticket, tone: "warning" },
-                { label: "Finalizadas", value: kpis.completadas, tone: "success" },
-                { label: "En proceso", value: kpis.proceso, tone: "default" },
-                { label: "Avance medio", value: `${kpis.avance_promedio}%`, tone: "info" },
+                ...(kpis
+                  ? [
+                      { label: "Total", value: kpis.total, tone: "info" as const, icon: Layers },
+                      { label: "Tareas", value: kpis.tareas ?? soloTareas.length, tone: "default" as const, icon: ClipboardList },
+                      { label: "Tickets", value: kpis.tickets ?? conteosTipo.ticket, tone: "warning" as const, icon: Ticket },
+                      { label: "Finalizadas", value: kpis.completadas, tone: "success" as const, icon: CircleCheck },
+                      { label: "En proceso", value: kpis.proceso, tone: "default" as const, icon: PlayCircle },
+                      { label: "Avance medio", value: `${kpis.avance_promedio}%`, tone: "info" as const, icon: Gauge },
+                    ]
+                  : []),
+                ...(soloTareas.length > 0 ? metricasKpiItems(metricas) : []),
               ]}
             />
           </div>
@@ -301,7 +371,7 @@ export default function MisTareasPage() {
 
         {soloTareas.length > 0 && (
           <div className="mb-6">
-            <MetricasPanel m={metricas} onOpenTarea={(t) => setDetalleKey(workItemKey(t))} />
+            <MetricasPanel m={metricas} showKpis={false} onOpenTarea={(t) => setDetalleKey(workItemKey(t))} />
           </div>
         )}
 
@@ -710,6 +780,9 @@ export default function MisTareasPage() {
           usuario={user?.name || "Colaborador"}
           tareas={soloTareas}
           actividad={actividad}
+          periodo={periodo}
+          desde={desde}
+          hasta={hasta}
         />
       </main>
     </>

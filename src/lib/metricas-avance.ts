@@ -23,6 +23,10 @@ export type AvanceActividad = {
 
 export type Actividad = {
   desde: string;
+  /** Inicio del periodo cargado (YYYY-MM-DD, Guayaquil). */
+  desdeDia?: string;
+  /** Fin del periodo cargado (YYYY-MM-DD, Guayaquil). */
+  hastaDia?: string;
   dias: number;
   avances: AvanceActividad[];
   tiempo: Array<{ Tar_Cod: number | null; Dia: string; Minutos: number }>;
@@ -51,16 +55,50 @@ export function tareaAbierta(t: Tarea) {
   return t.Tar_Estado !== "Finalizada" && (t.Ava_Porcentaje || 0) < 100;
 }
 
-export function avancesEnPeriodo(actividad: Actividad | null, dias: number) {
-  if (!actividad) return [];
-  const desde = haceDias(dias);
-  return actividad.avances.filter((a) => a.Ava_Fecha && new Date(a.Ava_Fecha) >= desde);
+export type RangoFechas = { desde: string; hasta: string };
+
+export function limitesPeriodo(dias: number, rango?: RangoFechas | null) {
+  const hoy = hoyFecha();
+  const ymd = /^\d{4}-\d{2}-\d{2}$/;
+  if (rango?.desde && rango?.hasta && ymd.test(rango.desde.slice(0, 10)) && ymd.test(rango.hasta.slice(0, 10))) {
+    let desdeDia = rango.desde.slice(0, 10);
+    let hastaDia = rango.hasta.slice(0, 10);
+    if (desdeDia > hastaDia) [desdeDia, hastaDia] = [hastaDia, desdeDia];
+    if (hastaDia > hoy) hastaDia = hoy;
+    if (desdeDia > hastaDia) desdeDia = hastaDia;
+    let start = startOfDayZona(desdeDia);
+    const end = startOfDayZona(hastaDia);
+    const n = Math.round((end.getTime() - start.getTime()) / DAY) + 1;
+    if (n > 366) {
+      start = new Date(end.getTime() - 365 * DAY);
+      desdeDia = diaLocal(start);
+    }
+    const span = Math.max(1, Math.round((end.getTime() - start.getTime()) / DAY) + 1);
+    return { start, desdeDia, hastaDia, dias: span };
+  }
+  const safe = Math.max(1, Math.min(366, dias));
+  const start = haceDias(safe);
+  return { start, desdeDia: diaLocal(start), hastaDia: hoy, dias: safe };
 }
 
-export function calcularMetricas(tareas: Tarea[], actividad: Actividad | null, dias = 7) {
-  const desde = haceDias(dias);
-  const desdeDia = diaLocal(desde);
-  const periodo = avancesEnPeriodo(actividad, dias);
+export function avancesEnPeriodo(actividad: Actividad | null, dias: number, rango?: RangoFechas | null) {
+  if (!actividad) return [];
+  const { desdeDia, hastaDia } = limitesPeriodo(dias, rango);
+  return actividad.avances.filter((a) => {
+    if (!a.Ava_Fecha) return false;
+    const key = diaLocal(new Date(a.Ava_Fecha));
+    return key >= desdeDia && key <= hastaDia;
+  });
+}
+
+export function calcularMetricas(
+  tareas: Tarea[],
+  actividad: Actividad | null,
+  dias = 7,
+  rango?: RangoFechas | null
+) {
+  const { start, desdeDia, hastaDia, dias: span } = limitesPeriodo(dias, rango);
+  const periodo = avancesEnPeriodo(actividad, dias, rango);
 
   const diasActivos = new Set(periodo.map((a) => diaLocal(new Date(a.Ava_Fecha as string))));
   const puntos = periodo.reduce((s, a) => s + Math.max(0, a.Ava_Delta), 0);
@@ -71,10 +109,10 @@ export function calcularMetricas(tareas: Tarea[], actividad: Actividad | null, d
   const tareasTocadas = new Set(periodo.map((a) => a.Tar_Cod)).size;
 
   const minutosActivos = (actividad?.tiempo || [])
-    .filter((r) => r.Dia >= desdeDia)
+    .filter((r) => r.Dia >= desdeDia && r.Dia <= hastaDia)
     .reduce((s, r) => s + r.Minutos, 0);
   const minutosEnTareas = (actividad?.tiempo || [])
-    .filter((r) => r.Dia >= desdeDia && r.Tar_Cod)
+    .filter((r) => r.Dia >= desdeDia && r.Dia <= hastaDia && r.Tar_Cod)
     .reduce((s, r) => s + r.Minutos, 0);
 
   const abiertas = tareas.filter(tareaAbierta);
@@ -88,9 +126,10 @@ export function calcularMetricas(tareas: Tarea[], actividad: Actividad | null, d
   const aTiempo = conFecha.filter(
     (t) => String(t.Tar_Fecha_Culminacion).slice(0, 10) <= String(t.Tar_Fecha_Fin).slice(0, 10)
   ).length;
-  const finalizadasPeriodo = finalizadas.filter(
-    (t) => t.Tar_Fecha_Culminacion && String(t.Tar_Fecha_Culminacion).slice(0, 10) >= desdeDia
-  ).length;
+  const finalizadasPeriodo = finalizadas.filter((t) => {
+    const cul = t.Tar_Fecha_Culminacion ? String(t.Tar_Fecha_Culminacion).slice(0, 10) : "";
+    return cul >= desdeDia && cul <= hastaDia;
+  }).length;
 
   const todosLosDias = new Set(
     (actividad?.avances || []).filter((a) => a.Ava_Fecha).map((a) => diaLocal(new Date(a.Ava_Fecha as string)))
@@ -104,10 +143,11 @@ export function calcularMetricas(tareas: Tarea[], actividad: Actividad | null, d
   }
 
   const serie: Array<{ dia: string; label: string; avances: number; puntos: number; minutos: number }> = [];
-  const hoyStart = startOfDayZona(hoyFecha());
-  for (let i = 13; i >= 0; i--) {
-    const d = new Date(hoyStart.getTime() - i * DAY);
+  const labelLargo = span <= 16;
+  for (let i = 0; i < span; i++) {
+    const d = new Date(start.getTime() + i * DAY);
     const key = diaLocal(d);
+    if (key > hastaDia) break;
     const delDia = (actividad?.avances || []).filter(
       (a) => a.Ava_Fecha && diaLocal(new Date(a.Ava_Fecha)) === key
     );
@@ -115,8 +155,9 @@ export function calcularMetricas(tareas: Tarea[], actividad: Actividad | null, d
       dia: key,
       label: d.toLocaleDateString("es-EC", {
         timeZone: "America/Guayaquil",
-        weekday: "short",
+        weekday: labelLargo ? "short" : undefined,
         day: "2-digit",
+        month: labelLargo ? undefined : "2-digit",
       }),
       avances: delDia.length,
       puntos: delDia.reduce((s, a) => s + Math.max(0, a.Ava_Delta), 0),
@@ -125,7 +166,9 @@ export function calcularMetricas(tareas: Tarea[], actividad: Actividad | null, d
   }
 
   return {
-    dias,
+    dias: span,
+    desde: desdeDia,
+    hasta: hastaDia,
     avances: periodo.length,
     puntos,
     diasActivos: diasActivos.size,
@@ -165,6 +208,7 @@ export type ReporteData = {
   dias: number;
   desdeLabel: string;
   hastaLabel: string;
+  periodoLabel: string;
   generado: string;
   metricas: Metricas;
   detalle: ReporteDetalleTarea[];
@@ -178,11 +222,11 @@ export function buildReporteData(opts: {
   tareas: Tarea[];
   actividad: Actividad | null;
   origin: string;
+  rango?: RangoFechas | null;
 }): ReporteData {
-  const m = calcularMetricas(opts.tareas, opts.actividad, opts.dias);
-  const periodo = avancesEnPeriodo(opts.actividad, opts.dias);
+  const m = calcularMetricas(opts.tareas, opts.actividad, opts.dias, opts.rango);
+  const periodo = avancesEnPeriodo(opts.actividad, opts.dias, opts.rango);
   const hoy = new Date();
-  const desde = haceDias(opts.dias);
   const abs = (u: string) => (u.startsWith("http") ? u : `${opts.origin}${u}`);
 
   const porTarea = new Map<number, AvanceActividad[]>();
@@ -218,9 +262,15 @@ export function buildReporteData(opts: {
 
   return {
     usuario: opts.usuario,
-    dias: opts.dias,
-    desdeLabel: desde.toLocaleDateString("es-EC", { timeZone: "America/Guayaquil" }),
-    hastaLabel: hoy.toLocaleDateString("es-EC", { timeZone: "America/Guayaquil" }),
+    dias: m.dias,
+    desdeLabel: new Date(`${m.desde}T12:00:00-05:00`).toLocaleDateString("es-EC", { timeZone: "America/Guayaquil" }),
+    hastaLabel: new Date(`${m.hasta}T12:00:00-05:00`).toLocaleDateString("es-EC", { timeZone: "America/Guayaquil" }),
+    periodoLabel:
+      m.desde === hoyFecha() && m.hasta === hoyFecha()
+        ? "Hoy"
+        : m.hasta === hoyFecha()
+          ? `Ultimos ${m.dias} dias`
+          : "Rango seleccionado",
     generado: fmtFechaHora(hoy.toISOString()),
     metricas: m,
     detalle,
@@ -243,6 +293,7 @@ export function buildReporte(opts: {
   tareas: Tarea[];
   actividad: Actividad | null;
   origin: string;
+  rango?: RangoFechas | null;
 }) {
   const data = buildReporteData(opts);
   const m = data.metricas;

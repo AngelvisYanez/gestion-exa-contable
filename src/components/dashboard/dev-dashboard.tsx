@@ -341,6 +341,7 @@ export function DevDashboard({ userName }: { userName?: string }) {
         usuario={userName || "Colaborador"}
         tareas={soloTareas}
         actividad={actividad}
+        periodo={periodo}
       />
     </>
   );

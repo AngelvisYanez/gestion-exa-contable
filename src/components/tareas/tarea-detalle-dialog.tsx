@@ -14,6 +14,7 @@ import {
   Paperclip,
   Pencil,
   Sparkles,
+  Trash2,
   TrendingUp,
   User,
   UserPlus,
@@ -37,6 +38,7 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { RichTextHtml } from "@/components/ui/rich-text";
 import { useAuth } from "@/contexts/AuthContext";
 import { GenerarBriefDialog } from "@/components/tareas/generar-brief-dialog";
+import { OfsercontAlcanceFields } from "@/components/tareas/ofsercont-alcance-fields";
 import { TareaEditDialog } from "@/components/tareas/tarea-edit-dialog";
 import type { TareaDetalle } from "@/lib/tareas";
 import { fmtFechaHoraZona, hoyFecha, startOfDayZona } from "@/lib/timezone";
@@ -116,7 +118,7 @@ export function TareaDetalleDialog({
   editExtraBody,
   reloadKey,
 }: Props) {
-  const { user } = useAuth();
+  const { user, db } = useAuth();
   const isManager = user?.role === "manager";
   const canDesk = user?.role === "manager" || user?.role === "atencion";
   const [data, setData] = useState<(TareaDetalle & { can_view_capturas?: boolean }) | null>(null);
@@ -129,6 +131,10 @@ export function TareaDetalleDialog({
   const [zoom, setZoom] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [briefOpen, setBriefOpen] = useState(false);
+  const [alcance, setAlcance] = useState({ modulo: "", proceso: "", directorio: "" });
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   const [localReload, setLocalReload] = useState(0);
   const tarCod = tarea?.Tar_Cod ?? null;
   const fetchReloadKey = (reloadKey || 0) + localReload;
@@ -164,6 +170,14 @@ export function TareaDetalleDialog({
   }, [tarCod, fetchReloadKey, capturasDias, rangoDesde, rangoHasta]);
 
   const t = data?.tarea;
+
+  useEffect(() => {
+    setAlcance({
+      modulo: t?.Tar_Modulo || "",
+      proceso: t?.Tar_Proceso || "",
+      directorio: t?.Tar_Directorio || "",
+    });
+  }, [tarea?.Tar_Cod, t?.Tar_Modulo, t?.Tar_Proceso, t?.Tar_Directorio]);
   const pct = t?.Ava_Porcentaje ?? tarea?.Ava_Porcentaje ?? 0;
   const abierta = (t?.Tar_Estado ?? tarea?.Tar_Estado) !== "Finalizada" && pct < 100;
   const venc = vencimiento(t?.Tar_Fecha_Fin ?? tarea?.Tar_Fecha_Fin, abierta);
@@ -202,6 +216,35 @@ export function TareaDetalleDialog({
     items.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
     return items;
   }, [data]);
+
+  const sesDb = String(editExtraBody?.Ses_Dat_Dis || db || "exa");
+  const tituloTarea = t?.Tar_Titulo || tarea?.Tar_Titulo || "esta tarea";
+
+  const borrarTarea = async () => {
+    if (!tarCod || deleting) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      const res = await fetch("/api/tareas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "delete",
+          Ses_Dat_Dis: sesDb,
+          Tar_Cod: tarCod,
+        }),
+      });
+      const j = await res.json();
+      if (!res.ok || !j.success) throw new Error(j.message || "No se pudo borrar la tarea");
+      setDeleteOpen(false);
+      await onSaved?.();
+      onClose();
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : "No se pudo borrar la tarea");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
     <Dialog
@@ -336,44 +379,35 @@ export function TareaDetalleDialog({
                 )}
               </section>
 
-              {(t?.Tar_Proceso || t?.Tar_Modulo || t?.Tar_Directorio || t?.Tar_Brief_Md) && (
-                <section className="rounded-xl border border-border/70 p-3 text-sm">
-                  <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                    Brief / alcance OFSERCONT
-                  </h3>
-                  <div className="grid gap-1.5 sm:grid-cols-2">
-                    {t?.Tar_Proceso && (
-                      <div>
-                        <span className="text-muted-foreground">Proceso: </span>
-                        <strong>{t.Tar_Proceso}</strong>
-                      </div>
-                    )}
-                    {t?.Tar_Modulo && (
-                      <div>
-                        <span className="text-muted-foreground">Modulo: </span>
-                        <strong>{t.Tar_Modulo}</strong>
-                      </div>
-                    )}
-                    {t?.Tar_Directorio && (
-                      <div className="sm:col-span-2">
-                        <span className="text-muted-foreground">Directorio: </span>
-                        <code className="text-xs">{t.Tar_Directorio}</code>
-                      </div>
-                    )}
-                    {t?.Tar_Brief_Md && (
-                      <div className="sm:col-span-2 text-xs text-muted-foreground">
-                        Ultimo brief: <code>{t.Tar_Brief_Md}</code>
-                        {t.Tar_Brief_Pdf ? (
-                          <>
-                            {" "}
-                            · <code>{t.Tar_Brief_Pdf}</code>
-                          </>
-                        ) : null}
-                      </div>
-                    )}
-                  </div>
-                </section>
-              )}
+              <section className="rounded-xl border border-border/70 p-3 text-sm">
+                <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                  Brief / alcance OFSERCONT
+                </h3>
+                <OfsercontAlcanceFields
+                  db={db}
+                  idPrefix={`tarea-${tarea?.Tar_Cod || "n"}`}
+                  value={alcance}
+                  onChange={setAlcance}
+                />
+                <div className="mt-3 space-y-1.5 text-xs text-muted-foreground">
+                  {alcance.directorio ? (
+                    <div>
+                      Directorio: <code>{alcance.directorio}</code>
+                    </div>
+                  ) : null}
+                  {t?.Tar_Brief_Md ? (
+                    <div>
+                      Ultimo brief: <code>{t.Tar_Brief_Md}</code>
+                      {t.Tar_Brief_Pdf ? (
+                        <>
+                          {" "}
+                          · <code>{t.Tar_Brief_Pdf}</code>
+                        </>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              </section>
 
               {(data?.evidencias_iniciales?.length ?? 0) > 0 && (
                 <section>
@@ -676,6 +710,20 @@ export function TareaDetalleDialog({
         </div>
 
         <DialogFooter className="shrink-0 gap-2 border-t border-border/60 px-6 py-4 sm:gap-2">
+          {tarea && isManager && (
+            <Button
+              type="button"
+              variant="destructive"
+              className="sm:mr-auto"
+              onClick={() => {
+                setDeleteError("");
+                setDeleteOpen(true);
+              }}
+            >
+              <Trash2 className="size-4" />
+              Borrar
+            </Button>
+          )}
           <Button type="button" variant="ghost" onClick={onClose}>
             Cerrar
           </Button>
@@ -715,12 +763,41 @@ export function TareaDetalleDialog({
         open={briefOpen && isManager}
         tarea={isManager ? tarea : null}
         detalle={isManager ? t || null : null}
+        alcance={alcance}
         onClose={() => setBriefOpen(false)}
         onGenerated={async () => {
           setLocalReload((n) => n + 1);
           await onSaved?.();
         }}
       />
+
+      <Dialog
+        open={deleteOpen}
+        onOpenChange={(o) => {
+          if (deleting) return;
+          setDeleteOpen(o);
+          if (!o) setDeleteError("");
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Borrar tarea</DialogTitle>
+            <DialogDescription>
+              La tarea #{tarCod} «{tituloTarea}» dejara de verse en el tablero y se quitara de los asignados.
+            </DialogDescription>
+          </DialogHeader>
+          {deleteError ? <Alert variant="destructive">{deleteError}</Alert> : null}
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button type="button" variant="ghost" disabled={deleting} onClick={() => setDeleteOpen(false)}>
+              Cancelar
+            </Button>
+            <Button type="button" variant="destructive" disabled={deleting} onClick={() => void borrarTarea()}>
+              {deleting ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+              Borrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!zoom} onOpenChange={(o) => !o && setZoom(null)}>
         <DialogContent className="max-h-[94vh] max-w-5xl overflow-auto p-2 sm:p-4">

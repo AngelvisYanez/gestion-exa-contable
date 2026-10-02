@@ -1,20 +1,81 @@
 "use client";
 
-import { AlertTriangle, Flame } from "lucide-react";
+import { Activity, AlertTriangle, CalendarDays, Clock, Flame, Paperclip, Timer, TrendingUp } from "lucide-react";
 import type { Tarea } from "@/components/dashboard/types";
-import { KpiCarousel } from "@/components/kpi-carousel";
+import { KpiCarousel, type KpiCarouselItem } from "@/components/kpi-carousel";
 import { Card } from "@/components/ui/card";
 import { DIAS_SIN_ACTUALIZAR, diasDesde, type Metricas } from "@/lib/metricas-avance";
+
+function fmtDiaCorto(iso: string) {
+  const [, m, d] = iso.split("-");
+  return d && m ? `${d}/${m}` : iso;
+}
+
+function mostrarEtiqueta(i: number, total: number) {
+  if (total <= 10) return true;
+  const step = total <= 21 ? 2 : total <= 45 ? 5 : 7;
+  return i % step === 0 || i === total - 1;
+}
+
+export function metricasKpiItems(m: Metricas): KpiCarouselItem[] {
+  return [
+    {
+      label: `Avances (${m.dias}d)`,
+      value: m.avances,
+      hint: `${m.tareasTocadas} tarea(s) trabajadas`,
+      tone: "info",
+      icon: Activity,
+    },
+    {
+      label: "Progreso ganado",
+      value: `+${m.puntos}`,
+      hint: "puntos porcentuales",
+      tone: "success",
+      icon: TrendingUp,
+    },
+    {
+      label: "Dias activos",
+      value: `${m.diasActivos}/${m.dias}`,
+      hint: m.racha ? `Racha: ${m.racha} dia(s) seguidos` : "Sin racha activa",
+      tone: m.diasActivos >= Math.ceil(m.dias * 0.6) ? "success" : "warning",
+      icon: CalendarDays,
+    },
+    {
+      label: "Evidencias",
+      value: m.evidencias,
+      hint: `${m.coberturaEvidencia}% de avances con evidencia`,
+      tone: m.coberturaEvidencia >= 70 ? "success" : m.coberturaEvidencia >= 30 ? "warning" : "danger",
+      icon: Paperclip,
+    },
+    {
+      label: "Horas",
+      value: m.horasReportadas,
+      hint: `Reportadas · ${m.horasActivas} h medidas por ExaMonitor`,
+      tone: "default",
+      icon: Clock,
+    },
+    {
+      label: "A tiempo",
+      value: m.aTiempoPct == null ? "—" : `${m.aTiempoPct}%`,
+      hint: `${m.finalizadasPeriodo} finalizada(s) en el periodo`,
+      tone: m.aTiempoPct == null ? "muted" : m.aTiempoPct >= 80 ? "success" : "warning",
+      icon: Timer,
+    },
+  ];
+}
 
 export function MetricasPanel({
   m,
   onOpenTarea,
   compact,
+  showKpis = true,
 }: {
   m: Metricas;
   onOpenTarea: (t: Tarea) => void;
   /** Sin scroll ni tarjetas anidadas (widgets del dashboard). */
   compact?: boolean;
+  /** Los KPIs se muestran en el carrusel del padre. */
+  showKpis?: boolean;
 }) {
   const maxPuntos = Math.max(1, ...m.serie.map((d) => d.puntos));
   const maxAvances = Math.max(1, ...m.serie.map((d) => d.avances));
@@ -84,60 +145,16 @@ export function MetricasPanel({
     );
   }
 
-  const kpiItems = [
-    {
-      label: `Avances (${m.dias}d)`,
-      value: m.avances,
-      hint: `${m.tareasTocadas} tarea(s) trabajadas`,
-      tone: "info" as const,
-    },
-    {
-      label: "Progreso ganado",
-      value: `+${m.puntos}`,
-      hint: "puntos porcentuales",
-      tone: "success" as const,
-    },
-    {
-      label: "Dias activos",
-      value: `${m.diasActivos}/${m.dias}`,
-      hint: m.racha ? `Racha: ${m.racha} dia(s) seguidos` : "Sin racha activa",
-      tone: (m.diasActivos >= Math.ceil(m.dias * 0.6) ? "success" : "warning") as "success" | "warning",
-    },
-    {
-      label: "Evidencias",
-      value: m.evidencias,
-      hint: `${m.coberturaEvidencia}% de avances con evidencia`,
-      tone: (m.coberturaEvidencia >= 70
-        ? "success"
-        : m.coberturaEvidencia >= 30
-          ? "warning"
-          : "danger") as "success" | "warning" | "danger",
-    },
-    {
-      label: "Horas",
-      value: m.horasReportadas,
-      hint: `Reportadas · ${m.horasActivas} h medidas por ExaMonitor`,
-      tone: "default" as const,
-    },
-    {
-      label: "A tiempo",
-      value: m.aTiempoPct == null ? "—" : `${m.aTiempoPct}%`,
-      hint: `${m.finalizadasPeriodo} finalizada(s) en el periodo`,
-      tone: (m.aTiempoPct == null ? "muted" : m.aTiempoPct >= 80 ? "success" : "warning") as
-        | "muted"
-        | "success"
-        | "warning",
-    },
-  ];
-
   return (
     <div className="space-y-3 overflow-hidden">
-      <KpiCarousel items={kpiItems} />
+      {showKpis ? <KpiCarousel items={metricasKpiItems(m)} /> : null}
 
       <div className="grid gap-3 lg:grid-cols-[2fr_1fr]">
         <Card className="overflow-hidden p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-sm font-bold">Actividad de los ultimos 14 dias</h3>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-bold">
+              Actividad {fmtDiaCorto(m.desde)} – {fmtDiaCorto(m.hasta)}
+            </h3>
             <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
               <span className="inline-flex items-center gap-1">
                 <span className="size-2 rounded-sm bg-emerald-500" /> Progreso
@@ -152,7 +169,11 @@ export function MetricasPanel({
               )}
             </div>
           </div>
-          <div className="flex h-28 items-end gap-1">
+          <div className="overflow-x-auto">
+          <div
+            className="flex h-24 items-end gap-px"
+            style={{ minWidth: m.serie.length > 21 ? m.serie.length * 12 : undefined }}
+          >
             {m.serie.map((d) => (
               <div
                 key={d.dia}
@@ -172,12 +193,16 @@ export function MetricasPanel({
               </div>
             ))}
           </div>
-          <div className="mt-1 flex gap-1">
+          <div
+            className="mt-1 flex gap-px"
+            style={{ minWidth: m.serie.length > 21 ? m.serie.length * 12 : undefined }}
+          >
             {m.serie.map((d, i) => (
               <div key={d.dia} className="flex-1 truncate text-center text-[9px] text-muted-foreground">
-                {i % 2 === 0 || i === m.serie.length - 1 ? d.label : ""}
+                {mostrarEtiqueta(i, m.serie.length) ? d.label : ""}
               </div>
             ))}
+          </div>
           </div>
         </Card>
 

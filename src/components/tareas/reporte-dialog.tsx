@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   Check,
@@ -32,6 +32,7 @@ import {
   buildReporte,
   buildReporteData,
   DIAS_SIN_ACTUALIZAR,
+  limitesPeriodo,
   type Actividad,
   type ReporteData,
 } from "@/lib/metricas-avance";
@@ -43,7 +44,20 @@ const PERIODOS = [
   { dias: 7, label: "7 dias" },
   { dias: 14, label: "14 dias" },
   { dias: 30, label: "30 dias" },
+  { dias: 60, label: "60 dias" },
+  { dias: 90, label: "90 dias" },
 ];
+
+type Seleccion =
+  | { tipo: "dias"; dias: number }
+  | { tipo: "rango"; desde: string; hasta: string };
+
+function actividadCubre(act: Actividad | null, desdeDia: string, hastaDia: string) {
+  if (!act) return false;
+  const desde = act.desdeDia || act.desde.slice(0, 10);
+  const hasta = act.hastaDia || hoyFecha();
+  return desde <= desdeDia && hasta >= hastaDia;
+}
 
 type Vista = "documento" | "texto";
 
@@ -105,9 +119,7 @@ function ReportePreview({ data }: { data: ReporteData }) {
             <div className="font-bold tabular-nums">
               {data.desdeLabel} → {data.hastaLabel}
             </div>
-            <div className="mt-0.5 text-primary-foreground/75">
-              {data.dias === 1 ? "Hoy" : `Ultimos ${data.dias} dias`}
-            </div>
+            <div className="mt-0.5 text-primary-foreground/75">{data.periodoLabel}</div>
           </div>
         </div>
       </header>
@@ -366,7 +378,7 @@ function buildPrintHtml(data: ReporteData) {
   .stale li{margin:4px 0;font-size:11px}
   footer{margin-top:20px;padding-top:12px;border-top:1px solid #e7e5e4;text-align:center;font-size:10px;color:#a8a29e}
 </style></head><body>
-<div class="hero"><div class="badge">EXA Tareas</div><h1>Reporte de avance</h1><p class="user">${escapeHtml(data.usuario)}</p><div class="range">${escapeHtml(data.desdeLabel)} → ${escapeHtml(data.hastaLabel)} · ${data.dias === 1 ? "Hoy" : `Ultimos ${data.dias} dias`}</div></div>
+<div class="hero"><div class="badge">EXA Tareas</div><h1>Reporte de avance</h1><p class="user">${escapeHtml(data.usuario)}</p><div class="range">${escapeHtml(data.desdeLabel)} → ${escapeHtml(data.hastaLabel)} · ${escapeHtml(data.periodoLabel)}</div></div>
 <div class="wrap">
   <h2>Resumen</h2>
   <div class="kpis">
@@ -391,33 +403,94 @@ export function ReporteDialog({
   usuario,
   tareas,
   actividad,
+  periodo = 7,
+  desde = "",
+  hasta = "",
 }: {
   open: boolean;
   onClose: () => void;
   usuario: string;
   tareas: Tarea[];
   actividad: Actividad | null;
+  /** Periodo activo en la pantalla (dias o rango). */
+  periodo?: number | "rango";
+  desde?: string;
+  hasta?: string;
 }) {
-  const [dias, setDias] = useState(7);
+  const [sel, setSel] = useState<Seleccion>({ tipo: "dias", dias: 7 });
   const [vista, setVista] = useState<Vista>("documento");
   const [copiado, setCopiado] = useState(false);
+  const [remota, setRemota] = useState<Actividad | null>(null);
+  const [cargando, setCargando] = useState(false);
+  const [errorCarga, setErrorCarga] = useState("");
+  const abierto = useRef(false);
+
+  useEffect(() => {
+    if (open && !abierto.current) {
+      if (periodo === "rango" && desde && hasta) setSel({ tipo: "rango", desde, hasta });
+      else if (typeof periodo === "number") setSel({ tipo: "dias", dias: periodo });
+      else setSel({ tipo: "dias", dias: 7 });
+      setRemota(null);
+      setErrorCarga("");
+    }
+    abierto.current = open;
+  }, [open, periodo, desde, hasta]);
+
+  const ventana = limitesPeriodo(
+    sel.tipo === "dias" ? sel.dias : 7,
+    sel.tipo === "rango" ? { desde: sel.desde, hasta: sel.hasta } : null
+  );
+  const baseCubre = actividadCubre(actividad, ventana.desdeDia, ventana.hastaDia);
+  const remotaCubre = actividadCubre(remota, ventana.desdeDia, ventana.hastaDia);
+  const fuente = remotaCubre ? remota : baseCubre ? actividad : null;
+
+  useEffect(() => {
+    if (!open || baseCubre) return;
+    let cancel = false;
+    setCargando(true);
+    setErrorCarga("");
+    const params = new URLSearchParams({ project: "exa" });
+    if (sel.tipo === "rango") {
+      params.set("desde", sel.desde);
+      params.set("hasta", sel.hasta);
+    } else {
+      params.set("dias", String(sel.dias));
+    }
+    fetch(`/api/mis-tareas?${params}`)
+      .then(async (res) => {
+        const j = await res.json();
+        if (!res.ok || !j.success) throw new Error(j.message || "No se pudo armar el reporte");
+        if (!cancel) setRemota(j.actividad || null);
+      })
+      .catch((e) => {
+        if (!cancel) setErrorCarga(e instanceof Error ? e.message : "No se pudo armar el reporte");
+      })
+      .finally(() => {
+        if (!cancel) setCargando(false);
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [open, baseCubre, sel]);
 
   const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const rango = sel.tipo === "rango" ? { desde: sel.desde, hasta: sel.hasta } : null;
+  const dias = sel.tipo === "dias" ? sel.dias : ventana.dias;
 
   const data = useMemo(
     () =>
-      open
-        ? buildReporteData({ usuario, dias, tareas, actividad, origin })
+      open && fuente
+        ? buildReporteData({ usuario, dias, tareas, actividad: fuente, origin, rango })
         : null,
-    [open, usuario, dias, tareas, actividad, origin]
+    [open, usuario, dias, tareas, fuente, origin, rango]
   );
 
   const texto = useMemo(
     () =>
-      open
-        ? buildReporte({ usuario, dias, tareas, actividad, origin })
+      open && fuente
+        ? buildReporte({ usuario, dias, tareas, actividad: fuente, origin, rango })
         : "",
-    [open, usuario, dias, tareas, actividad, origin]
+    [open, usuario, dias, tareas, fuente, origin, rango]
   );
 
   const copiar = async () => {
@@ -471,10 +544,10 @@ export function ReporteDialog({
                 <button
                   key={p.dias}
                   type="button"
-                  onClick={() => setDias(p.dias)}
+                  onClick={() => setSel({ tipo: "dias", dias: p.dias })}
                   className={cn(
                     "rounded-md px-2.5 py-1.5 text-xs font-bold transition-colors",
-                    dias === p.dias
+                    sel.tipo === "dias" && sel.dias === p.dias
                       ? "bg-background text-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
                   )}
@@ -482,6 +555,14 @@ export function ReporteDialog({
                   {p.label}
                 </button>
               ))}
+              {sel.tipo === "rango" && (
+                <button
+                  type="button"
+                  className="rounded-md bg-background px-2.5 py-1.5 text-xs font-bold text-foreground shadow-sm"
+                >
+                  Rango
+                </button>
+              )}
             </div>
             <div className="ml-auto inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
               <button
@@ -515,7 +596,11 @@ export function ReporteDialog({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto bg-muted/20 px-4 py-4 sm:px-5">
-          {vista === "documento" && data ? (
+          {cargando && !data ? (
+            <p className="py-16 text-center text-sm text-muted-foreground">Cargando reporte...</p>
+          ) : errorCarga && !data ? (
+            <p className="py-16 text-center text-sm text-red-600">{errorCarga}</p>
+          ) : vista === "documento" && data ? (
             <ReportePreview data={data} />
           ) : (
             <pre className="whitespace-pre-wrap rounded-2xl border border-border/70 bg-card p-4 font-mono text-[11px] leading-relaxed text-foreground/90 shadow-sm sm:p-5">

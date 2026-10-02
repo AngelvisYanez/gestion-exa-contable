@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { canAssignWork, canSeeOversight } from "@/lib/auth/users";
 import { publishAsignacion, publishEvent } from "@/lib/events";
+import { listOfsercontCatalogo } from "@/lib/brief/catalog";
 import { generateTareaBrief } from "@/lib/brief/generate";
 import { tasksDbDis, tasksEmpCod } from "@/lib/empresa";
 import {
   AsignacionInvalidaError,
   attachEvidenciasTarea,
   createTarea,
+  deleteTarea,
   descripcionAvanceDesdeBody,
   getTareaDetalle,
   kpisTareas,
@@ -23,6 +25,15 @@ export async function GET(req: NextRequest) {
   try {
     const sp = req.nextUrl.searchParams;
     const db = tasksDbDis(sp.get("Ses_Dat_Dis"));
+
+    if (sp.get("catalogo") === "ofsercont") {
+      const session = await getSessionFromRequest(req);
+      if (!session) {
+        return NextResponse.json({ success: false, message: "No autorizado" }, { status: 401 });
+      }
+      const modulos = await listOfsercontCatalogo(db);
+      return NextResponse.json({ success: true, db, modulos });
+    }
 
     const detalleCod = parseInt(sp.get("detalle") || "0", 10);
     if (detalleCod > 0) {
@@ -224,6 +235,37 @@ export async function POST(req: NextRequest) {
         db,
         tarCod,
         estado,
+        actor: session?.name,
+      });
+      return NextResponse.json({ success: true, tarea });
+    }
+
+    if (action === "delete") {
+      if (!canSeeOversight(session?.role)) {
+        return NextResponse.json(
+          { success: false, message: "Solo el encargado puede borrar tareas." },
+          { status: 403 }
+        );
+      }
+      const tarCod = Number(body.Tar_Cod || 0);
+      if (!tarCod) {
+        return NextResponse.json({ success: false, message: "Tar_Cod requerido" }, { status: 400 });
+      }
+      let tarea: { Tar_Cod: number; Tar_Titulo: string };
+      try {
+        tarea = await deleteTarea(db, tarCod);
+      } catch (e) {
+        if (e instanceof Error && e.message === "Tarea no encontrada") {
+          return NextResponse.json({ success: false, message: e.message }, { status: 404 });
+        }
+        throw e;
+      }
+      publishEvent({
+        type: "tarea_actualizada",
+        title: "Tarea eliminada",
+        message: `#${tarCod}${tarea.Tar_Titulo ? ` · ${tarea.Tar_Titulo}` : ""}`,
+        db,
+        tarCod,
         actor: session?.name,
       });
       return NextResponse.json({ success: true, tarea });

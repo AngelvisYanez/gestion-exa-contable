@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FileText, Loader2, Sparkles } from "lucide-react";
 import type { Tarea } from "@/components/dashboard/types";
 import { Alert } from "@/components/ui/alert";
@@ -17,6 +17,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  OfsercontAlcanceFields,
+  type AlcanceOfsercont,
+} from "@/components/tareas/ofsercont-alcance-fields";
 import { useAuth } from "@/contexts/AuthContext";
 import type { TareaDetalle } from "@/lib/tareas";
 
@@ -26,6 +30,7 @@ type Props = {
   detalle: TareaDetalle["tarea"] | null;
   onClose: () => void;
   onGenerated?: () => void | Promise<void>;
+  alcance?: AlcanceOfsercont | null;
 };
 
 function stripHtml(html: string) {
@@ -39,7 +44,14 @@ function stripHtml(html: string) {
     .trim();
 }
 
-export function GenerarBriefDialog({ open, tarea, detalle, onClose, onGenerated }: Props) {
+export function GenerarBriefDialog({
+  open,
+  tarea,
+  detalle,
+  onClose,
+  onGenerated,
+  alcance,
+}: Props) {
   const { db } = useAuth();
   const [titulo, setTitulo] = useState("");
   const [descripcion, setDescripcion] = useState("");
@@ -56,17 +68,21 @@ export function GenerarBriefDialog({ open, tarea, detalle, onClose, onGenerated 
     llmNote: string;
   } | null>(null);
 
+  const seedRef = useRef({ detalle, tarea, alcance });
+  seedRef.current = { detalle, tarea, alcance };
+
   useEffect(() => {
     if (!open) return;
+    const { detalle: d, tarea: tar, alcance: a } = seedRef.current;
     setError("");
     setResult(null);
-    setTitulo(detalle?.Tar_Titulo || tarea?.Tar_Titulo || "");
-    setDescripcion(stripHtml(detalle?.Tar_Descripcion || tarea?.Tar_Descripcion || ""));
-    setProceso(detalle?.Tar_Proceso || "");
-    setModulo(detalle?.Tar_Modulo || "");
-    setDirectorio(detalle?.Tar_Directorio || "");
-    setTipo(detalle?.Tar_Brief_Tipo === "creacion" ? "creacion" : "mejora");
-  }, [open, detalle, tarea]);
+    setTitulo(d?.Tar_Titulo || tar?.Tar_Titulo || "");
+    setDescripcion(stripHtml(d?.Tar_Descripcion || tar?.Tar_Descripcion || ""));
+    setProceso(a?.proceso || d?.Tar_Proceso || "");
+    setModulo(a?.modulo || d?.Tar_Modulo || "");
+    setDirectorio(a?.directorio || d?.Tar_Directorio || "");
+    setTipo(d?.Tar_Brief_Tipo === "creacion" ? "creacion" : "mejora");
+  }, [open]);
 
   const generar = async () => {
     if (!tarea?.Tar_Cod) return;
@@ -129,8 +145,8 @@ export function GenerarBriefDialog({ open, tarea, detalle, onClose, onGenerated 
           </DialogTitle>
           <DialogDescription>
             Crea Markdown y PDF en <code className="text-xs">docs/</code> del proyecto gestion.
-            Gemini 3 analiza el directorio indicado en EXA OFSERCONT (no el ERP completo). WhatsApp
-            queda preparado (UltraMsg); por ahora se notifica en el panel.
+            Gemini 3 analiza el directorio del proceso elegido en el menú de EXA OFSERCONT.
+            WhatsApp queda preparado (UltraMsg); por ahora se notifica en el panel.
           </DialogDescription>
         </DialogHeader>
 
@@ -191,36 +207,17 @@ export function GenerarBriefDialog({ open, tarea, detalle, onClose, onGenerated 
             />
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="brief-proceso">Proceso</Label>
-              <Input
-                id="brief-proceso"
-                placeholder="Tesoreria, Facturacion…"
-                value={proceso}
-                onChange={(e) => setProceso(e.target.value)}
-                list="brief-procesos"
-              />
-              <datalist id="brief-procesos">
-                <option value="Tesoreria" />
-                <option value="Facturacion" />
-                <option value="Contabilidad" />
-                <option value="Compras" />
-                <option value="Inventario" />
-                <option value="RRHH" />
-                <option value="Administracion" />
-              </datalist>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="brief-modulo">Modulo</Label>
-              <Input
-                id="brief-modulo"
-                placeholder="CxPP lotes, Retenciones…"
-                value={modulo}
-                onChange={(e) => setModulo(e.target.value)}
-              />
-            </div>
-          </div>
+          <OfsercontAlcanceFields
+            db={db}
+            idPrefix="brief"
+            value={{ modulo, proceso, directorio }}
+            onChange={(next) => {
+              setModulo(next.modulo);
+              setProceso(next.proceso);
+              if (next.directorio) setDirectorio(next.directorio);
+              else if (!next.proceso) setDirectorio("");
+            }}
+          />
 
           <div className="space-y-1.5">
             <Label htmlFor="brief-dir">Directorio (OFSERCONT)</Label>

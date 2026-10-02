@@ -165,9 +165,17 @@ export async function GET(req: NextRequest) {
     }
     const total = items.length;
     const dias = parseInt(sp.get("dias") || "30", 10) || 30;
+    const desdeQ = sp.get("desde") || undefined;
+    const hastaQ = sp.get("hasta") || undefined;
     const actividad = emptyBecauseNoPer
       ? { desde: new Date().toISOString(), dias, avances: [], tiempo: [] }
-      : await actividadPersonal(db, { perCod, tarCodes: tareas.map((t) => t.Tar_Cod), dias });
+      : await actividadPersonal(db, {
+          perCod,
+          tarCodes: tareas.map((t) => t.Tar_Cod),
+          dias,
+          desde: desdeQ,
+          hasta: hastaQ,
+        });
 
     return NextResponse.json({
       success: true,
