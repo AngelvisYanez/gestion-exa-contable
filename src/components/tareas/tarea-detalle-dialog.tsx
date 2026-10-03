@@ -75,6 +75,58 @@ function fmtFechaHora(iso?: string | null) {
   return fmtFechaHoraZona(iso);
 }
 
+function briefAdjunto(
+  rel: string | null | undefined,
+  evidencias: TareaDetalle["evidencias_iniciales"]
+) {
+  if (!rel) return null;
+  const file = rel.replace(/\\/g, "/").split("/").pop() || "";
+  const ext = file.split(".").pop()?.toLowerCase() || "";
+  const stem = file.replace(/\.[^.]+$/, "").slice(0, 40);
+  if (!stem || !ext) return null;
+  return (
+    [...evidencias]
+      .reverse()
+      .find((e) => e.nombre.includes(stem) && e.nombre.toLowerCase().endsWith(`.${ext}`)) || null
+  );
+}
+
+function BriefArchivos({
+  mdRel,
+  pdfRel,
+  evidencias,
+}: {
+  mdRel: string;
+  pdfRel: string | null;
+  evidencias: TareaDetalle["evidencias_iniciales"];
+}) {
+  const items = [mdRel, pdfRel].filter((rel): rel is string => Boolean(rel));
+  return (
+    <div className="space-y-1.5">
+      <div>Ultimo brief adjunto a la tarea</div>
+      <div className="flex flex-wrap gap-2">
+        {items.map((rel) => {
+          const file = briefAdjunto(rel, evidencias);
+          return file ? (
+            <a
+              key={rel}
+              href={file.url}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-background px-2 py-1 font-semibold text-foreground hover:bg-muted"
+            >
+              <FileText className="size-3.5 shrink-0" />
+              <span className="max-w-[220px] truncate">{file.nombre}</span>
+            </a>
+          ) : (
+            <code key={rel}>{rel}</code>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function vencimiento(fin?: string | null, abierta = true) {
   if (!fin || !abierta) return null;
   const hoy = startOfDayZona(hoyFecha());
@@ -396,15 +448,11 @@ export function TareaDetalleDialog({
                     </div>
                   ) : null}
                   {t?.Tar_Brief_Md ? (
-                    <div>
-                      Ultimo brief: <code>{t.Tar_Brief_Md}</code>
-                      {t.Tar_Brief_Pdf ? (
-                        <>
-                          {" "}
-                          · <code>{t.Tar_Brief_Pdf}</code>
-                        </>
-                      ) : null}
-                    </div>
+                    <BriefArchivos
+                      mdRel={t.Tar_Brief_Md}
+                      pdfRel={t.Tar_Brief_Pdf}
+                      evidencias={data?.evidencias_iniciales || []}
+                    />
                   ) : null}
                 </div>
               </section>

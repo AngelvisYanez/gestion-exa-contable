@@ -233,40 +233,52 @@ export async function saveScreenshot(
   return `gestion/adjuntos/monitoreo/${fechaDir}/${nombre}`;
 }
 
-export async function saveEvidencia(
-  refCod: number,
-  file: File,
-  kind: "tar" | "tic" = "tar"
-): Promise<string> {
-  const ext = path.extname(file.name || "").toLowerCase().replace(".", "");
-  if (!isAllowedEvidenciaExt(ext)) {
-    throw new Error(
-      "Formato no permitido. Usa imagen, PDF, Word, Excel, CSV, MD o TXT."
-    );
-  }
-  if (file.size > EVIDENCIA_MAX_BYTES) {
-    throw new Error(`El archivo supera ${Math.round(EVIDENCIA_MAX_BYTES / (1024 * 1024))} MB.`);
-  }
-  const bytes = Buffer.from(await file.arrayBuffer());
-  if (!bytes.length) throw new Error("Archivo vacio.");
-
-  const fechaDir = hoyFecha();
-  const dir = path.join(capturesRoot(), "evidencias", fechaDir);
-  fs.mkdirSync(dir, { recursive: true });
-
+function evidenciaNombre(refCod: number, filename: string, kind: "tar" | "tic") {
+  const ext = path.extname(filename || "").toLowerCase().replace(".", "");
   const base =
     path
-      .basename(file.name || "archivo", path.extname(file.name || ""))
+      .basename(filename || "archivo", path.extname(filename || ""))
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
       .replace(/[^a-zA-Z0-9._-]+/g, "_")
       .replace(/^_+|_+$/g, "")
       .slice(0, 48) || "archivo";
+  return { ext, nombre: `${kind}_${refCod}_${horaHisZona()}_${base}.${ext}` };
+}
 
-  const nombre = `${kind}_${refCod}_${horaHisZona()}_${base}.${ext}`;
+/** Copia bytes ya generados (brief MD/PDF) al almacén de evidencias de la tarea. */
+export function saveEvidenciaBytes(
+  refCod: number,
+  filename: string,
+  bytes: Buffer,
+  kind: "tar" | "tic" = "tar"
+): string {
+  const { ext, nombre } = evidenciaNombre(refCod, filename, kind);
+  if (!isAllowedEvidenciaExt(ext)) {
+    throw new Error(
+      "Formato no permitido. Usa imagen, PDF, Word, Excel, CSV, MD o TXT."
+    );
+  }
+  if (bytes.length > EVIDENCIA_MAX_BYTES) {
+    throw new Error(`El archivo supera ${Math.round(EVIDENCIA_MAX_BYTES / (1024 * 1024))} MB.`);
+  }
+  if (!bytes.length) throw new Error("Archivo vacio.");
+
+  const fechaDir = hoyFecha();
+  const dir = path.join(capturesRoot(), "evidencias", fechaDir);
+  fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, nombre), bytes);
 
   return `gestion/adjuntos/monitoreo/evidencias/${fechaDir}/${nombre}`;
+}
+
+export async function saveEvidencia(
+  refCod: number,
+  file: File,
+  kind: "tar" | "tic" = "tar"
+): Promise<string> {
+  const bytes = Buffer.from(await file.arrayBuffer());
+  return saveEvidenciaBytes(refCod, file.name || "archivo", bytes, kind);
 }
 
 export function toPublicCaptureUrl(ruta: string | null | undefined): string {

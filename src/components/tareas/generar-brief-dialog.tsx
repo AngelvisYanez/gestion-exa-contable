@@ -144,9 +144,9 @@ export function GenerarBriefDialog({
             Generar brief de desarrollo
           </DialogTitle>
           <DialogDescription>
-            Crea Markdown y PDF en <code className="text-xs">docs/</code> del proyecto gestion.
-            Gemini 3 analiza el directorio del proceso elegido en el menú de EXA OFSERCONT.
-            WhatsApp queda preparado (UltraMsg); por ahora se notifica en el panel.
+            Crea Markdown y PDF en <code className="text-xs">docs/</code> y los adjunta al detalle
+            de la tarea. Gemini 3 analiza el directorio del proceso elegido en el menú de EXA
+            OFSERCONT. WhatsApp queda preparado (UltraMsg); por ahora se notifica en el panel.
           </DialogDescription>
         </DialogHeader>
 
@@ -155,7 +155,7 @@ export function GenerarBriefDialog({
           {result && (
             <Alert variant="success" className="border-emerald-200 bg-emerald-50 text-emerald-900">
               <div className="space-y-1 text-sm">
-                <p className="font-semibold">Brief generado</p>
+                <p className="font-semibold">Brief generado y adjunto a la tarea</p>
                 <p className="flex items-center gap-1.5 text-xs">
                   <FileText className="size-3.5" />
                   {result.mdRel}

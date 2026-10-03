@@ -7,6 +7,8 @@ import { buildCodeContext, buildGeminiBriefPrompt } from "./context";
 import { generateWithGemini, getGeminiConfig, validateBriefMarkdown } from "./gemini";
 import { scanOfsercontModule } from "./ofsercont-scan";
 import { writeBriefPdf } from "./pdf";
+import { saveEvidenciaBytes } from "@/lib/captures";
+import { attachEvidenciasTarea } from "@/lib/tareas";
 import { resolvePhonesForTarea } from "@/lib/whatsapp/phones";
 import {
   getUltramsgConfig,
@@ -121,6 +123,8 @@ export type GenerateBriefResult = {
   pdfPath: string;
   mdRel: string;
   pdfRel: string;
+  /** Rutas de evidencia adjuntas a la descripción de la tarea. */
+  adjuntos: string[];
   ofsercont: ReturnType<typeof scanOfsercontModule>;
   llm: {
     used: boolean;
@@ -307,6 +311,10 @@ export async function generateTareaBrief(input: GenerateBriefInput): Promise<Gen
   const mdRel = path.posix.join("docs", mdName);
   const pdfRel = path.posix.join("docs", pdfName);
 
+  const mdRuta = saveEvidenciaBytes(input.tarCod, mdName, fs.readFileSync(mdAbs));
+  const pdfRuta = saveEvidenciaBytes(input.tarCod, pdfName, fs.readFileSync(pdfAbs));
+  const attached = await attachEvidenciasTarea(input.dbDis, input.tarCod, [mdRuta, pdfRuta]);
+
   await prisma.$executeRawUnsafe(
     `UPDATE aud_tareas
      SET Tar_Proceso = ?,
@@ -394,6 +402,7 @@ export async function generateTareaBrief(input: GenerateBriefInput): Promise<Gen
     pdfPath: pdfAbs,
     mdRel,
     pdfRel,
+    adjuntos: [mdRuta, pdfRuta].filter((r) => attached.adjuntos.includes(r)),
     ofsercont: scan,
     llm: llmMeta,
     pdfEngine: pdfWrite.engine,

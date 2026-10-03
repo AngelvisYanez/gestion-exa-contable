@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { assertApiKey, jsonRes, pick, readBody } from "@/lib/api";
+import { assertApiKey, isUploadedFile, jsonRes, pick, readBody } from "@/lib/api";
 import { authenticateByCedula } from "@/lib/auth/exaLogin";
 import { saveEvidencia, saveScreenshot, toPublicCaptureUrl } from "@/lib/captures";
 import { altDatabase, getPrisma, telemetriaMirrorEnabled } from "@/lib/db";
@@ -50,15 +50,15 @@ async function handle(req: NextRequest) {
   const keyErr = assertApiKey(req);
   if (keyErr) return keyErr;
 
-  const { form, json } = await readBody(req);
-  const accion = pick(form, json, req, "accion").trim();
-  // Scope fijo: Emp_Cod=96 / Dat_Dis=exa (Torres Carrion MATRIZ)
-  const dbDis = tasksDbDis();
-  const empCod = tasksEmpCod();
-  const prisma = getPrisma(dbDis);
-  await ensureMonitoreoSchema(prisma);
-
   try {
+    const { form, json } = await readBody(req);
+    const accion = pick(form, json, req, "accion").trim();
+    // Scope fijo: Emp_Cod=96 / Dat_Dis=exa (Torres Carrion MATRIZ)
+    const dbDis = tasksDbDis();
+    const empCod = tasksEmpCod();
+    const prisma = getPrisma(dbDis);
+    await ensureMonitoreoSchema(prisma);
+
     if (accion === "login") {
       const cedula =
         pick(form, json, req, "cedula").trim() ||
@@ -193,7 +193,7 @@ async function handle(req: NextRequest) {
 
       let capturaRuta: string | null = null;
       const shot = form?.get("screenshot");
-      if (shot instanceof File && shot.size > 0) {
+      if (isUploadedFile(shot) && shot.size > 0) {
         capturaRuta = await saveScreenshot(perCod, shot);
       }
 
@@ -504,7 +504,7 @@ async function handle(req: NextRequest) {
       if (form) {
         for (const key of ["files", "file", "evidencia", "screenshot"]) {
           for (const v of form.getAll(key)) {
-            if (v instanceof File && v.size > 0) files.push(v);
+            if (isUploadedFile(v) && v.size > 0) files.push(v);
           }
         }
       }

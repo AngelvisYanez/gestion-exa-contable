@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isUploadedFile } from "@/lib/api";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { resolvePerCod } from "@/lib/auth/resolvePer";
 import { canAssignWork, canSeeOversight, matchTeamMember } from "@/lib/auth/users";
@@ -53,7 +54,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const files = form.getAll("files").filter((f): f is File => f instanceof File && f.size > 0);
+    const files = form.getAll("files").filter((f): f is File => isUploadedFile(f) && f.size > 0);
     if (!files.length) {
       return NextResponse.json({ success: false, message: "No se recibieron archivos." }, { status: 400 });
     }

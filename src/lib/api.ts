@@ -67,6 +67,18 @@ export async function readBody(req: NextRequest): Promise<{
   }
 }
 
+/** Node < 20 no define el global File; `instanceof File` lanza ReferenceError. */
+export function isUploadedFile(value: unknown): value is File {
+  if (typeof value !== "object" || value === null) return false;
+  if (typeof File === "function" && value instanceof File) return true;
+  const blob = value as { arrayBuffer?: unknown; stream?: unknown; name?: unknown; size?: unknown };
+  return (
+    typeof blob.size === "number" &&
+    typeof blob.name === "string" &&
+    (typeof blob.arrayBuffer === "function" || typeof blob.stream === "function")
+  );
+}
+
 export function pick(
   form: FormData | null,
   json: Record<string, unknown> | null,
@@ -76,7 +88,7 @@ export function pick(
 ): string {
   if (form) {
     const v = form.get(key);
-    if (v != null && !(v instanceof File) && String(v) !== "") return String(v);
+    if (v != null && !isUploadedFile(v) && String(v) !== "") return String(v);
   }
   if (json && json[key] != null && String(json[key]) !== "") return String(json[key]);
   const q = req.nextUrl.searchParams.get(key);
