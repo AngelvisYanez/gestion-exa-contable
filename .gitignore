@@ -8,7 +8,7 @@ logs/
 *.tsbuildinfo
 .DS_Store
 public/adjuntos
-capturas/
+/capturas/
 agente_monitoreo/dist/
 agente_monitoreo/build/
 agente_monitoreo/build_new/

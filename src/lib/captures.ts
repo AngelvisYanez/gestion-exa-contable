@@ -211,6 +211,34 @@ export function purgeCaptureFilesRespectingProtected(opts: {
   return result;
 }
 
+/** JPEG/PNG/WEBP/GIF reales. Un body multipart dañado no empieza por estos bytes. */
+export function imageKindFromBytes(bytes: Buffer): "jpg" | "png" | "webp" | "gif" | null {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "jpg";
+  if (
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47
+  ) {
+    return "png";
+  }
+  if (
+    bytes.length >= 12 &&
+    bytes.toString("ascii", 0, 4) === "RIFF" &&
+    bytes.toString("ascii", 8, 12) === "WEBP"
+  ) {
+    return "webp";
+  }
+  if (
+    bytes.length >= 6 &&
+    (bytes.toString("ascii", 0, 6) === "GIF87a" || bytes.toString("ascii", 0, 6) === "GIF89a")
+  ) {
+    return "gif";
+  }
+  return null;
+}
+
 /** Guarda screenshot y devuelve ruta legacy compatible: gestion/adjuntos/monitoreo/... */
 export async function saveScreenshot(
   perCod: number,
@@ -219,14 +247,21 @@ export async function saveScreenshot(
   const bytes = Buffer.from(await file.arrayBuffer());
   if (!bytes.length) return null;
 
+  const kind = imageKindFromBytes(bytes);
+  if (!kind || kind === "gif") {
+    console.error(
+      "[capturas] screenshot rechazado: no es JPEG/PNG/WEBP",
+      `size=${bytes.length}`,
+      `head=${bytes.subarray(0, 8).toString("hex")}`
+    );
+    return null;
+  }
+
   const fechaDir = hoyFecha();
   const dir = path.join(capturesRoot(), fechaDir);
   fs.mkdirSync(dir, { recursive: true });
 
-  let ext = path.extname(file.name || "").toLowerCase().replace(".", "");
-  if (!["jpg", "jpeg", "png", "webp"].includes(ext)) ext = "jpg";
-
-  const nombre = `dev_${perCod}_${horaHisZona()}_${Date.now().toString(16)}.${ext}`;
+  const nombre = `dev_${perCod}_${horaHisZona()}_${Date.now().toString(16)}.${kind === "jpg" ? "jpg" : kind}`;
   const dest = path.join(dir, nombre);
   fs.writeFileSync(dest, bytes);
 
@@ -294,4 +329,48 @@ export function toPublicCaptureUrl(ruta: string | null | undefined): string {
     return "/api/capturas/" + r;
   }
   return "/api/capturas/" + r.replace(/^\/+/, "");
+}
+
+function safeUnder(root: string, parts: string[]): string | null {
+  if (!parts.length) return null;
+  if (
+    parts.some(
+      (p) => !p || p === "." || p === ".." || p.includes("\0") || p.includes("/") || p.includes("\\")
+    )
+  ) {
+    return null;
+  }
+  const rootNorm = path.resolve(root);
+  const full = path.resolve(rootNorm, ...parts);
+  if (full !== rootNorm && !full.startsWith(rootNorm + path.sep)) return null;
+  return full;
+}
+
+/**
+ * `/api/capturas/monitoreo/<rel>` → archivo bajo capturesRoot().
+ * La ruta pública conserva el prefijo legacy `monitoreo/`; en disco CAPTURES_DIR ya es esa carpeta.
+ */
+export function resolveCaptureFile(segments: string[]): string | null {
+  const parts = segments.map((s) => {
+    try {
+      return decodeURIComponent(s);
+    } catch {
+      return s;
+    }
+  });
+  const stripped = parts[0] === "monitoreo" ? parts.slice(1) : parts;
+  const roots = [capturesRoot(), path.resolve(process.cwd(), "public", "adjuntos")];
+  const rels = [stripped, parts];
+  for (const root of roots) {
+    for (const rel of rels) {
+      const full = safeUnder(root, rel);
+      if (!full) continue;
+      try {
+        if (fs.existsSync(full) && fs.statSync(full).isFile()) return full;
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  return null;
 }

@@ -75,5 +75,6 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image).*)"],
+  // Subidas multipart fuera del middleware: clona el body y lo corta a 10 MB.
+  matcher: ["/((?!_next/static|_next/image|api/monitoreo|api/evidencias).*)"],
 };
