@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { getPrisma } from "@/lib/db";
+import { getPrisma, sanitizeDbDis } from "@/lib/db";
 import { publishEvent } from "@/lib/events";
 import { buildBriefMarkdown, type BriefTipo } from "./build-brief";
 import { buildCodeContext, buildGeminiBriefPrompt } from "./context";
@@ -17,7 +17,9 @@ import {
   type UltramsgSendResult,
 } from "@/lib/whatsapp/ultramsg";
 
-let briefColumnsReady: boolean | null = null;
+/** Por base. El mismo booleano global provocaba 1054 al cambiar de exa a servicios. */
+const briefReadyByDb = new Map<string, boolean>();
+const briefEnsureInflight = new Map<string, Promise<boolean>>();
 
 const BRIEF_COLS = [
   "Tar_Proceso",
@@ -29,9 +31,8 @@ const BRIEF_COLS = [
   "Tar_Brief_Fecha",
 ] as const;
 
-export async function ensureTareaBriefColumns(dbDis: string) {
-  if (briefColumnsReady === true) return true;
-  const prisma = getPrisma(dbDis);
+async function detectBriefColumns(dbKey: string): Promise<boolean> {
+  const prisma = getPrisma(dbKey);
   try {
     for (const col of BRIEF_COLS) {
       const cols = await prisma.$queryRawUnsafe<Array<{ Field: string }>>(
@@ -68,12 +69,25 @@ export async function ensureTareaBriefColumns(dbDis: string) {
         );
       }
     }
-    briefColumnsReady = true;
+    briefReadyByDb.set(dbKey, true);
     return true;
   } catch {
-    briefColumnsReady = false;
     return false;
   }
+}
+
+export async function ensureTareaBriefColumns(dbDis: string) {
+  const key = sanitizeDbDis(dbDis);
+  if (briefReadyByDb.get(key) === true) return true;
+
+  const pending = briefEnsureInflight.get(key);
+  if (pending) return pending;
+
+  const job = detectBriefColumns(key).finally(() => {
+    briefEnsureInflight.delete(key);
+  });
+  briefEnsureInflight.set(key, job);
+  return job;
 }
 
 function docsRoot(): string {

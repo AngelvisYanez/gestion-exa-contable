@@ -4,6 +4,7 @@ ExaMonitor - Flet UI alineada al panel EXA Tareas.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -26,7 +27,7 @@ from win_shell import (
     start_input_counter,
 )
 
-AGENT_VERSION = "2.6.0-flet"
+AGENT_VERSION = "2.7.1-flet"
 
 # Tokens alineados a globals.css / Badge del dashboard EXA
 C = {
@@ -58,8 +59,10 @@ C = {
     "sky_hover": "#f0f9ff",
 }
 
+SERVIDOR_FIJO = "https://gestion.exacontable.com"
+
 DEFAULT_CONFIG = {
-    "server_url": "http://localhost:3000",
+    "server_url": SERVIDOR_FIJO,
     "api_path": "/api/monitoreo",
     "db_dis": "exa",
     "identificador": "",
@@ -99,6 +102,7 @@ def estado_style(estado: str) -> tuple[str, str]:
         "En Proceso": (C["info_bg"], C["info_fg"]),
         "Asignado": (C["muted_bg"], C["text"]),
         "Pendiente": (C["muted_badge_bg"], C["muted_badge_fg"]),
+        "Por asignar": (C["warn_bg"], C["warn_fg"]),
         "Pausada": (C["warn_bg"], C["warn_fg"]),
         "Resuelto": (C["success_bg"], C["success_fg"]),
     }
@@ -200,6 +204,23 @@ def evidencia_tipo(nombre: str) -> str:
     }.get(ext, ext.upper() or "Archivo")
 
 
+EVIDENCIA_EXTS = {
+    "jpg",
+    "jpeg",
+    "png",
+    "webp",
+    "gif",
+    "pdf",
+    "doc",
+    "docx",
+    "xls",
+    "xlsx",
+    "csv",
+    "txt",
+    "md",
+}
+
+
 def safe_filename(nombre: str) -> str:
     base = Path(nombre or "evidencia").name
     base = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", base).strip(" .") or "evidencia"
@@ -209,7 +230,7 @@ def safe_filename(nombre: str) -> str:
 def desc_box(text: str) -> ft.Container:
     return ft.Container(
         content=ft.Text(
-            text or "Sin descripcion.",
+            text or "Sin descripción.",
             size=13,
             color=C["text"],
             selectable=True,
@@ -244,6 +265,7 @@ class ExaMonitorApp:
         self._fg_title = "EXA Monitor"
         self._fg_process = "ExaMonitor.exe"
         self.tipo_filtro = "todos"
+        self.asignables: list = []
         self._pending_files: list[str] = []
         self.file_picker = ft.FilePicker()
         self.tray_icon = None
@@ -267,6 +289,7 @@ class ExaMonitorApp:
             except Exception:
                 pass
         self.config.pop("password", None)
+        self.config["server_url"] = SERVIDOR_FIJO
 
     def save_config(self):
         try:
@@ -291,6 +314,10 @@ class ExaMonitorApp:
             color_scheme_seed=C["primary"],
             font_family="Segoe UI",
         )
+        try:
+            p.locale = ft.Locale("es", "EC")
+        except Exception:
+            pass
         try:
             p.window.icon = "favicon.png"
         except Exception:
@@ -453,7 +480,7 @@ class ExaMonitorApp:
             padding=ft.Padding.symmetric(horizontal=10, vertical=4),
             border_radius=8,
         )
-        self.subtitle = ft.Text("Monitoreo - sin sesion", size=11, color=C["text_muted"])
+        self.subtitle = ft.Text("Monitoreo · sin sesión", size=11, color=C["text_muted"])
         self.title_main = ft.Text("EXA Monitor", size=15, weight=ft.FontWeight.BOLD, color=C["text"])
 
         self.topbar = ft.Container(
@@ -492,15 +519,8 @@ class ExaMonitorApp:
         )
 
         # Login
-        self.tf_server = ft.TextField(
-            label="Servidor",
-            value=self.config.get("server_url", "http://localhost:3000"),
-            border_color=C["border"],
-            focused_border_color=C["primary"],
-            text_size=13,
-        )
         self.tf_cedula = ft.TextField(
-            label="Cedula",
+            label="Cédula",
             value=self.config.get("cedula") or self.config.get("identificador", ""),
             border_color=C["border"],
             focused_border_color=C["primary"],
@@ -508,16 +528,21 @@ class ExaMonitorApp:
             text_size=13,
         )
         self.tf_pass = ft.TextField(
-            label="Contrasena",
+            label="Contraseña",
             password=True,
             can_reveal_password=True,
+            keyboard_type=ft.KeyboardType.VISIBLE_PASSWORD,
+            capitalization=ft.TextCapitalization.NONE,
+            autocorrect=False,
+            enable_suggestions=False,
             border_color=C["border"],
             focused_border_color=C["primary"],
             text_size=13,
+            text_style=ft.TextStyle(font_family="Segoe UI", size=13),
             on_submit=lambda _e: self._start_login(),
         )
         self.btn_login = ft.FilledButton(
-            "Iniciar sesion",
+            "Iniciar sesión",
             icon=ft.Icons.LOGIN,
             style=ft.ButtonStyle(
                 bgcolor=C["primary"],
@@ -544,9 +569,9 @@ class ExaMonitorApp:
                                     font_family="Segoe UI Black",
                                 ),
                                 ft.Text("Tareas y monitoreo", size=12, color="#f3c6c6"),
-                                ft.Text("Iniciar sesion", size=24, weight=ft.FontWeight.BOLD, color="#ffffff"),
+                                ft.Text("Iniciar sesión", size=24, weight=ft.FontWeight.BOLD, color="#ffffff"),
                                 ft.Text(
-                                    "Usa tu cedula y contrasena de EXA.",
+                                    "Usa tu cédula y contraseña de EXA.",
                                     size=12,
                                     color="#f5d0d0",
                                 ),
@@ -561,7 +586,6 @@ class ExaMonitorApp:
                     ft.Container(
                         content=ft.Column(
                             [
-                                self.tf_server,
                                 self.tf_cedula,
                                 self.tf_pass,
                                 self.login_error,
@@ -608,7 +632,7 @@ class ExaMonitorApp:
         # Active task dropdown
         self.dd_active = ft.Dropdown(
             label="Tarea / ticket activo",
-            hint_text="Selecciona para telemetria",
+            hint_text="Selecciona para telemetría",
             options=[],
             border_color=C["border"],
             focused_border_color=C["primary"],
@@ -631,23 +655,27 @@ class ExaMonitorApp:
 
         self.tasks_list_view = ft.ListView(expand=True, spacing=8, padding=0)
 
+        self.card_activa = self._card(
+            ft.Text("Tarea / ticket activo", size=13, weight=ft.FontWeight.W_700, color=C["text"]),
+            ft.Text(
+                "Se usa para telemetría y seguimiento en vivo.",
+                size=11,
+                color=C["text_muted"],
+            ),
+            self.dd_active,
+        )
+        self.lbl_lista_titulo = ft.Text("Mis tareas", size=15, weight=ft.FontWeight.BOLD, color=C["text"])
+        self.lbl_lista_hint = ft.Text("Clic para marcar activa", size=11, color=C["text_muted"])
+
         self.workspace = ft.Column(
             [
                 ft.Row([self.btn_refresh, self.lbl_kpis], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                self._card(
-                    ft.Text("Tarea / ticket activo", size=13, weight=ft.FontWeight.W_700, color=C["text"]),
-                    ft.Text(
-                        "Se usa para telemetria y seguimiento en vivo.",
-                        size=11,
-                        color=C["text_muted"],
-                    ),
-                    self.dd_active,
-                ),
+                self.card_activa,
                 self._card(
                     ft.Row(
                         [
-                            ft.Text("Mis tareas", size=15, weight=ft.FontWeight.BOLD, color=C["text"]),
-                            ft.Text("Clic para marcar activa", size=11, color=C["text_muted"]),
+                            self.lbl_lista_titulo,
+                            self.lbl_lista_hint,
                         ],
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                     ),
@@ -766,7 +794,15 @@ class ExaMonitorApp:
                 [
                     badge(estado, ebg, efg),
                     ft.Text(
-                        f"Fin {fin}" if (fin and not is_ticket) else "",
+                        " · ".join(
+                            p
+                            for p in [
+                                (t.get("Empresa") or "").strip(),
+                                (t.get("Llegada") or "").strip(),
+                                f"Fin {fin}" if (fin and not is_ticket) else "",
+                            ]
+                            if p
+                        ),
                         size=11,
                         color=C["text_muted"],
                     ),
@@ -1034,6 +1070,7 @@ class ExaMonitorApp:
         cod = int(trabajo.get("Cod") or 0)
         puede_avance = bool(trabajo.get("puede_registrar_avance"))
         puede_estado = bool(trabajo.get("puede_cambiar_estado"))
+        puede_asignar = bool(trabajo.get("puede_asignar"))
         pct_actual = int(trabajo.get("Ava_Porcentaje") or 0)
         estado = trabajo.get("Estado") or ""
 
@@ -1117,7 +1154,7 @@ class ExaMonitorApp:
                 for x in [
                     meta_row(ft.Icons.PERSON_OUTLINE, "Enviado por", trabajo.get("Enviado_Por")),
                     meta_row(ft.Icons.BUSINESS, "Empresa", trabajo.get("Empresa")),
-                    meta_row(ft.Icons.PHONE_OUTLINED, "Telefono", trabajo.get("Telefono")),
+                    meta_row(ft.Icons.PHONE_OUTLINED, "Teléfono", trabajo.get("Telefono")),
                     meta_row(ft.Icons.HANDYMAN_OUTLINED, "Proceso", trabajo.get("Proceso")),
                     meta_row(ft.Icons.PERSON_OUTLINE, "Asignado", trabajo.get("Asignado_Nombre")),
                 ]
@@ -1156,7 +1193,7 @@ class ExaMonitorApp:
                                     spacing=8,
                                 ),
                                 ft.Text(
-                                    ((a.get("realizado") or "")[:220]) or "Sin nota",
+                                    (plain_text(a.get("realizado"))[:220]) or "Sin nota",
                                     size=12,
                                     color=C["text"],
                                 ),
@@ -1169,25 +1206,178 @@ class ExaMonitorApp:
                     )
                 )
 
-        tf_pct = ft.TextField(
-            label="Nuevo avance %",
-            value=str(pct_actual),
-            keyboard_type=ft.KeyboardType.NUMBER,
-            border_color=C["border"],
-            focused_border_color=C["primary"],
-            text_size=13,
+        lbl_pct = ft.Text(
+            f"{pct_actual}%",
+            size=22,
+            weight=ft.FontWeight.W_700,
+            color=C["text"],
         )
+        lbl_delta = ft.Text(f"igual que {pct_actual}%", size=11, color=C["text_muted"])
+        slider_pct = ft.Slider(
+            min=0,
+            max=100,
+            divisions=100,
+            round=0,
+            value=float(max(0, min(100, pct_actual))),
+            label="{value}%",
+            active_color="#059669",
+            inactive_color=C["border"],
+            thumb_color="#059669",
+            expand=True,
+        )
+
+        def pct_actual_slider() -> int:
+            try:
+                return int(round(float(slider_pct.value if slider_pct.value is not None else 0)))
+            except Exception:
+                return 0
+
+        def pintar_pct(_e=None):
+            v = pct_actual_slider()
+            d = v - pct_actual
+            lbl_pct.value = f"{v}%"
+            if d > 0:
+                lbl_delta.value = f"+{d} vs {pct_actual}%"
+                lbl_delta.color = C["success_fg"]
+            elif d < 0:
+                lbl_delta.value = f"{d} vs {pct_actual}%"
+                lbl_delta.color = C["danger_fg"]
+            else:
+                lbl_delta.value = f"igual que {pct_actual}%"
+                lbl_delta.color = C["text_muted"]
+            self.page.update()
+
+        def fijar_pct(nuevo: int):
+            slider_pct.value = float(max(0, min(100, nuevo)))
+            pintar_pct()
+
+        slider_pct.on_change = pintar_pct
+
+        def chip_pct(texto: str, nuevo: int) -> ft.Control:
+            return ft.OutlinedButton(
+                texto,
+                style=ft.ButtonStyle(
+                    color=C["text"],
+                    padding=ft.Padding.symmetric(horizontal=10, vertical=0),
+                    side=ft.BorderSide(1, C["border"]),
+                    shape=ft.RoundedRectangleBorder(radius=8),
+                    text_style=ft.TextStyle(size=12, weight=ft.FontWeight.W_600),
+                ),
+                on_click=lambda _e, n=nuevo: fijar_pct(pct_actual_slider() + n if n < 100 else 100),
+            )
+
+        barra_avance = ft.Container(
+            content=ft.Column(
+                [
+                    ft.Row(
+                        [
+                            ft.Text("Porcentaje de avance", size=12, weight=ft.FontWeight.W_700, color=C["text"]),
+                            ft.Column(
+                                [lbl_pct, lbl_delta],
+                                spacing=0,
+                                horizontal_alignment=ft.CrossAxisAlignment.END,
+                                tight=True,
+                            ),
+                        ],
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    slider_pct,
+                    ft.Row(
+                        [
+                            chip_pct("+5%", 5),
+                            chip_pct("+10%", 10),
+                            chip_pct("+25%", 25),
+                            chip_pct("100%", 100),
+                        ],
+                        spacing=6,
+                        wrap=True,
+                    ),
+                ],
+                spacing=4,
+                tight=True,
+            ),
+            bgcolor=C["muted_bg"],
+            border=ft.Border.all(1, C["border"]),
+            border_radius=10,
+            padding=ft.Padding.only(left=12, right=12, top=10, bottom=8),
+        )
+
+        sel_editor = {"start": 0, "end": 0}
+
+        def on_sel(e):
+            s = getattr(e, "selection", None)
+            if s is None:
+                return
+            sel_editor["start"] = int(getattr(s, "start", 0) or 0)
+            sel_editor["end"] = int(getattr(s, "end", 0) or 0)
+
         tf_realizado = ft.TextField(
-            label="Que avanzaste",
             multiline=True,
-            min_lines=3,
-            max_lines=5,
-            border_color=C["border"],
-            focused_border_color=C["primary"],
+            min_lines=4,
+            max_lines=7,
+            hint_text="Describe lo que avanzaste. Selecciona texto y usa la barra de formato.",
+            border=ft.InputBorder.NONE,
+            content_padding=ft.Padding.symmetric(horizontal=12, vertical=10),
             text_size=13,
+            on_selection_change=on_sel,
+        )
+
+        def envolver(abre: str, cierra: str):
+            def _(_e):
+                text = tf_realizado.value or ""
+                a = max(0, min(sel_editor["start"], len(text)))
+                b = max(0, min(sel_editor["end"], len(text)))
+                if a > b:
+                    a, b = b, a
+                medio = text[a:b] if a != b else ""
+                tf_realizado.value = text[:a] + abre + medio + cierra + text[b:]
+                self.page.update()
+
+            return _
+
+        def btn_fmt(icon, tip: str, abre: str, cierra: str) -> ft.Control:
+            return ft.IconButton(
+                icon=icon,
+                tooltip=tip,
+                icon_size=16,
+                icon_color=C["text"],
+                style=ft.ButtonStyle(
+                    padding=4,
+                    shape=ft.RoundedRectangleBorder(radius=6),
+                ),
+                on_click=envolver(abre, cierra),
+            )
+
+        editor = ft.Container(
+            content=ft.Column(
+                [
+                    ft.Container(
+                        content=ft.Row(
+                            [
+                                btn_fmt(ft.Icons.FORMAT_BOLD, "Negrita", "<strong>", "</strong>"),
+                                btn_fmt(ft.Icons.FORMAT_ITALIC, "Cursiva", "<em>", "</em>"),
+                                btn_fmt(ft.Icons.FORMAT_UNDERLINED, "Subrayado", "<u>", "</u>"),
+                                btn_fmt(ft.Icons.FORMAT_LIST_BULLETED, "Lista", "<ul><li>", "</li></ul>"),
+                            ],
+                            spacing=0,
+                        ),
+                        bgcolor=C["muted_bg"],
+                        border=ft.Border.only(bottom=ft.BorderSide(1, C["border"])),
+                        padding=ft.Padding.symmetric(horizontal=4, vertical=0),
+                    ),
+                    tf_realizado,
+                ],
+                spacing=0,
+                tight=True,
+            ),
+            border=ft.Border.all(1, C["border"]),
+            border_radius=10,
+            clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+            bgcolor=C["card"],
         )
         lbl_avance_err = ft.Text("", size=12, color=C["danger_fg"], visible=False)
-        lbl_files = ft.Text("Ningun archivo seleccionado", size=11, color=C["text_muted"])
+        lbl_files = ft.Text("Ningún archivo seleccionado", size=11, color=C["text_muted"])
         btn_pick = ft.OutlinedButton(
             "Adjuntar evidencias",
             icon=ft.Icons.ATTACH_FILE,
@@ -1246,54 +1436,180 @@ class ExaMonitorApp:
                 if len(names) > 3:
                     lbl_files.value += "..."
             else:
-                lbl_files.value = "Ningun archivo seleccionado"
+                lbl_files.value = "Ningún archivo seleccionado"
             self.page.update()
 
-        def pick_files(_e=None):
+        dlg_ref: dict = {}
+
+        async def _ocultar_dialogo():
+            dlg = dlg_ref.get("dlg")
+            if dlg is None or not dlg.open:
+                return
+            self.page.pop_dialog()
+            for _ in range(50):
+                if dlg not in self.page._dialogs.controls:
+                    return
+                await asyncio.sleep(0.05)
+
+        def _mostrar_dialogo():
+            dlg = dlg_ref.get("dlg")
+            if dlg is None:
+                return
+            if dlg in self.page._dialogs.controls:
+                if not dlg.open:
+                    dlg.open = True
+                    self.page.update()
+                return
+            self.page.show_dialog(dlg)
+
+        async def pick_files(_e=None):
+            reabrir = bool(dlg_ref.get("dlg") and dlg_ref["dlg"].open)
+            btn_pick.disabled = True
+            self.page.update()
             try:
-                files = self.file_picker.pick_files(
-                    dialog_title="Evidencias",
-                    allow_multiple=True,
-                    file_type=ft.FilePickerFileType.CUSTOM,
-                    allowed_extensions=["jpg", "jpeg", "png", "webp", "pdf", "doc", "docx", "xls", "xlsx", "csv", "txt", "md"],
-                )
+                # El dialogo modal tapa el selector nativo de Windows.
+                if reabrir:
+                    await _ocultar_dialogo()
+                try:
+                    files = await self.file_picker.pick_files(
+                        dialog_title="Evidencias",
+                        allow_multiple=True,
+                        file_type=ft.FilePickerFileType.ANY,
+                    )
+                except TypeError:
+                    files = []
                 paths = []
+                rejected = []
                 for f in files or []:
-                    if getattr(f, "path", None):
-                        paths.append(f.path)
+                    pth = getattr(f, "path", None)
+                    if not pth:
+                        continue
+                    ext = Path(pth).suffix.lower().lstrip(".")
+                    if ext not in EVIDENCIA_EXTS:
+                        rejected.append(Path(pth).name)
+                        continue
+                    paths.append(pth)
                 self._pending_files = paths[:10]
                 refresh_files_label()
+                if rejected and not paths:
+                    lbl_avance_err.value = (
+                        "Ese tipo de archivo no se puede adjuntar. "
+                        "Usa imagen, PDF, Word, Excel o texto."
+                    )
+                    lbl_avance_err.visible = True
+                elif rejected:
+                    lbl_avance_err.value = (
+                        "Se omitieron archivos no permitidos: " + ", ".join(rejected[:3])
+                    )
+                    lbl_avance_err.visible = True
+                else:
+                    lbl_avance_err.visible = False
+                self.page.update()
             except Exception as err:
-                lbl_avance_err.value = str(err)
+                print("pick_files:", err)
+                lbl_avance_err.value = "No se pudo abrir el selector de archivos."
                 lbl_avance_err.visible = True
+                self.page.update()
+            finally:
+                btn_pick.disabled = False
+                if reabrir:
+                    _mostrar_dialogo()
                 self.page.update()
 
         btn_pick.on_click = pick_files
 
-        attach_card = info_card(
-            section_label("Adjuntar"),
-            ft.Row([btn_pick, lbl_files], spacing=10, wrap=True, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        dd_ase = None
+        btn_asignar = None
+        if puede_asignar:
+            opciones = payload.get("asignables") or self.asignables or []
+            dd_ase = ft.Dropdown(
+                label="Desarrollador",
+                hint_text="Elige a quién asignar",
+                options=[
+                    ft.DropdownOption(
+                        key=str(a.get("Usu_Cod")),
+                        text=(a.get("Nombre") or f"Usuario {a.get('Usu_Cod')}")[:80],
+                    )
+                    for a in opciones
+                    if a.get("Usu_Cod")
+                ],
+                border_color=C["border"],
+                focused_border_color=C["primary"],
+                dense=True,
+            )
+            btn_asignar = ft.FilledButton(
+                "Asignar ticket",
+                icon=ft.Icons.PERSON_ADD_ALT,
+                style=ft.ButtonStyle(
+                    bgcolor=C["primary"],
+                    color="#ffffff",
+                    shape=ft.RoundedRectangleBorder(radius=8),
+                ),
+            )
+
+        fila_adjuntar = ft.Row(
+            [btn_pick, lbl_files],
+            spacing=10,
+            wrap=True,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
-        body_cols.append(attach_card)
 
         if puede_avance:
             body_cols.append(
-                info_card(
-                    section_label("Registrar avance"),
-                    tf_pct,
-                    tf_realizado,
-                    lbl_avance_err,
-                    ft.Row([btn_guardar], alignment=ft.MainAxisAlignment.END),
+                ft.Container(
+                    content=ft.Column(
+                        [
+                            section_label("Registrar avance"),
+                            barra_avance,
+                            editor,
+                            fila_adjuntar,
+                            lbl_avance_err,
+                            ft.Row([btn_guardar], alignment=ft.MainAxisAlignment.END),
+                        ],
+                        spacing=8,
+                        tight=True,
+                        horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                    ),
+                    bgcolor=C["card"],
+                    border=ft.Border.all(1, C["border"]),
+                    border_radius=12,
+                    padding=14,
                 )
             )
-        elif puede_estado or trabajo.get("puede_subir_evidencia"):
-            body_cols.append(lbl_avance_err)
+        elif puede_asignar and dd_ase is not None and btn_asignar is not None:
+            body_cols.append(
+                info_card(
+                    section_label("Asignar"),
+                    dd_ase if dd_ase.options else ft.Text(
+                        "No hay desarrolladores en el equipo.", size=12, color=C["text_muted"]
+                    ),
+                    lbl_avance_err,
+                    ft.Row([btn_asignar], alignment=ft.MainAxisAlignment.END),
+                )
+            )
+        elif trabajo.get("puede_subir_evidencia"):
+            body_cols.append(
+                info_card(
+                    section_label("Adjuntar"),
+                    fila_adjuntar,
+                    lbl_avance_err,
+                )
+            )
 
-        content = ft.Container(
-            content=ft.Column(body_cols, spacing=14, scroll=ft.ScrollMode.AUTO, tight=True),
+        body_cols.insert(0, header)
+
+        alto = 560
+        try:
+            alto = max(420, min(640, int(self.page.window.height or 820) - 200))
+        except Exception:
+            pass
+
+        content = ft.Column(
+            body_cols,
+            spacing=14,
+            scroll=ft.ScrollMode.AUTO,
             width=620,
-            height=480,
-            bgcolor=C["card"],
+            height=alto,
         )
 
         def close_dlg(_e=None):
@@ -1303,15 +1619,9 @@ class ExaMonitorApp:
         close_btn.on_click = close_dlg
 
         def do_save(_e):
-            try:
-                pct = int(float((tf_pct.value or "0").strip()))
-            except Exception:
-                lbl_avance_err.value = "Porcentaje invalido."
-                lbl_avance_err.visible = True
-                self.page.update()
-                return
+            pct = pct_actual_slider()
             realizado = (tf_realizado.value or "").strip()
-            if not realizado:
+            if not plain_text(realizado):
                 lbl_avance_err.value = "Describe lo que avanzaste."
                 lbl_avance_err.visible = True
                 self.page.update()
@@ -1331,11 +1641,14 @@ class ExaMonitorApp:
             files = list(self._pending_files)
             self.page.run_thread(lambda: self._actualizar_ticket(cod, nuevo, files, close_dlg))
 
-        def do_solo_evidencias(_e):
+        async def do_solo_evidencias(_e):
             if not self._pending_files:
-                lbl_avance_err.value = "Selecciona al menos un archivo."
-                lbl_avance_err.visible = True
-                self.page.update()
+                await pick_files()
+            if not self._pending_files:
+                if not lbl_avance_err.visible:
+                    lbl_avance_err.value = "Selecciona al menos un archivo."
+                    lbl_avance_err.visible = True
+                    self.page.update()
                 return
             btn_solo_ev.disabled = True
             self.page.update()
@@ -1346,6 +1659,24 @@ class ExaMonitorApp:
         btn_en_proceso.on_click = lambda _e: do_ticket_estado("En Proceso")
         btn_resuelto.on_click = lambda _e: do_ticket_estado("Resuelto")
         btn_solo_ev.on_click = do_solo_evidencias
+
+        def do_asignar(_e):
+            if dd_ase is None or btn_asignar is None:
+                return
+            usu = str(dd_ase.value or "").strip()
+            if not usu:
+                lbl_avance_err.value = "Elige un desarrollador."
+                lbl_avance_err.visible = True
+                self.page.update()
+                return
+            btn_asignar.disabled = True
+            btn_asignar.text = "Asignando..."
+            lbl_avance_err.visible = False
+            self.page.update()
+            self.page.run_thread(lambda: self._asignar_ticket(cod, int(usu), close_dlg, btn_asignar))
+
+        if btn_asignar is not None:
+            btn_asignar.on_click = do_asignar
 
         footer = [
             ft.TextButton(
@@ -1363,12 +1694,13 @@ class ExaMonitorApp:
             modal=True,
             bgcolor=C["card"],
             shape=ft.RoundedRectangleBorder(radius=12),
-            title=header,
+            title=None,
             content=content,
             actions=footer,
             actions_alignment=ft.MainAxisAlignment.END,
             action_button_padding=8,
         )
+        dlg_ref["dlg"] = dlg
         self.page.show_dialog(dlg)
 
     def _upload_evidencias(self, cod: int, tipo: str, file_paths: list[str]) -> list[str]:
@@ -1409,6 +1741,42 @@ class ExaMonitorApp:
         if payload.get("mis_tareas") is not None or payload.get("tareas") is not None:
             self.tasks_list = payload.get("mis_tareas") or payload.get("tareas") or []
             self._refresh_tasks_ui()
+
+    def _asignar_ticket(self, tic_cod: int, usu_cod: int, on_ok, btn=None):
+        def fallo(msg: str):
+            if btn is not None:
+                btn.disabled = False
+                btn.text = "Asignar ticket"
+            self._show_info("Asignar", msg)
+
+        try:
+            per = int((self.dev_data or {}).get("Per_Cod") or 0)
+            data = self._api_post(
+                {
+                    "accion": "asignar_ticket",
+                    "Per_Cod": str(per),
+                    "Tic_Cod": str(tic_cod),
+                    "Usu_Cod": str(usu_cod),
+                    "mac_address": self.mac_address,
+                    "version_agente": AGENT_VERSION,
+                }
+            )
+            if data.get("status") != "ok":
+                fallo(data.get("mensaje") or "No se pudo asignar.")
+                return
+            payload = data.get("data") or {}
+            if payload.get("asignables") is not None:
+                self.asignables = payload.get("asignables") or []
+            self._apply_task_list(payload)
+            try:
+                on_ok()
+            except Exception:
+                pass
+            nombre = payload.get("Asignado_Nombre") or "el desarrollador"
+            self._show_info("Ticket asignado", f"Ticket #{tic_cod} → {nombre}.")
+            self._set_status(f"Asignado #{tic_cod}", ok=True)
+        except Exception as e:
+            fallo(str(e))
 
     def _registrar_avance(self, tar_cod: int, porcentaje: int, realizado: str, file_paths: list[str], on_ok):
         try:
@@ -1504,11 +1872,16 @@ class ExaMonitorApp:
 
         n_tar = sum(1 for t in self.tasks_list if t.get("tipo") != "ticket")
         n_tic = sum(1 for t in self.tasks_list if t.get("tipo") == "ticket")
-        self.lbl_kpis.value = f"{len(self.tasks_list)} Asignaciones | {n_tar} tareas | {n_tic} tickets"
+        if self._es_mesa():
+            self.lbl_kpis.value = f"{n_tic} tickets por asignar"
+            vacio = "No hay tickets nuevos."
+        else:
+            self.lbl_kpis.value = f"{len(self.tasks_list)} Asignaciones | {n_tar} tareas | {n_tic} tickets"
+            vacio = "No hay tareas en este filtro."
 
         self.tasks_list_view.controls = [self._task_row(t) for t in visible] or [
             ft.Container(
-                content=ft.Text("No hay tareas en este filtro.", color=C["text_muted"], size=12),
+                content=ft.Text(vacio, color=C["text_muted"], size=12),
                 padding=20,
                 alignment=ft.Alignment.CENTER,
             )
@@ -1523,17 +1896,34 @@ class ExaMonitorApp:
                 self._show_info(titulo, msg)
                 self._set_status(titulo[:36], ok=True)
 
+    def _es_mesa(self) -> bool:
+        return str((self.dev_data or {}).get("Rol") or "") in ("atencion", "manager")
+
+    def _apply_rol_ui(self):
+        if self._es_mesa():
+            self.title_main.value = "Tickets por asignar"
+            self.lbl_lista_titulo.value = "Tickets que llegan"
+            self.lbl_lista_hint.value = "Clic para asignar"
+            self.card_activa.visible = False
+            self.seg_tipo.visible = False
+            self.tipo_filtro = "ticket"
+        else:
+            self.title_main.value = "Mis tareas"
+            self.lbl_lista_titulo.value = "Mis tareas"
+            self.lbl_lista_hint.value = "Clic para marcar activa"
+            self.card_activa.visible = True
+            self.seg_tipo.visible = True
+
     def _update_ui_after_login(self):
         name = (self.dev_data or {}).get("Nombre") or "Desarrollador"
-        self.title_main.value = "Mis tareas"
         self.subtitle.value = name
+        self._apply_rol_ui()
         self._set_status("Conectado", ok=True)
-        self.btn_login.text = "Sesion activa"
+        self.btn_login.text = "Sesión activa"
         self.btn_login.disabled = True
         self.btn_refresh.disabled = False
         self.tf_cedula.disabled = True
         self.tf_pass.disabled = True
-        self.tf_server.disabled = True
         self.login_panel.visible = False
         self.topbar.visible = True
         self.workspace.visible = True
@@ -1542,14 +1932,14 @@ class ExaMonitorApp:
 
     # --- API ---
     def action_login(self):
-        server = (self.tf_server.value or "").strip().rstrip("/")
+        server = SERVIDOR_FIJO.rstrip("/")
         cedula = (self.tf_cedula.value or "").strip()
         password = self.tf_pass.value or ""
-        if not server or not cedula or not password:
-            self.login_error.value = "Ingresa cedula y contrasena EXA."
+        if not cedula or not password:
+            self.login_error.value = "Ingresa cédula y contraseña de EXA."
             self.login_error.visible = True
             self.btn_login.disabled = False
-            self.btn_login.text = "Iniciar sesion"
+            self.btn_login.text = "Iniciar sesión"
             self.page.update()
             return
 
@@ -1587,6 +1977,7 @@ class ExaMonitorApp:
                 tasks = payload.get("mis_tareas") or payload.get("tareas") or []
                 self.dev_data = dev
                 self.tasks_list = tasks
+                self.asignables = payload.get("asignables") or []
                 self.is_authenticated = True
                 if dev.get("Db_Dis"):
                     self.config["db_dis"] = str(dev.get("Db_Dis"))
@@ -1601,19 +1992,19 @@ class ExaMonitorApp:
                 self._apply_notificaciones(payload)
                 self._start_background_workers()
             else:
-                msg = data.get("mensaje", "Error de autenticacion.")
+                msg = data.get("mensaje", "Error de autenticación.")
                 self.login_error.value = msg
                 self.login_error.visible = True
                 self.btn_login.disabled = False
-                self.btn_login.text = "Iniciar sesion"
-                self._set_status("Error de sesion")
+                self.btn_login.text = "Iniciar sesión"
+                self._set_status("Error de sesión")
                 self.page.update()
         except Exception as e:
             self.login_error.value = str(e)
             self.login_error.visible = True
             self.btn_login.disabled = False
-            self.btn_login.text = "Iniciar sesion"
-            self._set_status("Error de sesion")
+            self.btn_login.text = "Iniciar sesión"
+            self._set_status("Error de sesión")
             self.page.update()
 
     def _manual_refresh(self):
@@ -1673,8 +2064,13 @@ class ExaMonitorApp:
             self.forzar_bandeja = int(payload.get("Mon_Forzar_Bandeja", self.forzar_bandeja))
             self.permitir_salir = int(payload.get("Mon_Permitir_Salir", self.permitir_salir))
             self.tasks_list = payload.get("mis_tareas") or payload.get("tareas") or []
+            if payload.get("Rol") and isinstance(self.dev_data, dict):
+                self.dev_data["Rol"] = payload.get("Rol")
+            if payload.get("asignables") is not None:
+                self.asignables = payload.get("asignables") or []
             notes = list(payload.get("notificaciones") or [])
             try:
+                self._apply_rol_ui()
                 self._refresh_tasks_ui()
                 if force_ui:
                     self._set_status(f"{len(self.tasks_list)} Asignaciones", ok=True)

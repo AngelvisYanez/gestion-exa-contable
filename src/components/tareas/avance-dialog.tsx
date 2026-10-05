@@ -17,6 +17,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
+import { plainTextFromHtml } from "@/components/ui/rich-text";
 import { isSafeUrl } from "@/lib/avance-format";
 import {
   EVIDENCIA_ACCEPT,
@@ -115,7 +117,7 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
 
   const guardar = async () => {
     if (!tarea) return;
-    if (requireDescripcion && !realizado.trim()) {
+    if (requireDescripcion && !plainTextFromHtml(realizado).trim()) {
       setError("Describe que avanzaste: es la evidencia principal del avance.");
       return;
     }
@@ -180,61 +182,64 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
         <div className="space-y-4">
           {error && <Alert variant="destructive">{error}</Alert>}
 
-          <div className="rounded-xl border border-border/80 bg-muted/30 p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <Label>Porcentaje de avance</Label>
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-bold tabular-nums">{pct}%</span>
-                <span
-                  className={cn(
-                    "text-xs font-bold tabular-nums",
-                    delta > 0 ? "text-emerald-600" : delta < 0 ? "text-red-600" : "text-muted-foreground"
-                  )}
-                >
-                  {delta > 0 ? `+${delta}` : delta} vs {base}%
-                </span>
+          <div className="overflow-hidden rounded-xl border border-border/80">
+            <div className="bg-muted/30 p-3">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <Label>Porcentaje de avance</Label>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-bold tabular-nums">{pct}%</span>
+                  <span
+                    className={cn(
+                      "text-xs font-bold tabular-nums",
+                      delta > 0 ? "text-emerald-600" : delta < 0 ? "text-red-600" : "text-muted-foreground"
+                    )}
+                  >
+                    {delta > 0 ? `+${delta}` : delta} vs {base}%
+                  </span>
+                </div>
               </div>
-            </div>
-            <Slider min={0} max={100} step={1} value={[pct]} onValueChange={(v) => setPct(v[0] ?? 0)} />
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {[5, 10, 25].map((n) => (
-                <Button
-                  key={n}
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setPct((p) => Math.min(100, p + n))}
-                >
-                  +{n}%
+              <Slider min={0} max={100} step={1} value={[pct]} onValueChange={(v) => setPct(v[0] ?? 0)} />
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {[5, 10, 25].map((n) => (
+                  <Button
+                    key={n}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setPct((p) => Math.min(100, p + n))}
+                  >
+                    +{n}%
+                  </Button>
+                ))}
+                <Button type="button" size="sm" variant="outline" onClick={() => setPct(100)}>
+                  Completar (100%)
                 </Button>
-              ))}
-              <Button type="button" size="sm" variant="outline" onClick={() => setPct(100)}>
-                Completar (100%)
-              </Button>
-              {delta !== 0 && (
-                <Button type="button" size="sm" variant="ghost" onClick={() => setPct(base)}>
-                  Restablecer
-                </Button>
+                {delta !== 0 && (
+                  <Button type="button" size="sm" variant="ghost" onClick={() => setPct(base)}>
+                    Restablecer
+                  </Button>
+                )}
+              </div>
+              {delta < 0 && (
+                <p className="mt-2 text-[11px] text-amber-700">
+                  Estas bajando el porcentaje. Explica el motivo en el detalle.
+                </p>
               )}
             </div>
-            {delta < 0 && (
-              <p className="mt-2 text-[11px] text-amber-700">
-                Estas bajando el porcentaje. Explica el motivo en el detalle.
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label>
-              ¿Que avanzaste? {requireDescripcion && <span className="text-red-600">*</span>}
-            </Label>
-            <Textarea
-              rows={4}
-              placeholder="Ej.: Implemente el endpoint de facturas, agregue validaciones y probe con 20 casos."
-              value={realizado}
-              onChange={(e) => setRealizado(e.target.value)}
-              disabled={saving}
-            />
+            <div className="border-t border-border/80 bg-background">
+              <div className="px-3 pb-1 pt-2">
+                <Label>
+                  ¿Que avanzaste? {requireDescripcion && <span className="text-red-600">*</span>}
+                </Label>
+              </div>
+              <RichTextEditor
+                value={realizado}
+                onChange={setRealizado}
+                disabled={saving}
+                placeholder="Ej.: Implemente el endpoint de facturas, agregue validaciones y probe con 20 casos."
+                className="rounded-none border-0 shadow-none"
+              />
+            </div>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">

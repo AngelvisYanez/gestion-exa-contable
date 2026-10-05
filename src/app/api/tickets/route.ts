@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { canSeeOversight } from "@/lib/auth/users";
 import { publishAsignacion, publishEvent } from "@/lib/events";
-import { tasksDbDis } from "@/lib/empresa";
+import { sanitizeDbDis } from "@/lib/db";
 import {
   assignTicket,
   attachTicketEvidencias,
   createTicket,
   listCapturasTicket,
   listTicketAssignees,
+  listTicketEmpresas,
   listTickets,
   ticketsKpis,
   updateTicketEstado,
@@ -20,8 +21,6 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   try {
     const sp = req.nextUrl.searchParams;
-    const db = tasksDbDis(sp.get("Ses_Dat_Dis"));
-
     const detalleCod = parseInt(sp.get("detalle") || "0", 10);
     if (detalleCod > 0) {
       const session = await getSessionFromRequest(req);
@@ -31,6 +30,7 @@ export async function GET(req: NextRequest) {
           { status: 403 }
         );
       }
+      const db = sanitizeDbDis(sp.get("Ses_Dat_Dis"));
       const capturas = await listCapturasTicket(db, detalleCod, {
         dias: parseInt(sp.get("capturas_dias") || "30", 10) || 30,
         desde: sp.get("capturas_desde") || sp.get("desde"),
@@ -49,17 +49,22 @@ export async function GET(req: NextRequest) {
     const estado = sp.get("estado") || "todos";
     const bandeja = sp.get("bandeja") || "";
     const q = sp.get("q") || "";
+    const desde = sp.get("desde") || "";
+    const hasta = sp.get("hasta") || "";
     const withAssignees = sp.get("assignees") === "1";
-    const limit = parseInt(sp.get("limit") || "200", 10) || 200;
+    const limit = parseInt(sp.get("limit") || "500", 10) || 500;
+    const db = sanitizeDbDis(sp.get("Ses_Dat_Dis"));
 
     const [tickets, kpis] = await Promise.all([
       listTickets(db, {
         estado: bandeja ? "todos" : estado,
         bandeja: bandeja || undefined,
         q,
+        desde: desde || undefined,
+        hasta: hasta || undefined,
         limit,
       }),
-      ticketsKpis(db),
+      ticketsKpis(db, { desde: desde || undefined, hasta: hasta || undefined }),
     ]);
 
     const payload: Record<string, unknown> = {
@@ -69,9 +74,16 @@ export async function GET(req: NextRequest) {
       tickets,
       kpis,
       bandeja: bandeja || "todos",
+      desde: desde || null,
+      hasta: hasta || null,
     };
     if (withAssignees) {
-      payload.asignables = await listTicketAssignees(db);
+      const [asignables, empresas] = await Promise.all([
+        listTicketAssignees(),
+        listTicketEmpresas(db),
+      ]);
+      payload.asignables = asignables;
+      payload.empresas = empresas;
     }
     return NextResponse.json(payload);
   } catch (err) {
@@ -83,7 +95,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const db = tasksDbDis(body.Ses_Dat_Dis);
+    const db = sanitizeDbDis(body.Ses_Dat_Dis);
     const action = String(body.action || "create");
     const session = await getSessionFromRequest(req);
 
@@ -126,32 +138,46 @@ export async function POST(req: NextRequest) {
 
     if (action === "assign") {
       const ticCod = Number(body.Tic_Cod || 0);
+      const rawList = Array.isArray(body.asignados) ? body.asignados : [];
+      const asignados = rawList
+        .map((a: { Usu_Cod?: number; usuCod?: number; Per_Cod?: number; perCod?: number }) => ({
+          usuCod: Number(a.Usu_Cod ?? a.usuCod ?? 0),
+          perCod: Number(a.Per_Cod ?? a.perCod ?? 0) || undefined,
+        }))
+        .filter((a: { usuCod: number }) => a.usuCod > 0);
       const usuCod = Number(body.Usu_Cod || 0);
       const perCod = body.Per_Cod ? Number(body.Per_Cod) : undefined;
-      if (!ticCod || !usuCod) {
+      if (!ticCod || (!usuCod && !asignados.length)) {
         return NextResponse.json(
-          { success: false, message: "Tic_Cod y Usu_Cod requeridos" },
+          { success: false, message: "Tic_Cod y al menos un desarrollador son requeridos" },
           { status: 400 }
         );
       }
       const res = await assignTicket(db, {
         ticCod,
-        usuCod,
+        usuCod: usuCod || undefined,
         perCod,
+        asignados: asignados.length ? asignados : undefined,
       });
       const titulo = res.ticket?.Tic_Titulo || `Ticket #${ticCod}`;
       const nombre = res.ticket?.Asignado_Nombre || "Asesor asignado";
-      publishAsignacion({
-        kind: "ticket",
-        title: "Ticket asignado",
-        message: `#${ticCod} · ${titulo} → ${nombre}`,
-        db,
-        ticCod,
-        perCod,
-        usuCod,
-        estado: res.ticket?.Tic_Estado || "Asignado",
-        actor: session?.name,
-      });
+      const destinos =
+        res.asignados && res.asignados.length
+          ? res.asignados
+          : [{ usuCod, perCod }];
+      for (const dest of destinos) {
+        publishAsignacion({
+          kind: "ticket",
+          title: "Ticket asignado",
+          message: `#${ticCod} · ${titulo} → ${nombre}`,
+          db,
+          ticCod,
+          perCod: dest.perCod ?? undefined,
+          usuCod: dest.usuCod,
+          estado: res.ticket?.Tic_Estado || "Asignado",
+          actor: session?.name,
+        });
+      }
       return NextResponse.json({ success: true, ...res });
     }
 

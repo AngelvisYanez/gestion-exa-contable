@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Building2,
   ImagePlus,
@@ -13,6 +13,13 @@ import {
 } from "lucide-react";
 import Topbar from "@/components/layout/Topbar";
 import { PaginationBar, FilterBar, ViewModeToggle, type ListViewMode } from "@/components/list-controls";
+import {
+  DateRangeFilter,
+  TICKET_FECHA_PRESETS,
+  detectTicketFechaPreset,
+  rangoTicketsPreset,
+  type DateRangeValue,
+} from "@/components/date-range-filter";
 import { PrioridadBadge } from "@/components/status-badges";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNotifications } from "@/contexts/NotificationsContext";
@@ -32,6 +39,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { KanbanBoard, type KanbanEstado } from "@/components/dashboard/kanban-board";
+import type { Tarea } from "@/components/dashboard/types";
 import { TicketDetalleDialog } from "@/components/tareas/ticket-detalle-dialog";
 import { ticketAsTarea, type Ticket } from "@/lib/ticket-view";
 import { fmtFechaHoraZona } from "@/lib/timezone";
@@ -51,6 +60,11 @@ type Asignable = {
   Usu_Cod: number | null;
   Nombre: string;
   Cedula?: string;
+};
+
+type EmpresaOpt = {
+  Emp_Cod: number;
+  Emp_Nom: string;
 };
 
 type Kpis = {
@@ -103,18 +117,24 @@ export default function TicketsPage() {
   const [error, setError] = useState("");
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [asignables, setAsignables] = useState<Asignable[]>([]);
+  const [empresas, setEmpresas] = useState<EmpresaOpt[]>([]);
+  const [empQuery, setEmpQuery] = useState("");
   const [kpis, setKpis] = useState<Kpis | null>(null);
   const [bandeja, setBandeja] = useState<Bandeja>("todos");
+  const [rango, setRango] = useState<DateRangeValue>(() => rangoTicketsPreset("hoy"));
   const [q, setQ] = useState("");
   const [viewMode, setViewMode] = useState<ListViewMode>("lista");
   const [detalleCod, setDetalleCod] = useState<number | null>(null);
-  const pager = usePagination(tickets, { resetKey: `${bandeja}|${q}` });
+  const pager = usePagination(tickets, {
+    resetKey: `${bandeja}|${q}|${rango.desde}|${rango.hasta}`,
+  });
   const detalleTicket =
     detalleCod != null ? tickets.find((t) => t.Tic_Cod === detalleCod) ?? null : null;
 
   const [formOpen, setFormOpen] = useState(false);
   const [formEnviadoPor, setFormEnviadoPor] = useState("");
   const [formEmpresa, setFormEmpresa] = useState("");
+  const [formEmpCod, setFormEmpCod] = useState("");
   const [formTel, setFormTel] = useState("");
   const [formProceso, setFormProceso] = useState("Modificar");
   const [formTitulo, setFormTitulo] = useState("");
@@ -127,7 +147,7 @@ export default function TicketsPage() {
   const [fotoPreviews, setFotoPreviews] = useState<string[]>([]);
 
   const [assignOpen, setAssignOpen] = useState<Ticket | null>(null);
-  const [assignUsu, setAssignUsu] = useState("");
+  const [assignUsus, setAssignUsus] = useState<number[]>([]);
   const [assignSaving, setAssignSaving] = useState(false);
   const [assignError, setAssignError] = useState("");
 
@@ -140,6 +160,8 @@ export default function TicketsPage() {
   const resetForm = () => {
     setFormEnviadoPor("");
     setFormEmpresa("");
+    setFormEmpCod("");
+    setEmpQuery("");
     setFormTel("");
     setFormProceso("Modificar");
     setFormTitulo("");
@@ -169,19 +191,20 @@ export default function TicketsPage() {
     setLoading(true);
     setError("");
     try {
-      const url = `/api/tickets?Ses_Dat_Dis=${encodeURIComponent(db)}&bandeja=${encodeURIComponent(bandeja)}&q=${encodeURIComponent(q)}&assignees=1&limit=300`;
+      const url = `/api/tickets?Ses_Dat_Dis=${encodeURIComponent(db)}&bandeja=${encodeURIComponent(bandeja)}&q=${encodeURIComponent(q)}&desde=${encodeURIComponent(rango.desde)}&hasta=${encodeURIComponent(rango.hasta)}&assignees=1&limit=2000`;
       const res = await fetch(url);
       const j = await res.json();
       if (!j.success) throw new Error(j.message || "Error al cargar tickets");
       setTickets(j.tickets || []);
       setAsignables(j.asignables || []);
+      setEmpresas(j.empresas || []);
       setKpis(j.kpis || null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error");
     } finally {
       setLoading(false);
     }
-  }, [db, bandeja, q]);
+  }, [bandeja, q, rango.desde, rango.hasta, db]);
 
   useEffect(() => {
     void load();
@@ -215,7 +238,10 @@ export default function TicketsPage() {
           descripcion: formDesc,
           prioridad: formPrio,
           enviadoPor: formEnviadoPor,
-          empresa: formEmpresa,
+          empresa: formEmpCod
+            ? empresas.find((e) => String(e.Emp_Cod) === formEmpCod)?.Emp_Nom || formEmpresa
+            : "TODAS EMPRESAS",
+          empCod: formEmpCod ? Number(formEmpCod) : undefined,
           telefono: formTel,
           proceso: formProceso,
           usuCreador: user?.usuCod || undefined,
@@ -260,14 +286,17 @@ export default function TicketsPage() {
   };
 
   const asignar = async () => {
-    if (!assignOpen || !assignUsu) {
-      setAssignError("Selecciona un desarrollador del equipo.");
+    if (!assignOpen || assignUsus.length === 0) {
+      setAssignError("Selecciona al menos un desarrollador del equipo.");
       return;
     }
     setAssignSaving(true);
     setAssignError("");
     try {
-      const chosen = asignables.find((a) => String(a.Usu_Cod) === assignUsu);
+      const asignados = assignUsus.map((usu) => {
+        const chosen = asignables.find((a) => a.Usu_Cod === usu);
+        return { Usu_Cod: usu, Per_Cod: chosen?.Per_Cod };
+      });
       const res = await fetch("/api/tickets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -275,20 +304,31 @@ export default function TicketsPage() {
           action: "assign",
           Ses_Dat_Dis: db,
           Tic_Cod: assignOpen.Tic_Cod,
-          Usu_Cod: Number(assignUsu),
-          Per_Cod: chosen?.Per_Cod,
+          asignados,
         }),
       });
       const j = await res.json();
       if (!j.success) throw new Error(j.message || "No se pudo asignar");
       setAssignOpen(null);
-      setAssignUsu("");
+      setAssignUsus([]);
       await load();
     } catch (e) {
       setAssignError(e instanceof Error ? e.message : "Error");
     } finally {
       setAssignSaving(false);
     }
+  };
+
+  const abrirAsignar = (t: Ticket) => {
+    const ids =
+      t.Asignados && t.Asignados.length
+        ? t.Asignados.map((a) => a.Usu_Cod)
+        : t.Asignado_Usu_Cod
+          ? [t.Asignado_Usu_Cod]
+          : [];
+    setAssignError("");
+    setAssignUsus(ids);
+    setAssignOpen(t);
   };
 
   const setEstado = async (t: Ticket, estado: string) => {
@@ -313,9 +353,22 @@ export default function TicketsPage() {
     }
   };
 
+  const kanbanItems = useMemo(() => tickets.map(ticketAsTarea), [tickets]);
+
+  const moverKanban = async (t: Tarea, estado: KanbanEstado) => {
+    const ticCod = t.Tic_Cod || t.Tar_Cod;
+    const ticket = tickets.find((x) => x.Tic_Cod === ticCod);
+    if (!ticket) return;
+    const next = estado === "Finalizada" ? "Cerrado" : estado === "Pendiente" ? "Nuevo" : estado;
+    await setEstado(ticket, next);
+  };
+
   return (
     <>
-      <Topbar title="Tickets" subtitle="Tabla EXA · tickets recibidos" />
+      <Topbar
+        title="Tickets"
+        subtitle={`${db === "servicios" ? "Servicios" : "EXA"} · ${rango.desde} a ${rango.hasta}`}
+      />
       <main className="mx-auto w-full min-w-0 max-w-[1400px] animate-fade-in px-4 py-6 sm:px-6">
         <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
           {[
@@ -356,50 +409,75 @@ export default function TicketsPage() {
           ))}
         </div>
 
-        <FilterBar className="mb-4">
-          <div className="relative w-[260px]">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              className="h-9 min-h-0 pl-9 text-sm"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Buscar por #, tema, empresa..."
-            />
-          </div>
-          <div className="inline-flex shrink-0 rounded-lg border border-border bg-muted/40 p-0.5">
-            {BANDEJAS.map((b) => (
-              <button
-                key={b.id}
-                type="button"
-                onClick={() => setBandeja(b.id)}
-                className={cn(
-                  "whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-bold transition-colors",
-                  bandeja === b.id
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {b.label}
-              </button>
-            ))}
-          </div>
-          <ViewModeToggle value={viewMode} onChange={setViewMode} />
-          <Button type="button" variant="secondary" className="h-9" onClick={() => void load()} disabled={loading}>
-            <RefreshCw className={loading ? "animate-spin" : ""} />
-            Actualizar
-          </Button>
-          <Button
-            type="button"
-            className="h-9"
-            onClick={() => {
-              setFormError("");
-              setFormOpen(true);
-            }}
-          >
-            <Plus />
-            Nuevo ticket
-          </Button>
-        </FilterBar>
+        <div className="mb-4 space-y-2">
+          <FilterBar>
+            <div className="inline-flex h-10 items-center gap-0.5 rounded-lg border border-border/70 bg-muted/40 px-1 shadow-sm">
+              {TICKET_FECHA_PRESETS.map((p) => {
+                const activo = detectTicketFechaPreset(rango) === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setRango(rangoTicketsPreset(p.id))}
+                    className={cn(
+                      "whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-bold transition-colors",
+                      activo
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {p.label}
+                  </button>
+                );
+              })}
+            </div>
+            <DateRangeFilter compact value={rango} onChange={setRango} />
+            <Button type="button" variant="secondary" className="h-9" onClick={() => void load()} disabled={loading}>
+              <RefreshCw className={loading ? "animate-spin" : ""} />
+              Actualizar
+            </Button>
+            <Button
+              type="button"
+              className="h-9"
+              onClick={() => {
+                setFormError("");
+                setFormOpen(true);
+              }}
+            >
+              <Plus />
+              Nuevo ticket
+            </Button>
+          </FilterBar>
+          <FilterBar>
+            <div className="relative w-[260px]">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="h-9 min-h-0 pl-9 text-sm"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Buscar por #, tema, empresa..."
+              />
+            </div>
+            <div className="inline-flex shrink-0 rounded-lg border border-border bg-muted/40 p-0.5">
+              {BANDEJAS.map((b) => (
+                <button
+                  key={b.id}
+                  type="button"
+                  onClick={() => setBandeja(b.id)}
+                  className={cn(
+                    "whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-bold transition-colors",
+                    bandeja === b.id
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {b.label}
+                </button>
+              ))}
+            </div>
+            <ViewModeToggle value={viewMode} onChange={setViewMode} withKanban />
+          </FilterBar>
+        </div>
 
         {error && (
           <div className="mb-4">
@@ -407,8 +485,23 @@ export default function TicketsPage() {
           </div>
         )}
 
-        <div className="mb-6 w-full min-w-0">
-            {viewMode === "grid" ? (
+        <div
+          className={cn(
+            "mb-6 w-full min-w-0",
+            viewMode === "kanban" &&
+              "flex h-[min(70dvh,calc(100dvh-18rem))] min-h-[320px] flex-col overflow-hidden rounded-xl border border-border/80 bg-card p-2 shadow-sm sm:p-3"
+          )}
+        >
+            {viewMode === "kanban" ? (
+              <KanbanBoard
+                tareas={kanbanItems}
+                loading={loading}
+                onAvance={() => undefined}
+                onMoveEstado={moverKanban}
+                onOpen={(t) => setDetalleCod(t.Tic_Cod || t.Tar_Cod)}
+                className="min-h-0 flex-1"
+              />
+            ) : viewMode === "grid" ? (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {pager.slice.map((t) => (
                   <article
@@ -467,9 +560,7 @@ export default function TicketsPage() {
                           variant="outline"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setAssignError("");
-                            setAssignUsu(t.Asignado_Usu_Cod ? String(t.Asignado_Usu_Cod) : "");
-                            setAssignOpen(t);
+                            abrirAsignar(t);
                           }}
                         >
                           <UserPlus className="size-3.5" />
@@ -585,9 +676,7 @@ export default function TicketsPage() {
                                 className="shrink-0"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setAssignError("");
-                                  setAssignUsu(t.Asignado_Usu_Cod ? String(t.Asignado_Usu_Cod) : "");
-                                  setAssignOpen(t);
+                                  abrirAsignar(t);
                                 }}
                               >
                                 <UserPlus className="size-3.5" />
@@ -629,7 +718,7 @@ export default function TicketsPage() {
                     {!loading && tickets.length === 0 && (
                       <TableRow>
                         <TableCell colSpan={9} className="py-12 text-center text-muted-foreground">
-                          No hay tickets en este filtro.
+                          No hay tickets entre {rango.desde} y {rango.hasta}. Prueba otro periodo.
                         </TableCell>
                       </TableRow>
                     )}
@@ -640,10 +729,11 @@ export default function TicketsPage() {
 
             {!loading && tickets.length === 0 && viewMode === "grid" && (
               <div className="rounded-xl border border-dashed border-border py-16 text-center text-sm text-muted-foreground">
-                No hay tickets en este filtro.
+                No hay tickets entre {rango.desde} y {rango.hasta}. Prueba otro periodo.
               </div>
             )}
 
+            {viewMode !== "kanban" && (
             <PaginationBar
               page={pager.page}
               totalPages={pager.totalPages}
@@ -654,6 +744,7 @@ export default function TicketsPage() {
               onPageChange={pager.setPage}
               onPageSizeChange={pager.setPageSize}
             />
+            )}
         </div>
 
         {loading && (
@@ -701,11 +792,38 @@ export default function TicketsPage() {
               <div className="space-y-2">
                 <Label>Empresa</Label>
                 <Input
-                  value={formEmpresa}
-                  onChange={(e) => setFormEmpresa(e.target.value)}
+                  value={empQuery}
+                  onChange={(e) => setEmpQuery(e.target.value)}
                   disabled={formSaving}
-                  placeholder="LABANDA RUIZ DAYSE PATRICIA"
+                  placeholder="Buscar empresa..."
                 />
+                <Select
+                  value={formEmpCod}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setFormEmpCod(value);
+                    if (!value) {
+                      setFormEmpresa("TODAS EMPRESAS");
+                      return;
+                    }
+                    const found = empresas.find((x) => String(x.Emp_Cod) === value);
+                    setFormEmpresa(found?.Emp_Nom || "");
+                  }}
+                  disabled={formSaving}
+                >
+                  <option value="">TODAS EMPRESAS</option>
+                  {empresas
+                    .filter((e) => {
+                      const q = empQuery.trim().toLowerCase();
+                      if (!q || String(e.Emp_Cod) === formEmpCod) return true;
+                      return e.Emp_Nom.toLowerCase().includes(q);
+                    })
+                    .map((e) => (
+                      <option key={e.Emp_Cod} value={e.Emp_Cod}>
+                        {e.Emp_Nom}
+                      </option>
+                    ))}
+                </Select>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
@@ -837,24 +955,49 @@ export default function TicketsPage() {
             <DialogHeader>
               <DialogTitle>Asignar ticket</DialogTitle>
               <DialogDescription>
-                #{assignOpen?.Tic_Cod} {assignOpen?.Tic_Titulo}
+                #{assignOpen?.Tic_Cod} {assignOpen?.Tic_Titulo}. Puedes marcar varios desarrolladores.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
               {assignError ? <Alert variant="destructive">{assignError}</Alert> : null}
               <div className="space-y-2">
-                <Label>Desarrollador</Label>
-                <Select value={assignUsu} onChange={(e) => setAssignUsu(e.target.value)} disabled={assignSaving}>
-                  <option value="">Seleccionar...</option>
-                  {asignables
-                    .filter((a) => a.Usu_Cod)
-                    .map((a) => (
-                      <option key={a.Usu_Cod!} value={a.Usu_Cod!}>
-                        {a.Nombre}
-                        {a.Cedula ? ` · ${a.Cedula}` : ""}
-                      </option>
-                    ))}
-                </Select>
+                <Label>Desarrolladores ({assignUsus.length})</Label>
+                <div className="max-h-64 space-y-1 overflow-y-auto rounded-lg border border-border/70 p-2">
+                  {asignables.filter((a) => a.Usu_Cod).length === 0 ? (
+                    <p className="px-2 py-3 text-sm text-muted-foreground">
+                      No hay desarrolladores con usuario EXA.
+                    </p>
+                  ) : (
+                    asignables
+                      .filter((a) => a.Usu_Cod)
+                      .map((a) => {
+                        const checked = assignUsus.includes(a.Usu_Cod!);
+                        return (
+                          <label
+                            key={a.Usu_Cod}
+                            className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
+                          >
+                            <input
+                              type="checkbox"
+                              className="size-4 accent-sky-700"
+                              checked={checked}
+                              disabled={assignSaving}
+                              onChange={() => {
+                                const id = a.Usu_Cod!;
+                                setAssignUsus((prev) =>
+                                  prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+                                );
+                              }}
+                            />
+                            <span>
+                              {a.Nombre}
+                              {a.Cedula ? ` · ${a.Cedula}` : ""}
+                            </span>
+                          </label>
+                        );
+                      })
+                  )}
+                </div>
               </div>
             </div>
             <DialogFooter>

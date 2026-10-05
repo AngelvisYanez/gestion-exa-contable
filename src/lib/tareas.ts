@@ -29,27 +29,51 @@ export function normalizeComplejidad(v?: string | null) {
   return COMPLEJIDADES.has(c) ? c : "Media";
 }
 
-let complejidadColumnReady = false;
+/** Por base (exa / servicios). Una bandera global hacía fallar la otra BD con 1054. */
+const complejidadReadyByDb = new Map<string, boolean>();
+const complejidadEnsureInflight = new Map<string, Promise<boolean>>();
 
-/** Asegura columna Tar_Complejidad en aud_tareas (EXA legacy). */
-export async function ensureTareaComplejidadColumn(dbDis: string) {
-  if (complejidadColumnReady) return;
-  const prisma = getPrisma(dbDis);
+async function detectComplejidadColumn(dbKey: string): Promise<boolean> {
+  const prisma = getPrisma(dbKey);
   try {
     const cols = await prisma.$queryRawUnsafe<Array<{ Field: string }>>(
       `SHOW COLUMNS FROM aud_tareas LIKE 'Tar_Complejidad'`
     );
     if (!cols.length) {
-      await prisma.$executeRawUnsafe(
-        `ALTER TABLE aud_tareas
-         ADD COLUMN Tar_Complejidad VARCHAR(20) NULL DEFAULT 'Media' AFTER Tar_Prioridad`
-      );
+      try {
+        await prisma.$executeRawUnsafe(
+          `ALTER TABLE aud_tareas
+           ADD COLUMN Tar_Complejidad VARCHAR(20) NULL DEFAULT 'Media' AFTER Tar_Prioridad`
+        );
+      } catch {
+        const again = await prisma.$queryRawUnsafe<Array<{ Field: string }>>(
+          `SHOW COLUMNS FROM aud_tareas LIKE 'Tar_Complejidad'`
+        );
+        if (!again.length) return false;
+      }
     }
-    complejidadColumnReady = true;
+    complejidadReadyByDb.set(dbKey, true);
+    return true;
   } catch {
-    // Si no hay permisos ALTER, seguimos sin columna (create usará fallback en descripcion).
-    complejidadColumnReady = false;
+    // Sin cachear el fallo: la próxima petición reintenta (permisos o corte breve).
+    return false;
   }
+}
+
+/** Asegura columna Tar_Complejidad en aud_tareas de esta base (EXA legacy). */
+export async function ensureTareaComplejidadColumn(dbDis: string): Promise<boolean> {
+  const key = sanitizeDbDis(dbDis);
+  const cached = complejidadReadyByDb.get(key);
+  if (cached === true) return true;
+
+  const pending = complejidadEnsureInflight.get(key);
+  if (pending) return pending;
+
+  const job = detectComplejidadColumn(key).finally(() => {
+    complejidadEnsureInflight.delete(key);
+  });
+  complejidadEnsureInflight.set(key, job);
+  return job;
 }
 
 function mapAdjunto(ruta: string) {
@@ -122,7 +146,7 @@ export async function listTareas(dbDis: string, opts: {
   desde?: string;
   hasta?: string;
 }) {
-  await ensureTareaComplejidadColumn(dbDis);
+  const hasComplejidad = await ensureTareaComplejidadColumn(dbDis);
   const prisma = getPrisma(dbDis);
 
   // Raw SQL: Prisma falla con Bytes/charset raros en TEXT de EXA
@@ -176,7 +200,7 @@ export async function listTareas(dbDis: string, opts: {
     Ava_Total: bigint | number | null;
   };
 
-  const complejidadSelect = complejidadColumnReady
+  const complejidadSelect = hasComplejidad
     ? `CONVERT(t.Tar_Complejidad USING utf8mb4) AS Tar_Complejidad,`
     : `'Media' AS Tar_Complejidad,`;
 
@@ -332,7 +356,7 @@ export async function createTarea(
     adjuntos?: string[];
   }
 ) {
-  await ensureTareaComplejidadColumn(dbDis);
+  const hasComplejidad = await ensureTareaComplejidadColumn(dbDis);
   const prisma = getPrisma(dbDis);
   const empCod = data.empCod && data.empCod > 0 ? data.empCod : tasksEmpCod();
   const titulo = data.titulo.slice(0, 255);
@@ -355,7 +379,7 @@ export async function createTarea(
   }
 
   // Raw SQL: Prisma create falla con charset latin1 en columnas VarChar de EXA
-  if (complejidadColumnReady) {
+  if (hasComplejidad) {
     await prisma.$executeRawUnsafe(
       `INSERT INTO aud_tareas
         (Tar_Titulo, Tar_Descripcion, Tar_Prioridad, Tar_Complejidad, Tar_Fecha_Inicio, Tar_Fecha_Fin, Tar_Estado, Emp_Cod, Usu_Creador, Tar_Est)
@@ -528,7 +552,7 @@ export async function updateTarea(
     adjuntos: string[];
   }>
 ) {
-  await ensureTareaComplejidadColumn(dbDis);
+  const hasComplejidad = await ensureTareaComplejidadColumn(dbDis);
   const prisma = getPrisma(dbDis);
 
   const patch = Object.fromEntries(
@@ -595,7 +619,7 @@ export async function updateTarea(
     sets.push("Tar_Prioridad = ?");
     params.push(String(patch.prioridad));
   }
-  if (patch.complejidad != null && complejidadColumnReady) {
+  if (patch.complejidad != null && hasComplejidad) {
     sets.push("Tar_Complejidad = ?");
     params.push(normalizeComplejidad(patch.complejidad));
   }
@@ -788,7 +812,7 @@ export async function getTareaDetalle(
     capturasLimit?: number;
   }
 ) {
-  await ensureTareaComplejidadColumn(dbDis);
+  const hasComplejidad = await ensureTareaComplejidadColumn(dbDis);
   const prisma = getPrisma(dbDis);
   await ensureMonitoreoSchema(prisma);
   const includeCapturas = opts?.includeCapturas !== false;
@@ -817,7 +841,7 @@ export async function getTareaDetalle(
     Tar_Brief_Pdf: string | null;
     Tar_Brief_Fecha: Date | string | null;
   };
-  const complejidadSelect = complejidadColumnReady
+  const complejidadSelect = hasComplejidad
     ? `CONVERT(t.Tar_Complejidad USING utf8mb4) AS Tar_Complejidad,`
     : `'Media' AS Tar_Complejidad,`;
   // Columnas de brief: tolerar esquemas sin migrar (SELECT con IFNULL via subquery no; usamos try)

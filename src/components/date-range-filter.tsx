@@ -78,6 +78,53 @@ function detectPreset(value: DateRangeValue, hoy = hoyFecha()): DateRangePresetI
   return null;
 }
 
+export type TicketFechaPresetId = "hoy" | "ayer" | "d7" | "d15" | "mes";
+
+export const TICKET_FECHA_PRESETS: Array<{ id: TicketFechaPresetId; label: string }> = [
+  { id: "hoy", label: "Hoy" },
+  { id: "ayer", label: "Ayer" },
+  { id: "d7", label: "Hace 7 días" },
+  { id: "d15", label: "Hace 15 días" },
+  { id: "mes", label: "Hace 1 mes" },
+];
+
+/** Resta meses de calendario (el día se ajusta si el mes destino es más corto). */
+function shiftMes(fecha: string, deltaMonths: number): string {
+  const [y, m, d] = fecha.slice(0, 10).split("-").map(Number);
+  const base = new Date(Date.UTC(y, m - 1 + deltaMonths, 1));
+  const last = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth() + 1, 0)).getUTCDate();
+  const day = Math.min(d, last);
+  const out = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), day));
+  const yy = out.getUTCFullYear();
+  const mm = String(out.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(out.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
+/** Presets del módulo de tickets. Hoy/Ayer son un día; el resto es un rango hasta hoy. */
+export function rangoTicketsPreset(id: TicketFechaPresetId, hoy = hoyFecha()): DateRangeValue {
+  const h = (hoy || hoyFecha()).slice(0, 10);
+  if (id === "ayer") {
+    const d = shiftFecha(h, -1);
+    return { desde: d, hasta: d };
+  }
+  if (id === "d7") return { desde: shiftFecha(h, -7), hasta: h };
+  if (id === "d15") return { desde: shiftFecha(h, -15), hasta: h };
+  if (id === "mes") return { desde: shiftMes(h, -1), hasta: h };
+  return { desde: h, hasta: h };
+}
+
+export function detectTicketFechaPreset(
+  value: DateRangeValue,
+  hoy = hoyFecha()
+): TicketFechaPresetId | null {
+  for (const p of TICKET_FECHA_PRESETS) {
+    const r = rangoTicketsPreset(p.id, hoy);
+    if (r.desde === value.desde && r.hasta === value.hasta) return p.id;
+  }
+  return null;
+}
+
 function detectDayPreset(value: DateRangeValue, hoy = hoyFecha()): DayPresetId | null {
   if (value.desde !== value.hasta) return null;
   const ids: DayPresetId[] = ["hoy", "ayer", "anteayer", "hace3", "hace7"];

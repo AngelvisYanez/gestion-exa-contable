@@ -35,7 +35,7 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DatePicker } from "@/components/ui/date-picker";
-import { RichTextHtml } from "@/components/ui/rich-text";
+import { RichTextHtml, isProbablyHtml } from "@/components/ui/rich-text";
 import { useAuth } from "@/contexts/AuthContext";
 import { GenerarBriefDialog } from "@/components/tareas/generar-brief-dialog";
 import { OfsercontAlcanceFields } from "@/components/tareas/ofsercont-alcance-fields";
@@ -575,9 +575,12 @@ export function TareaDetalleDialog({
                           <span className="text-muted-foreground">· {item.avance.horas} h</span>
                         ) : null}
                       </div>
-                      {item.avance.realizado && (
-                        <p className="mt-1 whitespace-pre-wrap text-sm">{item.avance.realizado}</p>
-                      )}
+                      {item.avance.realizado &&
+                        (isProbablyHtml(item.avance.realizado) ? (
+                          <RichTextHtml html={item.avance.realizado} className="mt-1 text-sm" />
+                        ) : (
+                          <p className="mt-1 whitespace-pre-wrap text-sm">{item.avance.realizado}</p>
+                        ))}
                       {item.avance.siguiente && (
                         <p className="mt-1 flex gap-1.5 text-xs text-sky-800">
                           <ArrowRight className="mt-0.5 size-3.5 shrink-0" />

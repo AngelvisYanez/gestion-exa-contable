@@ -1,13 +1,15 @@
 import { NextRequest } from "next/server";
 import { assertApiKey, isUploadedFile, jsonRes, pick, readBody } from "@/lib/api";
 import { authenticateByCedula } from "@/lib/auth/exaLogin";
+import { canAssignWork } from "@/lib/auth/users";
 import { saveEvidencia, saveScreenshot, toPublicCaptureUrl } from "@/lib/captures";
 import { altDatabase, getPrisma, telemetriaMirrorEnabled } from "@/lib/db";
-import { consumeDevNotifications, publishEvent } from "@/lib/events";
+import { consumeDevNotifications, publishAsignacion, publishEvent } from "@/lib/events";
 import { tasksDbDis, tasksEmpCod } from "@/lib/empresa";
 import {
   findDesarrollador,
   mapDevResponse,
+  resolvePanelRol,
   resolveUsuCodFromPer,
   resolveUsuCodesFromPer,
   syncPresenciaAlt,
@@ -23,7 +25,9 @@ import {
 import { isImagePath } from "@/lib/avance-format";
 import {
   attachTicketEvidencias,
+  assignTicket,
   kanbanToTicketEstado,
+  listTicketAssignees,
   listTickets,
   ticketEstadoToKanban,
   updateTicketEstado,
@@ -44,6 +48,30 @@ function mapNotificaciones(perCod: number, usuCod?: number) {
     kind: n.kind || null,
     at: n.at,
   }));
+}
+
+async function bandejaAgente(
+  prisma: Awaited<ReturnType<typeof getPrisma>>,
+  perCod: number,
+  usuHint?: number,
+  rolHint?: string | null
+) {
+  const usuCod =
+    usuHint && usuHint > 0 ? usuHint : await resolveUsuCodFromPer(prisma, perCod);
+  const rol = rolHint || (await resolvePanelRol(prisma, perCod)) || "developer";
+  const tareas = await tareasActivasDev(prisma, perCod, usuCod || undefined, rol);
+  return { usuCod: usuCod || 0, rol, tareas };
+}
+
+async function asignablesMonitor() {
+  const rows = await listTicketAssignees();
+  return rows
+    .filter((a) => a.Usu_Cod && a.Usu_Cod > 0)
+    .map((a) => ({
+      Per_Cod: a.Per_Cod,
+      Usu_Cod: a.Usu_Cod as number,
+      Nombre: a.Nombre,
+    }));
 }
 
 async function handle(req: NextRequest) {
@@ -107,10 +135,11 @@ async function handle(req: NextRequest) {
         version,
       });
 
-      const tareas = await tareasActivasDev(prismaUser, row.Per_Cod, user.usuCod);
+      const { rol, tareas } = await bandejaAgente(prismaUser, row.Per_Cod, user.usuCod, user.role);
       const refreshed = await findDesarrollador(prismaUser, String(row.Per_Cod));
       const mapped = await mapDevResponse(prismaUser, refreshed || row);
       const notificaciones = mapNotificaciones(row.Per_Cod, user.usuCod);
+      const asignables = canAssignWork(rol) ? await asignablesMonitor() : [];
 
       return jsonRes("ok", "Desarrollador autenticado con exito.", {
         desarrollador: {
@@ -120,9 +149,11 @@ async function handle(req: NextRequest) {
           Usu_Cod: user.usuCod,
           Db_Dis: user.dbDis,
           Emp_Cod: empCod,
+          Rol: rol,
         },
         tareas,
         mis_tareas: tareas,
+        asignables,
         notificaciones,
       });
     }
@@ -145,9 +176,10 @@ async function handle(req: NextRequest) {
       if (!row) return jsonRes("error", "Desarrollador no encontrado.");
 
       const usuCod = await resolveUsuCodFromPer(prisma, perCod);
-      const tareas = await tareasActivasDev(prisma, perCod, usuCod || undefined);
+      const { rol, tareas } = await bandejaAgente(prisma, perCod, usuCod || undefined);
       const mapped = await mapDevResponse(prisma, row);
       const notificaciones = mapNotificaciones(perCod, usuCod || undefined);
+      const asignables = canAssignWork(rol) ? await asignablesMonitor() : [];
 
       return jsonRes("ok", "Presencia y estado sincronizados.", {
         Mon_Activo: mapped.Mon_Activo,
@@ -155,8 +187,10 @@ async function handle(req: NextRequest) {
         Mon_Captura_Pantalla: mapped.Mon_Captura_Pantalla,
         Mon_Forzar_Bandeja: mapped.Mon_Forzar_Bandeja,
         Mon_Permitir_Salir: mapped.Mon_Permitir_Salir,
+        Rol: rol,
         tareas,
         mis_tareas: tareas,
+        asignables,
         notificaciones,
       });
     }
@@ -274,15 +308,23 @@ async function handle(req: NextRequest) {
       if (!row) return jsonRes("error", "Desarrollador no encontrado.");
 
       const usuCod = await resolveUsuCodFromPer(prisma, perCod);
+      const rol = (await resolvePanelRol(prisma, perCod)) || "developer";
       const aseCodes = await resolveUsuCodesFromPer(prisma, perCod);
       if (usuCod && usuCod > 0 && !aseCodes.includes(usuCod)) aseCodes.unshift(usuCod);
 
       if (tipo === "ticket") {
-        const tickets = await listTickets(dbDis, { aseCodes, limit: 300 });
-        const ticket = tickets.find((t) => t.Tic_Cod === cod);
+        const mesa = canAssignWork(rol);
+        const ticket = mesa
+          ? (await listTickets(dbDis, { ticCod: cod, limit: 1 }))[0]
+          : (await listTickets(dbDis, { aseCodes, limit: 300 })).find((t) => t.Tic_Cod === cod);
         if (!ticket) {
           return jsonRes("error", "Ticket no encontrado o no asignado a ti.");
         }
+        const sinAsignar = !ticket.Asignado_Usu_Cod;
+        if (mesa && !sinAsignar) {
+          return jsonRes("error", "Este ticket ya fue asignado.");
+        }
+        const asignables = mesa ? await asignablesMonitor() : [];
         return jsonRes("ok", "Detalle de ticket.", {
           tipo: "ticket",
           trabajo: {
@@ -291,7 +333,7 @@ async function handle(req: NextRequest) {
             Descripcion: ticket.Tic_Descripcion || "",
             Prioridad: ticket.Tic_Prioridad || "Media",
             Complejidad: null,
-            Estado: ticketEstadoToKanban(ticket.Tic_Estado),
+            Estado: mesa && sinAsignar ? "Por asignar" : ticketEstadoToKanban(ticket.Tic_Estado),
             Fecha_Fin: null,
             Ava_Porcentaje:
               ticket.Tic_Estado === "Cerrado"
@@ -302,8 +344,9 @@ async function handle(req: NextRequest) {
                     ? 10
                     : 0,
             puede_registrar_avance: false,
-            puede_cambiar_estado: ticket.Tic_Estado !== "Cerrado",
-            puede_subir_evidencia: true,
+            puede_cambiar_estado: !mesa && ticket.Tic_Estado !== "Cerrado",
+            puede_subir_evidencia: !mesa,
+            puede_asignar: mesa && sinAsignar,
             Enviado_Por: ticket.Enviado_Por || ticket.Creador_Nombre || null,
             Empresa: ticket.Emp_Nom || null,
             Telefono: ticket.Tic_Tel || null,
@@ -311,6 +354,7 @@ async function handle(req: NextRequest) {
             Asignado_Nombre: ticket.Asignado_Nombre || null,
           },
           evidencias: ticket.Evidencias || [],
+          asignables,
         });
       }
 
@@ -416,7 +460,7 @@ async function handle(req: NextRequest) {
         estado: res.porcentaje >= 100 ? "Finalizada" : "En Proceso",
       });
 
-      const tareas = await tareasActivasDev(prisma, perCod, usuCod || undefined);
+      const { tareas } = await bandejaAgente(prisma, perCod, usuCod || undefined);
       return jsonRes("ok", "Avance registrado.", {
         porcentaje: res.porcentaje,
         Tar_Cod: tarCod,
@@ -461,13 +505,71 @@ async function handle(req: NextRequest) {
         actor: "ExaMonitor",
       });
 
-      const tareas = await tareasActivasDev(prisma, perCod, usuCod || undefined);
+      const { tareas } = await bandejaAgente(prisma, perCod, usuCod || undefined);
       return jsonRes("ok", "Estado de ticket actualizado.", {
         Tic_Cod: ticCod,
         estado,
         Estado_Kanban: ticketEstadoToKanban(estado),
         mis_tareas: tareas,
         tareas,
+      });
+    }
+
+    if (accion === "asignar_ticket") {
+      const perCod = parseInt(pick(form, json, req, "Per_Cod"), 10) || 0;
+      if (perCod <= 0) return jsonRes("error", "Codigo de desarrollador invalido.");
+
+      const ticCod =
+        parseInt(pick(form, json, req, "Tic_Cod"), 10) ||
+        parseInt(pick(form, json, req, "Tar_Cod"), 10) ||
+        0;
+      const usuCod = parseInt(pick(form, json, req, "Usu_Cod"), 10) || 0;
+      if (ticCod <= 0 || usuCod <= 0) {
+        return jsonRes("error", "Tic_Cod y desarrollador son obligatorios.");
+      }
+
+      const rol = (await resolvePanelRol(prisma, perCod)) || "developer";
+      if (!canAssignWork(rol)) {
+        return jsonRes("error", "Solo el encargado o atencion al cliente pueden asignar tickets desde ExaMonitor.");
+      }
+
+      const ticket = (await listTickets(dbDis, { ticCod, limit: 1 }))[0];
+      if (!ticket) return jsonRes("error", "Ticket no encontrado.");
+      if (ticket.Asignado_Usu_Cod) {
+        return jsonRes("error", "Este ticket ya fue asignado.");
+      }
+
+      const asignables = await asignablesMonitor();
+      const elegido = asignables.find((a) => a.Usu_Cod === usuCod);
+      if (!elegido) return jsonRes("error", "Ese desarrollador no esta en el equipo.");
+
+      const res = await assignTicket(dbDis, { ticCod, usuCod, perCod: elegido.Per_Cod });
+      const titulo = res.ticket?.Tic_Titulo || ticket.Tic_Titulo || `Ticket #${ticCod}`;
+      const nombre = res.ticket?.Asignado_Nombre || elegido.Nombre;
+      const actorRow = await findDesarrollador(prisma, String(perCod));
+      const actor =
+        `${actorRow?.persona?.Prs_Ape || ""} ${actorRow?.persona?.Prs_Nom || ""}`.trim() ||
+        "Atencion al cliente";
+      publishAsignacion({
+        kind: "ticket",
+        title: "Ticket asignado",
+        message: `#${ticCod} · ${titulo} → ${nombre}`,
+        db: dbDis,
+        ticCod,
+        perCod: elegido.Per_Cod,
+        usuCod,
+        estado: res.ticket?.Tic_Estado || "Asignado",
+        actor,
+      });
+
+      const { tareas } = await bandejaAgente(prisma, perCod, undefined, rol);
+      return jsonRes("ok", `Ticket #${ticCod} asignado a ${nombre}.`, {
+        Tic_Cod: ticCod,
+        estado: res.ticket?.Tic_Estado || "Asignado",
+        Asignado_Nombre: nombre,
+        mis_tareas: tareas,
+        tareas,
+        asignables,
       });
     }
 

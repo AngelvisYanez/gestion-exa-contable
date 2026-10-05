@@ -14,6 +14,8 @@ export type Ticket = {
   Per_Cod_Asignado: number | null;
   Asignado_Nombre: string | null;
   Asignado_Usu_Cod: number | null;
+  /** Desarrolladores asignados (Ase_Cod + asignación múltiple del panel). */
+  Asignados?: Array<{ Usu_Cod: number; Per_Cod: number | null; Nombre: string }>;
   Tar_Cod: number | null;
   Emp_Cod: number;
   Emp_Nom: string | null;
@@ -51,9 +53,16 @@ export function ticketAsTarea(t: Ticket) {
     Ava_Porcentaje: t.Tic_Estado === "Cerrado" ? 100 : t.Tic_Estado === "En Proceso" ? 40 : 0,
     Ava_Ultima_Fecha: t.Tic_Fecha_Asignacion || t.Tic_Fecha_Llegada || null,
     Ava_Total: 0,
-    Asignados: t.Asignado_Nombre
-      ? [{ Per_Cod: t.Per_Cod_Asignado || 0, Nombre: t.Asignado_Nombre, Tas_Cod: 0 }]
-      : [],
+    Asignados:
+      t.Asignados && t.Asignados.length
+        ? t.Asignados.map((a) => ({
+            Per_Cod: a.Per_Cod || 0,
+            Nombre: a.Nombre,
+            Tas_Cod: 0,
+          }))
+        : t.Asignado_Nombre
+          ? [{ Per_Cod: t.Per_Cod_Asignado || 0, Nombre: t.Asignado_Nombre, Tas_Cod: 0 }]
+          : [],
     tipo: "ticket" as const,
     Tic_Cod: t.Tic_Cod,
     Emp_Nom: t.Emp_Nom,

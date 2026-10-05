@@ -1,6 +1,8 @@
 import { PrismaClient } from "@prisma/client";
 import { altDatabase, getPrisma } from "./db";
 import { EMPRESA_TAREAS, tasksDbDis, tasksEmpCod } from "./empresa";
+import { findPanelActivo, ensurePanelUsuarios } from "./panel-usuarios";
+import { canAssignWork, normalizePanelRole, type UserRole } from "./auth/users";
 import { listTickets, ticketEstadoToKanban } from "./tickets";
 import { fechaEnZona } from "./timezone";
 import { estaEnAlmuerzo, estaEnHorarioLaboral, syncMonActivoPorHorario } from "./monitoreo-horario";
@@ -21,7 +23,33 @@ export type TrabajoMonitorItem = {
   Tic_Cod?: number;
   /** Etiqueta corta para listados (Mis tareas). */
   label: string;
+  Empresa?: string | null;
+  Llegada?: string | null;
+  por_asignar?: boolean;
 };
+
+/** Rol del panel (developer / atencion / manager) a partir de la ficha. */
+export async function resolvePanelRol(
+  prisma: PrismaClient,
+  perCod: number
+): Promise<UserRole | null> {
+  if (!perCod || perCod <= 0) return null;
+  await ensurePanelUsuarios(prisma);
+  const rows = await prisma.$queryRawUnsafe<Array<{ Pan_Rol: string | null }>>(
+    `SELECT Pan_Rol FROM aud_panel_usuarios
+     WHERE Pan_Est = 'A' AND Per_Cod = ?
+     ORDER BY Usu_Cod DESC
+     LIMIT 1`,
+    perCod
+  );
+  if (rows[0]?.Pan_Rol) return normalizePanelRole(rows[0].Pan_Rol);
+  const codes = await resolveUsuCodesFromPer(prisma, perCod);
+  for (const usu of codes) {
+    const panel = await findPanelActivo(prisma, usu);
+    if (panel) return panel.rol;
+  }
+  return null;
+}
 
 export async function upsertPresencia(
   prisma: PrismaClient,
@@ -154,10 +182,83 @@ export async function resolveUsuCodFromPer(
 export async function tareasActivasDev(
   prisma: PrismaClient,
   perCod: number,
-  usuCod?: number
+  usuCod?: number,
+  rol?: string | null
 ): Promise<TrabajoMonitorItem[]> {
+  const formatFin = (v: Date | string | null | undefined) => {
+    if (!v) return null;
+    return v instanceof Date ? fechaEnZona(v) : String(v).slice(0, 10);
+  };
+
+  const formatAvaFecha = (v: Date | string | null | undefined) => {
+    if (!v) return null;
+    if (v instanceof Date) return v.toISOString();
+    return String(v);
+  };
+
+  const buildLabel = (opts: {
+    cod: number;
+    titulo: string;
+    estado: string;
+    pct: number;
+    fin: string | null;
+    tipo: "tarea" | "ticket";
+    empresa?: string | null;
+  }) => {
+    const prefix = opts.tipo === "ticket" ? `Ticket #${opts.cod}` : `#${opts.cod}`;
+    const parts = [prefix, opts.titulo, opts.estado, `${opts.pct}%`];
+    if (opts.fin) parts.push(`vence ${opts.fin}`);
+    if (opts.empresa) parts.push(opts.empresa);
+    return parts.filter(Boolean).join(" | ");
+  };
+
+  const mapTicket = (
+    t: Awaited<ReturnType<typeof listTickets>>[number],
+    porAsignar: boolean
+  ): TrabajoMonitorItem => {
+    const estado = porAsignar ? "Por asignar" : ticketEstadoToKanban(t.Tic_Estado);
+    const pct = porAsignar ? 0 : estado === "En Proceso" ? 40 : estado === "Asignado" ? 10 : 0;
+    const plain = t.Tic_Titulo || `Ticket #${t.Tic_Cod}`;
+    const empresa = (t.Emp_Nom || "").trim() || null;
+    const llegada = (t.Tic_Fecha_Llegada || "").slice(0, 16).replace("T", " ") || null;
+    const label = buildLabel({
+      cod: t.Tic_Cod,
+      titulo: plain,
+      estado,
+      pct,
+      fin: null,
+      tipo: "ticket",
+      empresa,
+    });
+    return {
+      Tar_Cod: t.Tic_Cod,
+      Tar_Titulo: label,
+      Tar_Titulo_Plain: plain,
+      Tar_Prioridad: t.Tic_Prioridad || "Media",
+      Tar_Estado: estado,
+      Tar_Fecha_Fin: null,
+      Ava_Porcentaje: pct,
+      Ava_Ultima_Fecha: t.Tic_Fecha_Asignacion || t.Tic_Fecha_Llegada || null,
+      tipo: "ticket",
+      Tic_Cod: t.Tic_Cod,
+      label,
+      Empresa: empresa,
+      Llegada: llegada,
+      por_asignar: porAsignar,
+    };
+  };
+
+  if (canAssignWork(rol)) {
+    try {
+      const raw = await listTickets(tasksDbDis(), { bandeja: "sin_asignar", limit: 200 });
+      return raw.map((t) => mapTicket(t, true));
+    } catch (err) {
+      console.error("[monitoreo] tickets por asignar:", err instanceof Error ? err.message : err);
+      return [];
+    }
+  }
+
   const empCod = tasksEmpCod();
-  // Raw SQL: Prisma no puede leer aud_tareas (Tar_Descripcion BLOB / enums legacy).
   type Row = {
     Tar_Cod: number;
     Tar_Titulo: string | null;
@@ -199,31 +300,6 @@ export async function tareasActivasDev(
     empCod
   );
 
-  const formatFin = (v: Date | string | null | undefined) => {
-    if (!v) return null;
-    return v instanceof Date ? fechaEnZona(v) : String(v).slice(0, 10);
-  };
-
-  const formatAvaFecha = (v: Date | string | null | undefined) => {
-    if (!v) return null;
-    if (v instanceof Date) return v.toISOString();
-    return String(v);
-  };
-
-  const buildLabel = (opts: {
-    cod: number;
-    titulo: string;
-    estado: string;
-    pct: number;
-    fin: string | null;
-    tipo: "tarea" | "ticket";
-  }) => {
-    const prefix = opts.tipo === "ticket" ? `Ticket #${opts.cod}` : `#${opts.cod}`;
-    const parts = [prefix, opts.titulo, opts.estado, `${opts.pct}%`];
-    if (opts.fin) parts.push(`vence ${opts.fin}`);
-    return parts.filter(Boolean).join(" | ");
-  };
-
   const tareas: TrabajoMonitorItem[] = rows.map((r) => {
     const plain = (r.Tar_Titulo || "").trim() || `Tarea #${r.Tar_Cod}`;
     const estado = r.Tar_Estado || "";
@@ -262,32 +338,7 @@ export async function tareasActivasDev(
       const raw = await listTickets(tasksDbDis(), { aseCodes, limit: 200 });
       tickets = raw
         .filter((t) => t.Tic_Estado !== "Cerrado")
-        .map((t) => {
-          const estado = ticketEstadoToKanban(t.Tic_Estado);
-          const pct = estado === "En Proceso" ? 40 : estado === "Asignado" ? 10 : 0;
-          const plain = t.Tic_Titulo || `Ticket #${t.Tic_Cod}`;
-          const label = buildLabel({
-            cod: t.Tic_Cod,
-            titulo: plain,
-            estado,
-            pct,
-            fin: null,
-            tipo: "ticket",
-          });
-          return {
-            Tar_Cod: t.Tic_Cod,
-            Tar_Titulo: label,
-            Tar_Titulo_Plain: plain,
-            Tar_Prioridad: t.Tic_Prioridad || "Media",
-            Tar_Estado: estado,
-            Tar_Fecha_Fin: null,
-            Ava_Porcentaje: pct,
-            Ava_Ultima_Fecha: t.Tic_Fecha_Asignacion || t.Tic_Fecha_Llegada || null,
-            tipo: "ticket" as const,
-            Tic_Cod: t.Tic_Cod,
-            label,
-          };
-        });
+        .map((t) => mapTicket(t, false));
     } catch (err) {
       console.error("[monitoreo] tickets asignados:", err instanceof Error ? err.message : err);
     }
