@@ -1,0 +1,34 @@
+---
+description: Solo en exa-tareas-app, desplegar gestion.exacontable.com tras push a main
+alwaysApply: true
+---
+
+# Despliegue a producción
+
+Esta regla vive en este repositorio y solo vale para exa-tareas-app (`gestion.exacontable.com`). No la uses en otros proyectos ni en otros dominios.
+
+Después de un commit que el usuario pidió y de un push exitoso a `main` de este repo, despliega en producción. No despliegues otros branches, ni un commit que no llegó a `origin/main`.
+
+No hay Actions ni webhook. El sitio es `gestion.exacontable.com`. El código vive en `/var/www/vhosts/gestion.exacontable.com/httpdocs`. Nginx manda el dominio a `127.0.0.1:3010`. Node es `/opt/plesk/node/26/bin/node`. Ese proceso no sobrevive a un reinicio del servidor: hay que volver a levantarlo.
+
+Usa el helper de Plesk que ya existe. No imprimas contraseñas, ni las copies a la regla, al chat o al repo. En el comando remoto no uses comillas dobles: el scheduler las quita. Evita `$()`.
+
+Orden en el servidor, con `PATH=/opt/plesk/node/26/bin:/usr/bin:/bin`:
+
+1. `git pull` de `main` en `httpdocs`. Si hay cambios locales, detente y dilo. No hagas reset ni force.
+2. Si cambió `package-lock.json`, `npm ci`. Si cambió Prisma, `prisma generate`.
+3. `npm run build` en segundo plano, con log en `logs/next-build.log`. No mates el Node viejo hasta que el build termine bien.
+4. Si el build falla, deja el proceso anterior en 3010 y reporta el error. No dejes el sitio en 502.
+5. Si terminó, reinicia:
+
+```sh
+cd /var/www/vhosts/gestion.exacontable.com/httpdocs && fuser -k 3010/tcp ; sleep 2 ; PORT=3010 NODE_ENV=production setsid /opt/plesk/node/26/bin/node server.js >> /var/www/vhosts/gestion.exacontable.com/logs/node3010.log 2>&1 < /dev/null &
+```
+
+Comprueba desde fuera, no solo con curl interno:
+
+- `https://gestion.exacontable.com/login` responde 200.
+- El chunk `app/(app)/page-*.js` del build nuevo responde 200 `application/javascript`. Un 400 en esos chunks deja el panel en «Application error».
+- Con sesión iniciada, `/` y `/tareas` abren sin ese error.
+
+No hagas commit de `.env`, logs ni archivos ajenos al cambio.

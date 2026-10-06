@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "node --max-http-header-size=65536 ./node_modules/next/dist/bin/next start",
     "lint": "next lint",
+    "test": "tsx --test src/lib/tickets.merge.test.ts",
     "db:generate": "prisma generate",
     "db:pull": "prisma db pull",
     "db:improve": "echo Run prisma/sql/improve_schema.sql on each DATABASE_NAMES schema (exa, servicios)"

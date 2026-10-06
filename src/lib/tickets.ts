@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
-import { getPrisma, sanitizeDbDis } from "./db";
+import { getPrisma, resolveTicketDatabaseIds, sanitizeDbDis, sharesServer } from "./db";
 import {
   TIC_ESTADO_CODE,
   TIC_ESTADO_MAP,
@@ -61,11 +61,13 @@ export type TicketEmpresa = {
 };
 
 const asignadosReady = new Set<string>();
+const asignadosMissing = new Set<string>();
 
 /** Tabla del panel: varios desarrolladores por ticket. MySQL 5.5 no admite DEFAULT CURRENT_TIMESTAMP. */
 export async function ensureTicketAsignados(prisma: PrismaClient) {
   const key = (prisma as PrismaClient & { _exaDbKey?: string })._exaDbKey || "default";
-  if (asignadosReady.has(key)) return;
+  if (asignadosReady.has(key) || asignadosMissing.has(key)) return;
+  try {
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS aud_ticket_asignados (
       Tia_Cod INT NOT NULL AUTO_INCREMENT,
@@ -79,7 +81,20 @@ export async function ensureTicketAsignados(prisma: PrismaClient) {
       KEY idx_tia_usu (Usu_Cod, Tia_Est)
     )
   `);
-  asignadosReady.add(key);
+    asignadosReady.add(key);
+  } catch {
+    try {
+      await prisma.$queryRawUnsafe(`SELECT 1 FROM aud_ticket_asignados LIMIT 1`);
+      asignadosReady.add(key);
+    } catch {
+      asignadosMissing.add(key);
+    }
+  }
+}
+
+function ticketAsignadosEnabled(prisma: PrismaClient): boolean {
+  const key = (prisma as PrismaClient & { _exaDbKey?: string })._exaDbKey || "default";
+  return !asignadosMissing.has(key);
 }
 
 function ymd(v: string | null | undefined) {
@@ -190,6 +205,8 @@ export async function listTickets(
     aseCod?: number;
     /** Varios Usu_Cod del mismo colaborador (multi-sucursal EXA). */
     aseCodes?: number[];
+    /** Ficha de personal: aud_ticket_asignados.Per_Cod. */
+    perCodes?: number[];
     /** Un ticket concreto (detalle / asignación). */
     ticCod?: number;
     /** Fecha de creación (calendario, inclusive). */
@@ -201,6 +218,10 @@ export async function listTickets(
   const prisma = getPrisma(db);
   const teamDb = tasksDbDis();
   await ensureTicketAsignados(prisma);
+  const extraAsignados = ticketAsignadosEnabled(prisma);
+  const localUsers = sharesServer(db, teamDb);
+  const uaTable = localUsers ? `\`${teamDb}\`.usuarios` : "usuarios";
+  const paTable = localUsers ? `\`${teamDb}\`.persona` : "persona";
   const params: Array<string | number> = [];
   const where: string[] = ["1=1"];
 
@@ -211,16 +232,19 @@ export async function listTickets(
   const bandeja = String(opts.bandeja || "").trim();
   if (bandeja === "sin_asignar") {
     where.push(
-      `(t.Ase_Cod IS NULL OR t.Ase_Cod = 0)
+      extraAsignados
+        ? `(t.Ase_Cod IS NULL OR t.Ase_Cod = 0)
        AND NOT EXISTS (
          SELECT 1 FROM aud_ticket_asignados ax
          WHERE ax.Tic_Cod = t.Tic_Cod AND ax.Tia_Est = 'A'
        )
        AND t.Tic_Est <> '3'`
+        : `(t.Ase_Cod IS NULL OR t.Ase_Cod = 0) AND t.Tic_Est <> '3'`
     );
   } else if (bandeja === "asignados") {
     where.push(
-      `(
+      extraAsignados
+        ? `(
          (t.Ase_Cod IS NOT NULL AND t.Ase_Cod > 0)
          OR EXISTS (
            SELECT 1 FROM aud_ticket_asignados ax
@@ -228,6 +252,7 @@ export async function listTickets(
          )
        )
        AND t.Tic_Est <> '3'`
+        : `(t.Ase_Cod IS NOT NULL AND t.Ase_Cod > 0) AND t.Tic_Est <> '3'`
     );
   } else if (bandeja === "resueltos") {
     where.push("t.Tic_Est = '3'");
@@ -239,23 +264,49 @@ export async function listTickets(
   const aseList = (opts.aseCodes || [])
     .map((n) => Number(n))
     .filter((n) => Number.isFinite(n) && n > 0);
-  if (aseList.length) {
-    const marks = aseList.map(() => "?").join(",");
-    where.push(
-      `(t.Ase_Cod IN (${marks}) OR EXISTS (
-         SELECT 1 FROM aud_ticket_asignados ax
-         WHERE ax.Tic_Cod = t.Tic_Cod AND ax.Tia_Est = 'A' AND ax.Usu_Cod IN (${marks})
-       ))`
-    );
-    params.push(...aseList, ...aseList);
+  const perList = (opts.perCodes || [])
+    .map((n) => Number(n))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (aseList.length || perList.length) {
+    const parts: string[] = [];
+    if (aseList.length) {
+      const marks = aseList.map(() => "?").join(",");
+      parts.push(`t.Ase_Cod IN (${marks})`);
+      params.push(...aseList);
+      if (extraAsignados) {
+        parts.push(
+          `EXISTS (
+           SELECT 1 FROM aud_ticket_asignados ax
+           WHERE ax.Tic_Cod = t.Tic_Cod AND ax.Tia_Est = 'A' AND ax.Usu_Cod IN (${marks})
+         )`
+        );
+        params.push(...aseList);
+      }
+    }
+    if (extraAsignados && perList.length) {
+      const marks = perList.map(() => "?").join(",");
+      parts.push(
+        `EXISTS (
+           SELECT 1 FROM aud_ticket_asignados ax
+           WHERE ax.Tic_Cod = t.Tic_Cod AND ax.Tia_Est = 'A' AND ax.Per_Cod IN (${marks})
+         )`
+      );
+      params.push(...perList);
+    }
+    where.push(`(${parts.join(" OR ")})`);
   } else if (opts.aseCod && opts.aseCod > 0) {
-    where.push(
-      `(t.Ase_Cod = ? OR EXISTS (
+    if (extraAsignados) {
+      where.push(
+        `(t.Ase_Cod = ? OR EXISTS (
          SELECT 1 FROM aud_ticket_asignados ax
          WHERE ax.Tic_Cod = t.Tic_Cod AND ax.Tia_Est = 'A' AND ax.Usu_Cod = ?
        ))`
-    );
-    params.push(opts.aseCod, opts.aseCod);
+      );
+      params.push(opts.aseCod, opts.aseCod);
+    } else {
+      where.push("t.Ase_Cod = ?");
+      params.push(opts.aseCod);
+    }
   }
   where.push(...fechaClauses(opts, params, "t.Tic_Fec_Cre"));
   if (opts.q) {
@@ -307,8 +358,8 @@ export async function listTickets(
      LEFT JOIN empresas e ON e.Emp_Cod = t.Emp_Cod
      LEFT JOIN usuarios uc ON uc.Usu_Cod = t.Usu_Cod
      LEFT JOIN persona pc ON pc.Prs_Cod = uc.Prs_Cod
-     LEFT JOIN \`${teamDb}\`.usuarios ua ON ua.Usu_Cod = t.Ase_Cod
-     LEFT JOIN \`${teamDb}\`.persona pa ON pa.Prs_Cod = ua.Prs_Cod
+     LEFT JOIN ${uaTable} ua ON ua.Usu_Cod = t.Ase_Cod
+     LEFT JOIN ${paTable} pa ON pa.Prs_Cod = ua.Prs_Cod
      WHERE ${where.join(" AND ")}
      ORDER BY t.Tic_Fec_Cre DESC, t.Tic_Cod DESC
      LIMIT ${limit}`,
@@ -317,7 +368,7 @@ export async function listTickets(
 
   const extra = new Map<number, TicketAsignado[]>();
   const ids = rows.map((r) => Number(r.Tic_Cod)).filter((n) => n > 0);
-  if (ids.length) {
+  if (ids.length && extraAsignados) {
     const marks = ids.map(() => "?").join(",");
     const asigs = await prisma.$queryRawUnsafe<
       Array<{
@@ -330,8 +381,8 @@ export async function listTickets(
       `SELECT a.Tic_Cod, a.Usu_Cod, a.Per_Cod,
               CONVERT(CONCAT(IFNULL(p.Prs_Ape,''), ' ', IFNULL(p.Prs_Nom,'')) USING utf8mb4) AS Nombre
        FROM aud_ticket_asignados a
-       LEFT JOIN \`${teamDb}\`.usuarios u ON u.Usu_Cod = a.Usu_Cod
-       LEFT JOIN \`${teamDb}\`.persona p ON p.Prs_Cod = u.Prs_Cod
+       LEFT JOIN ${uaTable} u ON u.Usu_Cod = a.Usu_Cod
+       LEFT JOIN ${paTable} p ON p.Prs_Cod = u.Prs_Cod
        WHERE a.Tia_Est = 'A' AND a.Tic_Cod IN (${marks})
        ORDER BY a.Tia_Cod ASC`,
       ...ids
@@ -396,6 +447,7 @@ export async function listTickets(
       Tic_Obs: r.Tic_Obs,
       Enviado_Por: parsed.enviadoPor || null,
       Proceso: parsed.proceso || (r.Tic_Obs && r.Tic_Obs !== "N/A" ? r.Tic_Obs : null),
+      Db_Origen: db,
       Evidencias: parsed.adjuntos.map((ruta) => {
         const nombre = ruta.split("/").pop() || ruta;
         return {
@@ -407,6 +459,119 @@ export async function listTickets(
       }),
     };
   });
+}
+
+/** Tickets del colaborador en EXA y Servicios (mismo Usu_Cod / Per_Cod del equipo). */
+export async function listTicketsAsignados(
+  opts: {
+    aseCodes?: number[];
+    perCodes?: number[];
+    q?: string;
+    limit?: number;
+    ticCod?: number;
+    desde?: string | null;
+    hasta?: string | null;
+    bandeja?: TicketBandeja | string;
+    estado?: string;
+    bases?: string[];
+  } = {}
+): Promise<Ticket[]> {
+  const bases = [
+    ...new Set((opts.bases?.length ? opts.bases : await resolveTicketDatabaseIds()).map((b) => sanitizeDbDis(b))),
+  ];
+  const chunks = await Promise.all(
+    bases.map(async (db) => {
+      try {
+        return await listTickets(db, opts);
+      } catch (err) {
+        console.error(`[tickets] ${db}:`, err instanceof Error ? err.message : err);
+        return [] as Ticket[];
+      }
+    })
+  );
+  const merged = chunks.flat();
+  merged.sort((a, b) => {
+    const da = a.Tic_Fecha_Llegada || "";
+    const dbv = b.Tic_Fecha_Llegada || "";
+    if (da !== dbv) return da < dbv ? 1 : -1;
+    return b.Tic_Cod - a.Tic_Cod;
+  });
+  const limit = Math.min(Math.max(opts.limit || 200, 1), 2000);
+  return merged.slice(0, limit);
+}
+
+export function resumirTickets(tickets: Ticket[]) {
+  let asignados = 0;
+  let resueltos = 0;
+  let proceso = 0;
+  let nuevos = 0;
+  for (const t of tickets) {
+    if (t.Tic_Estado === "Cerrado") resueltos++;
+    else if (t.Tic_Estado === "En Proceso") {
+      proceso++;
+      asignados++;
+    } else if (t.Tic_Estado === "Nuevo") nuevos++;
+    else asignados++;
+  }
+  return {
+    total: tickets.length,
+    nuevos,
+    proceso,
+    asignados,
+    asignados_estado: asignados,
+    sin_asignar: 0,
+    resueltos,
+    cerrados: resueltos,
+  };
+}
+
+/** Un ticket asignado al colaborador. Si hay el mismo Tic_Cod en dos bases, gana `preferDb`. */
+export async function findTicketAsignado(
+  opts: {
+    ticCod: number;
+    aseCodes?: number[];
+    perCodes?: number[];
+    preferDb?: string | null;
+  }
+): Promise<Ticket | null> {
+  if (!opts.ticCod || opts.ticCod <= 0) return null;
+  const rows = await listTicketsAsignados({
+    aseCodes: opts.aseCodes,
+    perCodes: opts.perCodes,
+    ticCod: opts.ticCod,
+    limit: 5,
+  });
+  return pickTicketByOrigen(rows, opts.preferDb);
+}
+
+/** El ticket está asignado a alguno de los usuarios o a la ficha de personal. */
+export function ticketPerteneceA(
+  ticket: Ticket,
+  aseCodes: number[],
+  perCod = 0
+): boolean {
+  const usus = new Set(aseCodes.filter((n) => n > 0));
+  if (
+    (ticket.Asignados || []).some(
+      (a) => usus.has(a.Usu_Cod) || (perCod > 0 && a.Per_Cod === perCod)
+    )
+  ) {
+    return true;
+  }
+  if (ticket.Asignado_Usu_Cod && usus.has(ticket.Asignado_Usu_Cod)) return true;
+  return perCod > 0 && ticket.Per_Cod_Asignado === perCod;
+}
+
+/**
+ * Elige el ticket cuando el mismo Tic_Cod existe en EXA y en Servicios.
+ * Con `preferDb` solo vale esa base. Sin ella, solo si hay un único candidato.
+ */
+export function pickTicketByOrigen(rows: Ticket[], preferDb?: string | null): Ticket | null {
+  if (!rows.length) return null;
+  const prefer = String(preferDb || "").replace(/[^a-zA-Z0-9_]/g, "");
+  if (prefer) return rows.find((t) => t.Db_Origen === prefer) || null;
+  if (rows.length === 1) return rows[0];
+  return null;
 }
 
 export async function countTicketsNuevos(dbDis: string) {
@@ -425,6 +590,7 @@ export async function ticketsKpis(
   const db = sanitizeDbDis(dbDis);
   const prisma = getPrisma(db);
   await ensureTicketAsignados(prisma);
+  const extraAsignados = ticketAsignadosEnabled(prisma);
   const estParams: Array<string | number> = [];
   const estFecha = fechaClauses(opts, estParams, "Tic_Fec_Cre");
   const estWhere = estFecha.length ? `WHERE ${estFecha.join(" AND ")}` : "";
@@ -442,17 +608,25 @@ export async function ticketsKpis(
     >(
       `SELECT
          SUM(CASE WHEN (t.Ase_Cod IS NULL OR t.Ase_Cod = 0)
-           AND NOT EXISTS (
+           ${
+             extraAsignados
+               ? `AND NOT EXISTS (
              SELECT 1 FROM aud_ticket_asignados ax
              WHERE ax.Tic_Cod = t.Tic_Cod AND ax.Tia_Est = 'A'
-           )
+           )`
+               : ""
+           }
            AND t.Tic_Est <> '3' THEN 1 ELSE 0 END) AS sin_asignar,
          SUM(CASE WHEN (
              (t.Ase_Cod IS NOT NULL AND t.Ase_Cod > 0)
-             OR EXISTS (
+             ${
+               extraAsignados
+                 ? `OR EXISTS (
                SELECT 1 FROM aud_ticket_asignados ax
                WHERE ax.Tic_Cod = t.Tic_Cod AND ax.Tia_Est = 'A'
-             )
+             )`
+                 : ""
+             }
            ) AND t.Tic_Est <> '3' THEN 1 ELSE 0 END) AS asignados,
          SUM(CASE WHEN t.Tic_Est = '3' THEN 1 ELSE 0 END) AS resueltos
        FROM tickets t
@@ -482,6 +656,47 @@ export async function ticketsKpis(
   };
 }
 
+/** KPIs de tickets sumando EXA y Servicios (u otras bases permitidas). */
+export async function ticketsKpisBases(
+  opts: { desde?: string | null; hasta?: string | null; bases?: string[] } = {}
+) {
+  const bases = [
+    ...new Set((opts.bases?.length ? opts.bases : await resolveTicketDatabaseIds()).map((b) => sanitizeDbDis(b))),
+  ];
+  const parts = await Promise.all(
+    bases.map(async (db) => {
+      try {
+        return await ticketsKpis(db, opts);
+      } catch (err) {
+        console.error(`[tickets] kpis ${db}:`, err instanceof Error ? err.message : err);
+        return null;
+      }
+    })
+  );
+  const acc = {
+    total: 0,
+    nuevos: 0,
+    proceso: 0,
+    asignados_estado: 0,
+    asignados: 0,
+    sin_asignar: 0,
+    resueltos: 0,
+    cerrados: 0,
+  };
+  for (const p of parts) {
+    if (!p) continue;
+    acc.total += p.total;
+    acc.nuevos += p.nuevos;
+    acc.proceso += p.proceso;
+    acc.asignados_estado += p.asignados_estado;
+    acc.asignados += p.asignados;
+    acc.sin_asignar += p.sin_asignar;
+    acc.resueltos += p.resueltos;
+    acc.cerrados += p.cerrados;
+  }
+  return acc;
+}
+
 /**
  * Desarrolladores y encargados para Ase_Cod.
  * El equipo (aud_panel_usuarios + personal Emp 96) vive en exa.
@@ -505,7 +720,7 @@ export async function listTicketAssignees(): Promise<TicketAssignee[]> {
             CONVERT(IFNULL(Pan_Cedula, '') USING utf8mb4) AS Pan_Cedula
      FROM aud_panel_usuarios
      WHERE Pan_Est = 'A'
-       AND Pan_Rol IN ('developer', 'manager')
+       AND Pan_Rol IN ('developer', 'manager', 'atencion')
        AND Usu_Cod > 0
      ORDER BY Pan_Nombre ASC`
   );
@@ -589,18 +804,20 @@ export async function assignTicket(
     primary,
     opts.ticCod
   );
-  await prisma.$executeRawUnsafe(
-    `UPDATE aud_ticket_asignados SET Tia_Est = 'I' WHERE Tic_Cod = ? AND Tia_Est = 'A'`,
-    opts.ticCod
-  );
-  for (const a of unique) {
+  if (ticketAsignadosEnabled(prisma)) {
     await prisma.$executeRawUnsafe(
-      `INSERT INTO aud_ticket_asignados (Tic_Cod, Usu_Cod, Per_Cod, Tia_Est, Tia_Fecha)
-       VALUES (?, ?, ?, 'A', NOW())`,
-      opts.ticCod,
-      a.usuCod,
-      a.perCod
+      `UPDATE aud_ticket_asignados SET Tia_Est = 'I' WHERE Tic_Cod = ? AND Tia_Est = 'A'`,
+      opts.ticCod
     );
+    for (const a of unique) {
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO aud_ticket_asignados (Tic_Cod, Usu_Cod, Per_Cod, Tia_Est, Tia_Fecha)
+         VALUES (?, ?, ?, 'A', NOW())`,
+        opts.ticCod,
+        a.usuCod,
+        a.perCod
+      );
+    }
   }
 
   const updated = (await listTickets(db, { ticCod: opts.ticCod, limit: 1 }))[0];

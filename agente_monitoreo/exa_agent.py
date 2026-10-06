@@ -27,10 +27,10 @@ from win_shell import (
     start_input_counter,
 )
 
-AGENT_VERSION = "2.7.1-flet"
+AGENT_VERSION = "2.8.3-flet"
 
 # Tokens alineados a globals.css / Badge del dashboard EXA
-C = {
+LIGHT = {
     "bg": "#f5f5f3",
     "card": "#ffffff",
     "border": "#dbdbd7",
@@ -57,7 +57,51 @@ C = {
     "tarea_bg": "#e0f2fe",
     "tarea_fg": "#075985",
     "sky_hover": "#f0f9ff",
+    "shadow": "#1a1a180A",
+    "shadow_lg": "#1a1a1820",
+    "on_primary": "#ffffff",
+    "on_primary_soft": "#f3c6c6",
+    "on_primary_muted": "#f5d0d0",
 }
+DARK = {
+    "bg": "#121211",
+    "card": "#1c1c1a",
+    "border": "#343431",
+    "border_soft": "#2a2a27",
+    "text": "#f3f3ef",
+    "text_muted": "#a3a39e",
+    "text_soft": "#c8c8c2",
+    "primary": "#c44747",
+    "primary_hover": "#d45a5a",
+    "header_dark": "#0a0a09",
+    "muted_bg": "#262624",
+    "success_bg": "#064e3b",
+    "success_fg": "#a7f3d0",
+    "info_bg": "#0c4a6e",
+    "info_fg": "#bae6fd",
+    "warn_bg": "#78350f",
+    "warn_fg": "#fde68a",
+    "danger_bg": "#7f1d1d",
+    "danger_fg": "#fecaca",
+    "muted_badge_bg": "#27272a",
+    "muted_badge_fg": "#e4e4e7",
+    "ticket_bg": "#78350f",
+    "ticket_fg": "#fde68a",
+    "tarea_bg": "#0c4a6e",
+    "tarea_fg": "#bae6fd",
+    "sky_hover": "#1e293b",
+    "shadow": "#00000080",
+    "shadow_lg": "#00000099",
+    "on_primary": "#ffffff",
+    "on_primary_soft": "#f3c6c6",
+    "on_primary_muted": "#f5d0d0",
+}
+C = dict(LIGHT)
+
+
+def apply_palette(mode: str) -> None:
+    C.clear()
+    C.update(DARK if mode == "dark" else LIGHT)
 
 SERVIDOR_FIJO = "https://gestion.exacontable.com"
 
@@ -140,6 +184,17 @@ def plain_text(html: str | None) -> str:
         .replace("&quot;", '"')
     )
     return re.sub(r"[ \t]+\n", "\n", re.sub(r"[ \t]{2,}", " ", t)).strip()
+
+
+def origen_etiqueta(raw: str) -> str:
+    s = str(raw or "")
+    if s == "servicios":
+        return "Servicios"
+    if s == "relavera" or s.startswith("relavera"):
+        return "Relavera"
+    if not s or s == "exa":
+        return "EXA"
+    return s
 
 
 def badge(text: str, bg: str, fg: str) -> ft.Container:
@@ -246,6 +301,8 @@ class ExaMonitorApp:
         self.page = page
         self.config = dict(DEFAULT_CONFIG)
         self.load_config()
+        self.theme_mode = "dark" if str(self.config.get("theme") or "") == "dark" else "light"
+        apply_palette(self.theme_mode)
         self.mac_address = get_mac()
         self.dev_data: dict = {}
         self.tasks_list: list = []
@@ -257,6 +314,8 @@ class ExaMonitorApp:
         self.forzar_bandeja = 1
         self.permitir_salir = 0
         self.selected_tar_cod = 0
+        self.selected_tipo = ""
+        self.selected_db = ""
         self._workers_started = False
         self._hb_lock = threading.Lock()
         self._act_lock = threading.Lock()
@@ -300,20 +359,77 @@ class ExaMonitorApp:
         except Exception as e:
             print("save_config:", e)
 
+    def _apply_page_theme(self):
+        p = self.page
+        dark = self.theme_mode == "dark"
+        p.theme_mode = ft.ThemeMode.DARK if dark else ft.ThemeMode.LIGHT
+        p.bgcolor = C["bg"]
+        scheme = ft.Theme(
+            color_scheme_seed=C["primary"],
+            font_family="Segoe UI",
+        )
+        if dark:
+            p.dark_theme = scheme
+        else:
+            p.theme = scheme
+
+    def _theme_button(self, *, on_primary: bool = False) -> ft.IconButton:
+        dark = self.theme_mode == "dark"
+        return ft.IconButton(
+            icon=ft.Icons.LIGHT_MODE if dark else ft.Icons.DARK_MODE,
+            icon_color=C["on_primary"] if on_primary else C["text"],
+            icon_size=20,
+            tooltip="Modo claro" if dark else "Modo oscuro",
+            on_click=self._toggle_theme,
+        )
+
+    def _toggle_theme(self, _e=None):
+        snap = {
+            "cedula": self.tf_cedula.value or "",
+            "password": self.tf_pass.value or "",
+            "error": self.login_error.value or "",
+            "error_visible": bool(self.login_error.visible),
+            "authed": self.is_authenticated,
+            "tipo": self.tipo_filtro,
+            "active": self.dd_active.value,
+        }
+        self.theme_mode = "light" if self.theme_mode == "dark" else "dark"
+        self.config["theme"] = self.theme_mode
+        self.save_config()
+        apply_palette(self.theme_mode)
+        self._apply_page_theme()
+        self._build()
+        self._render()
+        self.tf_cedula.value = snap["cedula"]
+        self.tf_pass.value = snap["password"]
+        if snap["authed"]:
+            if not self._es_mesa() and snap["tipo"] in ("todos", "tarea", "ticket"):
+                self.tipo_filtro = snap["tipo"]
+                self.seg_tipo.selected = [snap["tipo"]]
+            if snap["active"]:
+                self.dd_active.value = snap["active"]
+                try:
+                    self.selected_tar_cod = int(snap["active"])
+                except (TypeError, ValueError):
+                    pass
+            self._update_ui_after_login()
+        else:
+            self.login_error.value = snap["error"]
+            self.login_error.visible = snap["error_visible"]
+            try:
+                self.page.update()
+            except Exception:
+                pass
+
     def _setup_page(self):
         p = self.page
         p.title = "EXA Monitor"
-        p.theme_mode = ft.ThemeMode.LIGHT
-        p.bgcolor = C["bg"]
+        self._apply_page_theme()
         p.padding = 0
         p.window.width = 760
         p.window.height = 820
         p.window.min_width = 640
         p.window.min_height = 700
-        p.theme = ft.Theme(
-            color_scheme_seed=C["primary"],
-            font_family="Segoe UI",
-        )
         try:
             p.locale = ft.Locale("es", "EC")
         except Exception:
@@ -467,7 +583,7 @@ class ExaMonitorApp:
             shadow=ft.BoxShadow(
                 spread_radius=0,
                 blur_radius=2,
-                color="#1a1a180A",
+                color=C["shadow"],
                 offset=ft.Offset(0, 1),
             ),
         )
@@ -507,7 +623,14 @@ class ExaMonitorApp:
                         spacing=12,
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
-                    self.status_chip,
+                    ft.Row(
+                        [
+                            self._theme_button(),
+                            self.status_chip,
+                        ],
+                        spacing=4,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
                 ],
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -526,6 +649,10 @@ class ExaMonitorApp:
             focused_border_color=C["primary"],
             keyboard_type=ft.KeyboardType.NUMBER,
             text_size=13,
+            color=C["text"],
+            bgcolor=C["card"],
+            cursor_color=C["primary"],
+            text_style=ft.TextStyle(color=C["text"], size=13),
         )
         self.tf_pass = ft.TextField(
             label="Contraseña",
@@ -538,7 +665,10 @@ class ExaMonitorApp:
             border_color=C["border"],
             focused_border_color=C["primary"],
             text_size=13,
-            text_style=ft.TextStyle(font_family="Segoe UI", size=13),
+            color=C["text"],
+            bgcolor=C["card"],
+            cursor_color=C["primary"],
+            text_style=ft.TextStyle(font_family="Segoe UI", size=13, color=C["text"]),
             on_submit=lambda _e: self._start_login(),
         )
         self.btn_login = ft.FilledButton(
@@ -553,7 +683,7 @@ class ExaMonitorApp:
             height=48,
             on_click=lambda _e: self._start_login(),
         )
-        self.login_error = ft.Text("", size=12, color="#991b1b", visible=False)
+        self.login_error = ft.Text("", size=12, color=C["danger_fg"], visible=False)
 
         self.login_card = ft.Container(
             content=ft.Column(
@@ -561,23 +691,27 @@ class ExaMonitorApp:
                     ft.Container(
                         content=ft.Column(
                             [
+                                ft.Row(
+                                    [self._theme_button(on_primary=True)],
+                                    alignment=ft.MainAxisAlignment.END,
+                                ),
                                 ft.Text(
                                     "EXA",
                                     size=34,
                                     weight=ft.FontWeight.W_900,
-                                    color="#ffffff",
+                                    color=C["on_primary"],
                                     font_family="Segoe UI Black",
                                 ),
-                                ft.Text("Tareas y monitoreo", size=12, color="#f3c6c6"),
-                                ft.Text("Iniciar sesión", size=24, weight=ft.FontWeight.BOLD, color="#ffffff"),
+                                ft.Text("Tareas y monitoreo", size=12, color=C["on_primary_soft"]),
+                                ft.Text("Iniciar sesión", size=24, weight=ft.FontWeight.BOLD, color=C["on_primary"]),
                                 ft.Text(
                                     "Usa tu cédula y contraseña de EXA.",
                                     size=12,
-                                    color="#f5d0d0",
+                                    color=C["on_primary_muted"],
                                 ),
                             ],
                             spacing=8,
-                            horizontal_alignment=ft.CrossAxisAlignment.START,
+                            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
                         ),
                         bgcolor=C["primary"],
                         padding=ft.Padding.symmetric(horizontal=24, vertical=22),
@@ -609,7 +743,7 @@ class ExaMonitorApp:
             shadow=ft.BoxShadow(
                 spread_radius=0,
                 blur_radius=24,
-                color="#1a1a1820",
+                color=C["shadow_lg"],
                 offset=ft.Offset(0, 8),
             ),
         )
@@ -776,13 +910,20 @@ class ExaMonitorApp:
         pbg, pfg = prioridad_style(prio)
         tipo = "ticket" if is_ticket else "tarea"
 
+        origen_raw = str(t.get("Db_Origen") or "")
+        origen_txt = origen_etiqueta(origen_raw) if is_ticket else ""
+        top_left = [
+            badge(
+                f"Ticket #{cod}" if is_ticket else f"Tarea #{cod}",
+                C["ticket_bg"] if is_ticket else C["tarea_bg"],
+                C["ticket_fg"] if is_ticket else C["tarea_fg"],
+            ),
+        ]
+        if origen_txt:
+            top_left.append(badge(origen_txt, C["muted_bg"], C["text"]))
         top = ft.Row(
             [
-                badge(
-                    f"Ticket #{cod}" if is_ticket else f"Tarea #{cod}",
-                    C["ticket_bg"] if is_ticket else C["tarea_bg"],
-                    C["ticket_fg"] if is_ticket else C["tarea_fg"],
-                ),
+                ft.Row(top_left, spacing=6),
                 badge(prio, pbg, pfg),
             ],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -831,32 +972,44 @@ class ExaMonitorApp:
                 )
             )
 
+        activo = self.selected_tar_cod == cod and self.selected_tipo == tipo
         return ft.Container(
             content=ft.Column([top, *mid], spacing=8, tight=True),
-            bgcolor=C["card"],
-            border=ft.Border.all(1, C["border"]),
+            bgcolor=C["sky_hover"] if activo else C["card"],
+            border=ft.Border.all(2, C["primary"]) if activo else ft.Border.all(1, C["border"]),
             border_radius=12,
             padding=14,
             ink=True,
-            on_click=lambda _e, c=cod, tp=tipo: self._open_item(c, tp),
+            on_click=lambda _e, c=cod, tp=tipo, db=str(t.get("Db_Origen") or ""): self._open_item(c, tp, db),
             shadow=ft.BoxShadow(
                 spread_radius=0,
                 blur_radius=2,
-                color="#1a1a180A",
+                color=C["shadow"],
                 offset=ft.Offset(0, 1),
             ),
         )
 
-    def _activate_task(self, cod: int):
-        self.selected_tar_cod = cod
-        self.dd_active.value = str(cod)
-        self._set_status(f"Activa #{cod}", ok=True)
-        self.page.update()
+    def _activate_task(self, cod: int, tipo: str = "tarea", db: str = ""):
+        self.selected_tar_cod = int(cod or 0)
+        self.selected_tipo = tipo or "tarea"
+        self.selected_db = db or ""
+        try:
+            self.dd_active.value = str(self.selected_tar_cod)
+        except Exception:
+            pass
+        self._set_status(f"Trabajando en #{self.selected_tar_cod}", ok=True)
+        try:
+            self.page.update()
+        except Exception as err:
+            print("activar:", err)
 
-    def _open_item(self, cod: int, tipo: str):
-        self._activate_task(cod)
+    def _open_item(self, cod: int, tipo: str, db: str = ""):
+        try:
+            self._activate_task(cod, tipo, db)
+        except Exception as err:
+            print("abrir:", err)
         self._set_status("Cargando detalle...")
-        self.page.run_thread(lambda: self._load_detalle(cod, tipo))
+        self.page.run_thread(lambda: self._load_detalle(cod, tipo, db))
 
     def _media_url(self, path: str) -> str:
         if not path:
@@ -873,20 +1026,21 @@ class ExaMonitorApp:
         resp = requests.post(url, data=data, timeout=timeout)
         return resp.json()
 
-    def _load_detalle(self, cod: int, tipo: str):
+    def _load_detalle(self, cod: int, tipo: str, db: str = ""):
         try:
             per = int((self.dev_data or {}).get("Per_Cod") or 0)
-            data = self._api_post(
-                {
-                    "accion": "detalle_trabajo",
-                    "Per_Cod": str(per),
-                    "Tar_Cod": str(cod),
-                    "Tic_Cod": str(cod),
-                    "tipo": tipo,
-                    "mac_address": self.mac_address,
-                    "version_agente": AGENT_VERSION,
-                }
-            )
+            body = {
+                "accion": "detalle_trabajo",
+                "Per_Cod": str(per),
+                "Tar_Cod": str(cod),
+                "Tic_Cod": str(cod),
+                "tipo": tipo,
+                "mac_address": self.mac_address,
+                "version_agente": AGENT_VERSION,
+            }
+            if db:
+                body["Db_Origen"] = db
+            data = self._api_post(body)
             if data.get("status") != "ok":
                 self._show_info("Detalle", data.get("mensaje") or "No se pudo cargar.")
                 self._set_status("Error al cargar")
@@ -1068,6 +1222,7 @@ class ExaMonitorApp:
         avances = payload.get("avances") or []
         tipo = payload.get("tipo") or "tarea"
         cod = int(trabajo.get("Cod") or 0)
+        db_origen = str(trabajo.get("Db_Origen") or "")
         puede_avance = bool(trabajo.get("puede_registrar_avance"))
         puede_estado = bool(trabajo.get("puede_cambiar_estado"))
         puede_asignar = bool(trabajo.get("puede_asignar"))
@@ -1087,6 +1242,8 @@ class ExaMonitorApp:
             badge(estado or "-", ebg, efg),
             badge(prio, pbg, pfg),
         ]
+        if tipo == "ticket" and db_origen:
+            badges.append(badge(origen_etiqueta(db_origen) or "EXA", C["muted_bg"], C["text"]))
         if trabajo.get("Complejidad"):
             cbg, cfg = complejidad_style(str(trabajo.get("Complejidad")))
             badges.append(badge(f"Complejidad: {trabajo.get('Complejidad')}", cbg, cfg))
@@ -1639,7 +1796,7 @@ class ExaMonitorApp:
             lbl_avance_err.visible = False
             self.page.update()
             files = list(self._pending_files)
-            self.page.run_thread(lambda: self._actualizar_ticket(cod, nuevo, files, close_dlg))
+            self.page.run_thread(lambda: self._actualizar_ticket(cod, nuevo, files, close_dlg, db_origen))
 
         async def do_solo_evidencias(_e):
             if not self._pending_files:
@@ -1653,7 +1810,7 @@ class ExaMonitorApp:
             btn_solo_ev.disabled = True
             self.page.update()
             files = list(self._pending_files)
-            self.page.run_thread(lambda: self._solo_subir_evidencias(cod, tipo, files, close_dlg))
+            self.page.run_thread(lambda: self._solo_subir_evidencias(cod, tipo, files, close_dlg, db_origen))
 
         btn_guardar.on_click = do_save
         btn_en_proceso.on_click = lambda _e: do_ticket_estado("En Proceso")
@@ -1673,7 +1830,7 @@ class ExaMonitorApp:
             btn_asignar.text = "Asignando..."
             lbl_avance_err.visible = False
             self.page.update()
-            self.page.run_thread(lambda: self._asignar_ticket(cod, int(usu), close_dlg, btn_asignar))
+            self.page.run_thread(lambda: self._asignar_ticket(cod, int(usu), close_dlg, btn_asignar, db_origen))
 
         if btn_asignar is not None:
             btn_asignar.on_click = do_asignar
@@ -1685,6 +1842,27 @@ class ExaMonitorApp:
                 style=ft.ButtonStyle(color=C["text_muted"]),
             ),
         ]
+        if tipo == "ticket" and (puede_asignar or puede_estado):
+            btn_trabajar = ft.FilledButton(
+                "Estoy trabajando en este",
+                icon=ft.Icons.PLAY_ARROW,
+                style=ft.ButtonStyle(
+                    bgcolor=C["primary"],
+                    color="#ffffff",
+                    shape=ft.RoundedRectangleBorder(radius=8),
+                ),
+            )
+
+            def do_trabajar(_e, tomar=puede_asignar):
+                btn_trabajar.disabled = True
+                btn_trabajar.text = "Marcando..."
+                self.page.update()
+                self.page.run_thread(
+                    lambda: self._marcar_trabajando(cod, db_origen, tomar, close_dlg, btn_trabajar)
+                )
+
+            btn_trabajar.on_click = do_trabajar
+            footer.append(btn_trabajar)
         if puede_estado:
             footer.extend([btn_en_proceso, btn_resuelto])
         if trabajo.get("puede_subir_evidencia") and not puede_avance:
@@ -1703,7 +1881,7 @@ class ExaMonitorApp:
         dlg_ref["dlg"] = dlg
         self.page.show_dialog(dlg)
 
-    def _upload_evidencias(self, cod: int, tipo: str, file_paths: list[str]) -> list[str]:
+    def _upload_evidencias(self, cod: int, tipo: str, file_paths: list[str], db: str = "") -> list[str]:
         if not file_paths:
             return []
         per = int((self.dev_data or {}).get("Per_Cod") or 0)
@@ -1716,6 +1894,8 @@ class ExaMonitorApp:
         }
         if tipo == "ticket":
             data["Tic_Cod"] = str(cod)
+            if db:
+                data["Db_Origen"] = db
         else:
             data["Tar_Cod"] = str(cod)
         files_payload = []
@@ -1742,7 +1922,7 @@ class ExaMonitorApp:
             self.tasks_list = payload.get("mis_tareas") or payload.get("tareas") or []
             self._refresh_tasks_ui()
 
-    def _asignar_ticket(self, tic_cod: int, usu_cod: int, on_ok, btn=None):
+    def _asignar_ticket(self, tic_cod: int, usu_cod: int, on_ok, btn=None, db: str = ""):
         def fallo(msg: str):
             if btn is not None:
                 btn.disabled = False
@@ -1757,6 +1937,7 @@ class ExaMonitorApp:
                     "Per_Cod": str(per),
                     "Tic_Cod": str(tic_cod),
                     "Usu_Cod": str(usu_cod),
+                    "Db_Origen": db,
                     "mac_address": self.mac_address,
                     "version_agente": AGENT_VERSION,
                 }
@@ -1775,6 +1956,64 @@ class ExaMonitorApp:
             nombre = payload.get("Asignado_Nombre") or "el desarrollador"
             self._show_info("Ticket asignado", f"Ticket #{tic_cod} → {nombre}.")
             self._set_status(f"Asignado #{tic_cod}", ok=True)
+        except Exception as e:
+            fallo(str(e))
+
+    def _marcar_trabajando(self, tic_cod: int, db: str, tomar: bool, on_ok, btn=None):
+        self._activate_task(tic_cod, "ticket", db)
+
+        def fallo(msg: str):
+            if btn is not None:
+                btn.disabled = False
+                btn.text = "Estoy trabajando en este"
+            self._show_info("Ticket", msg)
+
+        try:
+            if tomar:
+                usu = int((self.dev_data or {}).get("Usu_Cod") or 0)
+                if usu <= 0:
+                    fallo("Tu usuario EXA no está vinculado. No se puede tomar el ticket.")
+                    return
+                data = self._api_post(
+                    {
+                        "accion": "asignar_ticket",
+                        "Per_Cod": str(int((self.dev_data or {}).get("Per_Cod") or 0)),
+                        "Tic_Cod": str(tic_cod),
+                        "Usu_Cod": str(usu),
+                        "Db_Origen": db,
+                        "mac_address": self.mac_address,
+                        "version_agente": AGENT_VERSION,
+                    }
+                )
+                if data.get("status") != "ok":
+                    fallo(data.get("mensaje") or "No se pudo tomar el ticket.")
+                    return
+                self._apply_task_list(data.get("data") or {})
+            per = int((self.dev_data or {}).get("Per_Cod") or 0)
+            data = self._api_post(
+                {
+                    "accion": "cambiar_estado_ticket",
+                    "Per_Cod": str(per),
+                    "Tic_Cod": str(tic_cod),
+                    "Db_Origen": db,
+                    "estado": "En Proceso",
+                    "mac_address": self.mac_address,
+                    "version_agente": AGENT_VERSION,
+                }
+            )
+            if data.get("status") != "ok":
+                fallo(data.get("mensaje") or "No se pudo marcar el ticket.")
+                return
+            self._apply_task_list(data.get("data") or {})
+            try:
+                on_ok()
+            except Exception:
+                pass
+            self._show_info(
+                "En proceso",
+                f"Ticket #{tic_cod} quedó marcado. El seguimiento lo va a asociar a ese ticket.",
+            )
+            self._set_status(f"Trabajando en #{tic_cod}", ok=True)
         except Exception as e:
             fallo(str(e))
 
@@ -1808,30 +2047,30 @@ class ExaMonitorApp:
         except Exception as e:
             self._show_info("Avance", str(e))
 
-    def _solo_subir_evidencias(self, cod: int, tipo: str, file_paths: list[str], on_ok):
+    def _solo_subir_evidencias(self, cod: int, tipo: str, file_paths: list[str], on_ok, db: str = ""):
         try:
-            rutas = self._upload_evidencias(cod, tipo, file_paths)
+            rutas = self._upload_evidencias(cod, tipo, file_paths, db)
             try:
                 on_ok()
             except Exception:
                 pass
             self._show_info("Evidencias", f"Se subieron {len(rutas)} archivo(s).")
             self._set_status(f"Evidencias #{cod}", ok=True)
-            # Refrescar lista/detalle
-            self.page.run_thread(lambda: self._load_detalle(cod, tipo))
+            self.page.run_thread(lambda: self._load_detalle(cod, tipo, db))
         except Exception as e:
             self._show_info("Evidencias", str(e))
 
-    def _actualizar_ticket(self, tic_cod: int, estado: str, file_paths: list[str], on_ok):
+    def _actualizar_ticket(self, tic_cod: int, estado: str, file_paths: list[str], on_ok, db: str = ""):
         try:
             if file_paths:
-                self._upload_evidencias(tic_cod, "ticket", file_paths)
+                self._upload_evidencias(tic_cod, "ticket", file_paths, db)
             per = int((self.dev_data or {}).get("Per_Cod") or 0)
             data = self._api_post(
                 {
                     "accion": "cambiar_estado_ticket",
                     "Per_Cod": str(per),
                     "Tic_Cod": str(tic_cod),
+                    "Db_Origen": db,
                     "estado": estado,
                     "mac_address": self.mac_address,
                     "version_agente": AGENT_VERSION,
@@ -1873,8 +2112,12 @@ class ExaMonitorApp:
         n_tar = sum(1 for t in self.tasks_list if t.get("tipo") != "ticket")
         n_tic = sum(1 for t in self.tasks_list if t.get("tipo") == "ticket")
         if self._es_mesa():
-            self.lbl_kpis.value = f"{n_tic} tickets por asignar"
-            vacio = "No hay tickets nuevos."
+            n_libres = sum(1 for t in self.tasks_list if t.get("por_asignar"))
+            n_mios = sum(
+                1 for t in self.tasks_list if t.get("tipo") == "ticket" and not t.get("por_asignar")
+            )
+            self.lbl_kpis.value = f"{n_libres} por asignar | {n_mios} asignados a ti"
+            vacio = "No hay tickets por asignar ni asignados a ti."
         else:
             self.lbl_kpis.value = f"{len(self.tasks_list)} Asignaciones | {n_tar} tareas | {n_tic} tickets"
             vacio = "No hay tareas en este filtro."
@@ -1901,12 +2144,13 @@ class ExaMonitorApp:
 
     def _apply_rol_ui(self):
         if self._es_mesa():
-            self.title_main.value = "Tickets por asignar"
-            self.lbl_lista_titulo.value = "Tickets que llegan"
-            self.lbl_lista_hint.value = "Clic para asignar"
-            self.card_activa.visible = False
+            self.title_main.value = "Tickets"
+            self.lbl_lista_titulo.value = "Por asignar y los tuyos"
+            self.lbl_lista_hint.value = "Clic para asignar o continuar"
+            self.card_activa.visible = True
             self.seg_tipo.visible = False
             self.tipo_filtro = "ticket"
+            self.lbl_lista_hint.value = "Clic para abrir y marcar que estás trabajando"
         else:
             self.title_main.value = "Mis tareas"
             self.lbl_lista_titulo.value = "Mis tareas"
@@ -2101,6 +2345,9 @@ class ExaMonitorApp:
             "accion": "subir_telemetria",
             "Per_Cod": str(per),
             "Tar_Cod": str(self.selected_tar_cod or ""),
+            "Tic_Cod": str(self.selected_tar_cod or "") if self.selected_tipo == "ticket" else "",
+            "tipo": self.selected_tipo or "",
+            "Db_Origen": self.selected_db or "",
             "clicks": str(clicks),
             "teclas": str(teclas),
             "segundos_activos": str(max(30, int(self.interval_minutes) * 30)),

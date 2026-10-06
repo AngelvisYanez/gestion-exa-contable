@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import {
   Activity,
@@ -52,7 +53,6 @@ const navGroups: NavGroup[] = [
       {
         href: "/tickets",
         label: "Tickets",
-        roles: ["manager", "atencion"],
         icon: <Ticket className="w-[17px] h-[17px]" strokeWidth={1.8} />,
       },
       {
@@ -134,32 +134,56 @@ export default function Sidebar() {
     }))
     .filter((g) => g.items.length > 0);
 
-  const sidebarWidth = collapsed ? "w-14" : "w-60";
+  const sidebarWidth = collapsed
+    ? "w-[min(18rem,86vw)] md:w-14"
+    : "w-[min(18rem,86vw)] md:w-60";
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMobileOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mobileOpen, setMobileOpen]);
 
   return (
     <>
       <aside
         className={`
           ${sidebarWidth} bg-sidebar border-r border-sidebar-border
-          h-screen flex flex-col fixed top-0 left-0 z-50
+          h-dvh max-h-dvh flex flex-col fixed top-0 left-0 z-[60]
           transition-all duration-200 ease-in-out select-none
           md:translate-x-0 ${mobileOpen ? "translate-x-0" : "-translate-x-full"}
         `}
       >
         <div
           className={`h-16 shrink-0 relative flex items-center border-b border-sidebar-border bg-sidebar ${
-            collapsed ? "justify-center px-2" : "justify-start px-4"
+            collapsed
+              ? "justify-start px-4 md:justify-center md:px-2"
+              : "justify-start px-4"
           }`}
         >
           {collapsed ? (
-            <Image
-              src="/favicon.png"
-              alt="EXA"
-              width={36}
-              height={36}
-              priority
-              className="h-9 w-9 rounded-full object-cover ring-1 ring-sidebar-border/80"
-            />
+            <>
+              <Image
+                src="/favicon.png"
+                alt="EXA"
+                width={36}
+                height={36}
+                priority
+                className="hidden h-9 w-9 rounded-full object-cover ring-1 ring-sidebar-border/80 md:block"
+              />
+              <Image
+                src="/exa-logo-dark-transparent.png"
+                alt="EXA"
+                width={168}
+                height={52}
+                quality={100}
+                priority
+                className="h-11 w-auto max-w-[152px] object-contain object-left dark:invert md:hidden"
+              />
+            </>
           ) : (
             <Image
               src="/exa-logo-dark-transparent.png"
@@ -168,7 +192,7 @@ export default function Sidebar() {
               height={52}
               quality={100}
               priority
-              className="h-11 w-auto max-w-[152px] object-contain object-left"
+              className="h-11 w-auto max-w-[152px] object-contain object-left dark:invert"
             />
           )}
           <button
@@ -188,12 +212,16 @@ export default function Sidebar() {
         <nav className="flex-1 py-2 flex flex-col overflow-y-auto overflow-x-hidden">
           {groups.map((group, gi) => (
             <div key={group.group} className="flex flex-col">
-              {!collapsed && (
-                <span className="px-4 pt-4 pb-1 text-[9px] font-bold text-muted-foreground tracking-widest uppercase">
-                  {group.group}
-                </span>
+              <span
+                className={`px-4 pt-4 pb-1 text-[9px] font-bold text-muted-foreground tracking-widest uppercase ${
+                  collapsed ? "md:hidden" : ""
+                }`}
+              >
+                {group.group}
+              </span>
+              {collapsed && gi > 0 && (
+                <div className="mx-3 my-2 hidden h-px bg-sidebar-border md:block" />
               )}
-              {collapsed && gi > 0 && <div className="mx-3 my-2 h-px bg-sidebar-border" />}
               <div className="flex flex-col gap-0.5 px-1.5">
                 {group.items.map((item) => {
                   const active = isActive(pathname, item.href);
@@ -204,8 +232,8 @@ export default function Sidebar() {
                       onClick={() => setMobileOpen(false)}
                       title={collapsed ? item.label : undefined}
                       className={`
-                        flex items-center gap-2.5 rounded-lg transition-all duration-150 group relative
-                        ${collapsed ? "px-0 py-2.5 justify-center" : "px-2.5 py-2"}
+                        flex min-h-11 items-center gap-2.5 rounded-lg transition-all duration-150 group relative
+                        ${collapsed ? "justify-start px-2.5 py-2.5 md:justify-center md:px-0" : "px-2.5 py-2.5"}
                         ${
                           active
                             ? "bg-brand-red text-white font-semibold shadow-xs hover:bg-brand-red-mid"
@@ -214,11 +242,15 @@ export default function Sidebar() {
                       `}
                     >
                       <span className="shrink-0">{item.icon}</span>
-                      {!collapsed && (
-                        <span className="text-[12.5px] font-medium truncate flex-1">{item.label}</span>
-                      )}
+                      <span
+                        className={`min-w-0 flex-1 truncate text-[13px] font-medium md:text-[12.5px] ${
+                          collapsed ? "md:hidden" : ""
+                        }`}
+                      >
+                        {item.label}
+                      </span>
                       {collapsed && (
-                        <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 bg-popover text-popover-foreground text-xs font-medium px-2 py-1 rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+                        <div className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 hidden -translate-y-1/2 whitespace-nowrap rounded-md bg-popover px-2 py-1 text-xs font-medium text-popover-foreground opacity-0 transition-opacity group-hover:opacity-100 md:block">
                           {item.label}
                         </div>
                       )}
@@ -234,13 +266,15 @@ export default function Sidebar() {
           <button
             type="button"
             onClick={() => void logout()}
-            className={`flex items-center gap-2.5 rounded-lg transition-all duration-150 w-full cursor-pointer text-sidebar-foreground/70 hover:text-brand-red hover:bg-brand-red-subtle
-              ${collapsed ? "justify-center px-0 py-2.5" : "px-2.5 py-2"}
+            className={`flex min-h-11 w-full cursor-pointer items-center gap-2.5 rounded-lg text-sidebar-foreground/70 transition-all duration-150 hover:bg-brand-red-subtle hover:text-brand-red
+              ${collapsed ? "justify-start px-2.5 py-2.5 md:justify-center md:px-0" : "px-2.5 py-2.5"}
             `}
             title="Cerrar sesion"
           >
             <LogOut className="w-4 h-4 shrink-0" strokeWidth={2} />
-            {!collapsed && <span className="text-[12.5px] font-medium">Cerrar sesion</span>}
+            <span className={`text-[13px] font-medium ${collapsed ? "md:hidden" : ""}`}>
+              Cerrar sesion
+            </span>
           </button>
         </div>
       </aside>
@@ -248,7 +282,7 @@ export default function Sidebar() {
       {mobileOpen && (
         <div
           onClick={() => setMobileOpen(false)}
-          className="fixed inset-0 bg-black/30 z-40 md:hidden"
+          className="fixed inset-0 z-[55] bg-black/40 md:hidden"
         />
       )}
     </>

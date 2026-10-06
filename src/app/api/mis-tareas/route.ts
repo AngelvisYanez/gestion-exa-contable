@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/auth/session";
-import { resolvePerCod } from "@/lib/auth/resolvePer";
-import { matchTeamMember } from "@/lib/auth/users";
-import { getPrisma } from "@/lib/db";
 import { publishEvent } from "@/lib/events";
 import { tasksDbDis, tasksEmpCod } from "@/lib/empresa";
-import { resolveUsuCodesFromPer } from "@/lib/monitoreo";
 import {
   actividadPersonal,
   descripcionAvanceDesdeBody,
@@ -13,9 +9,11 @@ import {
   listTareas,
   registrarAvance,
 } from "@/lib/tareas";
+import { ticketScopeForSession } from "@/lib/ticket-scope";
 import {
+  findTicketAsignado,
   kanbanToTicketEstado,
-  listTickets,
+  listTicketsAsignados,
   ticketAsTarea,
   updateTicketEstado,
   type TicketEstado,
@@ -26,45 +24,9 @@ export const dynamic = "force-dynamic";
 
 /**
  * Mis tareas vive en Emp_Cod=96 / Dat_Dis=exa (personal + aud_tareas).
- * Los tickets asignados (Ase_Cod ∈ Usu_Cod del colaborador) también se listan aquí.
- * No usar el toggle de proyecto (servicios) para resolver Per_Cod ni listar.
+ * Los tickets asignados se listan de EXA y Servicios (Usu_Cod o Per_Cod).
+ * No usar el toggle de proyecto (servicios) para resolver Per_Cod ni las tareas.
  */
-async function perForSession(session: {
-  perCod: number;
-  prsCod: number;
-  cedula: string;
-  name: string;
-}) {
-  const db = tasksDbDis();
-  const team = matchTeamMember(session.name);
-  return resolvePerCod(db, {
-    perCod: session.perCod > 0 ? session.perCod : undefined,
-    prsCod: session.prsCod,
-    cedula: session.cedula,
-    nameMatch: team?.nameMatch,
-  });
-}
-
-/** Todos los Usu_Cod con los que puede aparecer Ase_Cod (sesión + multi-sucursal). */
-async function aseCodesForSession(session: {
-  usuCod: number;
-  perCod: number;
-  prsCod: number;
-  cedula: string;
-  name: string;
-}) {
-  const db = tasksDbDis();
-  const codes = new Set<number>();
-  if (session.usuCod > 0) codes.add(session.usuCod);
-  const perCod = await perForSession(session);
-  if (perCod > 0) {
-    const prisma = getPrisma(db);
-    for (const c of await resolveUsuCodesFromPer(prisma, perCod)) {
-      if (c > 0) codes.add(c);
-    }
-  }
-  return { perCod, aseCodes: [...codes] };
-}
 
 export async function GET(req: NextRequest) {
   const session = await getSessionFromRequest(req);
@@ -81,7 +43,7 @@ export async function GET(req: NextRequest) {
     // Scope fijo MATRIZ: personal y tareas de Emp 96 estan en exa
     const db = tasksDbDis();
     const empCod = tasksEmpCod(sp.get("Emp_Cod"));
-    const { perCod, aseCodes } = await aseCodesForSession(session);
+    const { perCod, aseCodes, perCodes } = await ticketScopeForSession(session);
 
     const detalleCod = parseInt(sp.get("detalle") || "0", 10);
     if (detalleCod > 0) {
@@ -128,9 +90,15 @@ export async function GET(req: NextRequest) {
 
     const tareas = tareasRaw.map((t) => ({ ...t, tipo: "tarea" as const }));
 
-    const ticketsRaw = aseCodes.length
-      ? await listTickets(db, { aseCodes, q: q || undefined, limit: 300 })
-      : [];
+    const ticketsRaw =
+      aseCodes.length || perCodes.length
+        ? await listTicketsAsignados({
+            aseCodes,
+            perCodes,
+            q: q || undefined,
+            limit: 300,
+          })
+        : [];
     const tickets = ticketsRaw.map(ticketAsTarea);
 
     const itemRecency = (t: {
@@ -187,7 +155,7 @@ export async function GET(req: NextRequest) {
       usuCod: session.usuCod,
       aseCodes,
       warning: emptyBecauseNoPer
-        ? "Tu usuario EXA no tiene ficha en personal. Pide vincular tu Per_Cod para ver Mis tareas (los tickets asignados sí se listan)."
+        ? "Tu usuario EXA no tiene ficha en personal. Pide vincular tu Per_Cod para ver tus tareas. Los tickets asignados a tu usuario sí se listan."
         : null,
       kpis: {
         total,
@@ -237,24 +205,29 @@ export async function POST(req: NextRequest) {
       if (!ticCod || !estadoRaw) {
         return NextResponse.json({ success: false, message: "Tic_Cod y estado requeridos" }, { status: 400 });
       }
-      const { aseCodes } = await aseCodesForSession(session);
-      if (!aseCodes.length) {
-        return NextResponse.json({ success: false, message: "Sin Usu_Cod en sesion." }, { status: 403 });
+      const { aseCodes, perCodes } = await ticketScopeForSession(session);
+      if (!aseCodes.length && !perCodes.length) {
+        return NextResponse.json({ success: false, message: "Sin usuario vinculado en sesion." }, { status: 403 });
       }
-      const mios = await listTickets(db, { aseCodes, limit: 500 });
-      if (!mios.some((t) => t.Tic_Cod === ticCod)) {
+      const mio = await findTicketAsignado({
+        ticCod,
+        aseCodes,
+        perCodes,
+        preferDb: body.Db_Origen || body.Ses_Dat_Dis,
+      });
+      if (!mio) {
         return NextResponse.json(
           { success: false, message: "Ese ticket no esta asignado a ti." },
           { status: 403 }
         );
       }
       const estado: TicketEstado = kanbanToTicketEstado(estadoRaw);
-      await updateTicketEstado(db, ticCod, estado);
+      await updateTicketEstado(mio.Db_Origen || db, ticCod, estado);
       publishEvent({
         type: "estado_cambiado",
         title: "Ticket actualizado",
         message: `${session.name || "Usuario"} · ticket #${ticCod} → ${estado}`,
-        db,
+        db: mio.Db_Origen || db,
         ticCod,
         estado,
         kind: "ticket",
@@ -270,7 +243,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, message: "Tar_Cod requerido" }, { status: 400 });
       }
 
-      const perCod = await perForSession(session);
+      const { perCod } = await ticketScopeForSession(session);
       const tareas = await listTareas(db, { perCod: perCod > 0 ? perCod : undefined });
       if (perCod <= 0 || !tareas.some((t) => t.Tar_Cod === tarCod)) {
         return NextResponse.json(

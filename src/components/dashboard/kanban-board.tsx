@@ -36,7 +36,8 @@ export type KanbanEstado = (typeof KANBAN_COLUMNS)[number]["id"];
 const COLUMN_IDS = new Set<string>(KANBAN_COLUMNS.map((c) => c.id));
 
 export function workItemKey(t: Tarea) {
-  return `${t.tipo || "tarea"}:${t.Tar_Cod}`;
+  const origen = t.Db_Origen ? `${t.Db_Origen}:` : "";
+  return `${t.tipo || "tarea"}:${origen}${t.Tar_Cod}`;
 }
 
 function columnFor(t: Tarea): KanbanEstado {

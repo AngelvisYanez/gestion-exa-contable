@@ -22,7 +22,7 @@ export function DeveloperFilter({ value, options, onChange, disabled, className 
   return (
     <div
       className={cn(
-        "inline-flex h-10 items-center gap-2 rounded-lg border border-border/70 bg-card px-2.5 shadow-sm",
+        "flex h-auto min-h-10 w-full max-w-full items-center gap-2 rounded-lg border border-border/70 bg-card px-2.5 py-1 shadow-sm sm:inline-flex sm:w-auto sm:py-0",
         className
       )}
     >
@@ -32,7 +32,7 @@ export function DeveloperFilter({ value, options, onChange, disabled, className 
       </Label>
       <Select
         id="filtro-dev"
-        wrapperClassName="w-[180px] shrink-0"
+        wrapperClassName="min-w-0 w-full flex-1 sm:w-[180px] sm:flex-none"
         className="h-8 min-h-0 w-full py-0 text-xs"
         value={value ? String(value) : ""}
         disabled={disabled || options.length === 0}

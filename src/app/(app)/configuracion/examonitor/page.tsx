@@ -802,7 +802,7 @@ export default function ExaMonitorConfigPage() {
         </Card>
 
         <FilterBar>
-          <div className="relative w-[240px]">
+          <div className="relative w-full min-w-0 sm:w-[240px]">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               className="h-9 min-h-0 pl-9 text-sm"

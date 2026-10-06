@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useMemo } from "react";
 import type { ApexOptions } from "apexcharts";
 import type { AssigneeMetric, TeamDayPoint } from "@/lib/dashboard";
+import { useTheme } from "@/contexts/ThemeContext";
 
 const ReactApexChart = dynamic(() => import("react-apexcharts").then((m) => m.default), {
   ssr: false,
@@ -22,7 +23,9 @@ const BRAND = {
   violet: "#7c3aed",
 };
 
-function baseChart(): ApexOptions {
+function baseChart(dark: boolean): ApexOptions {
+  const ink = dark ? "#a8a29e" : "#78716c";
+  const grid = dark ? "#3a3a36" : "#e7e5e4";
   return {
     chart: {
       toolbar: { show: false },
@@ -30,9 +33,11 @@ function baseChart(): ApexOptions {
       fontFamily: "inherit",
       animations: { enabled: true, speed: 600 },
       background: "transparent",
+      foreColor: ink,
     },
+    theme: { mode: dark ? "dark" : "light" },
     grid: {
-      borderColor: "#e7e5e4",
+      borderColor: grid,
       strokeDashArray: 4,
       padding: { left: 8, right: 8, top: 0, bottom: 0 },
     },
@@ -43,14 +48,15 @@ function baseChart(): ApexOptions {
       fontSize: "11px",
       fontWeight: 600,
       itemMargin: { horizontal: 8, vertical: 0 },
+      labels: { colors: ink },
     },
     tooltip: {
-      theme: "light",
+      theme: dark ? "dark" : "light",
       style: { fontSize: "12px" },
     },
     xaxis: {
       labels: {
-        style: { fontSize: "10px", colors: "#78716c" },
+        style: { fontSize: "10px", colors: ink },
         rotate: 0,
         hideOverlappingLabels: true,
       },
@@ -59,7 +65,7 @@ function baseChart(): ApexOptions {
     },
     yaxis: {
       labels: {
-        style: { fontSize: "10px", colors: "#78716c" },
+        style: { fontSize: "10px", colors: ink },
         formatter: (v) => `${Math.round(v)}`,
       },
     },
@@ -80,6 +86,8 @@ export function TeamWaveChart({
   serie: TeamDayPoint[];
   height?: number | string;
 }) {
+  const { theme } = useTheme();
+  const dark = theme === "dark";
   const categories = useMemo(() => serie.map((d) => d.label), [serie]);
   const series = useMemo(
     () => [
@@ -91,7 +99,7 @@ export function TeamWaveChart({
   );
 
   const options = useMemo<ApexOptions>(() => {
-    const base = baseChart();
+    const base = baseChart(dark);
     return {
       ...base,
       chart: {
@@ -156,7 +164,7 @@ export function TeamWaveChart({
         },
       },
     };
-  }, [categories]);
+  }, [categories, dark]);
 
   if (!serie.length) {
     return (
@@ -181,6 +189,9 @@ export function TeamBarsChart({
   rows: AssigneeMetric[];
   height?: number;
 }) {
+  const { theme } = useTheme();
+  const dark = theme === "dark";
+  const ink = dark ? "#a8a29e" : "#78716c";
   const top = useMemo(() => rows.filter((r) => r.total > 0).slice(0, 8), [rows]);
   const categories = useMemo(() => top.map((r) => shortName(r.Nombre)), [top]);
   const series = useMemo(
@@ -193,7 +204,7 @@ export function TeamBarsChart({
   );
 
   const options = useMemo<ApexOptions>(() => {
-    const base = baseChart();
+    const base = baseChart(dark);
     return {
       ...base,
       chart: { ...base.chart, type: "bar" },
@@ -210,13 +221,13 @@ export function TeamBarsChart({
         ...base.xaxis,
         categories,
         labels: {
-          style: { fontSize: "10px", colors: "#78716c" },
+          style: { fontSize: "10px", colors: ink },
           rotate: categories.length > 5 ? -25 : 0,
           trim: true,
         },
       },
     };
-  }, [categories]);
+  }, [categories, dark, ink]);
 
   if (!top.length) {
     return (
@@ -241,6 +252,10 @@ export function TeamRadarChart({
   rows: AssigneeMetric[];
   height?: number;
 }) {
+  const { theme } = useTheme();
+  const dark = theme === "dark";
+  const ink = dark ? "#a8a29e" : "#78716c";
+  const grid = dark ? "#3a3a36" : "#e7e5e4";
   const top = useMemo(() => rows.filter((r) => r.total > 0).slice(0, 5), [rows]);
   const maxTotal = Math.max(1, ...top.map((r) => r.total));
 
@@ -260,7 +275,7 @@ export function TeamRadarChart({
   );
 
   const options = useMemo<ApexOptions>(() => {
-    const base = baseChart();
+    const base = baseChart(dark);
     return {
       ...base,
       chart: { ...base.chart, type: "radar" },
@@ -273,7 +288,7 @@ export function TeamRadarChart({
         labels: {
           style: {
             fontSize: "10px",
-            colors: Array(5).fill("#78716c") as string[],
+            colors: Array(5).fill(ink) as string[],
           },
         },
       },
@@ -286,9 +301,9 @@ export function TeamRadarChart({
         radar: {
           size: Math.min(110, Math.round(height * 0.38)),
           polygons: {
-            strokeColors: "#e7e5e4",
-            connectorColors: "#e7e5e4",
-            fill: { colors: ["transparent", "#f5f5f4"] },
+            strokeColors: grid,
+            connectorColors: grid,
+            fill: { colors: ["transparent", dark ? "#1c1c1a" : "#f5f5f4"] },
           },
         },
       },
@@ -302,7 +317,7 @@ export function TeamRadarChart({
         y: { formatter: (v) => `${Math.round(v)}%` },
       },
     };
-  }, [height]);
+  }, [height, dark, ink, grid]);
 
   if (!top.length) {
     return (
@@ -329,17 +344,19 @@ export function ApexDonutChart({
   height?: number;
   centerLabel?: string;
 }) {
+  const { theme } = useTheme();
+  const dark = theme === "dark";
   const series = useMemo(() => slices.map((s) => s.value), [slices]);
   const total = useMemo(() => series.reduce((a, b) => a + b, 0), [series]);
 
   const options = useMemo<ApexOptions>(() => {
-    const base = baseChart();
+    const base = baseChart(dark);
     return {
       ...base,
       chart: { ...base.chart, type: "donut" },
       labels: slices.map((s) => s.label),
       colors: slices.map((s) => s.color),
-      stroke: { width: 2, colors: ["#ffffff"] },
+      stroke: { width: 2, colors: [dark ? "#1c1c1a" : "#ffffff"] },
       legend: {
         position: "bottom",
         fontSize: "11px",
@@ -365,7 +382,7 @@ export function ApexDonutChart({
                 label: centerLabel,
                 fontSize: "10px",
                 fontWeight: 700,
-                color: "#78716c",
+                color: dark ? "#a8a29e" : "#78716c",
                 formatter: () => `${total}`,
               },
             },
@@ -374,7 +391,7 @@ export function ApexDonutChart({
       },
       dataLabels: { enabled: false },
     };
-  }, [slices, centerLabel, total]);
+  }, [slices, centerLabel, total, dark]);
 
   if (!slices.length || total === 0) {
     return (

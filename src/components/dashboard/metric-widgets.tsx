@@ -32,7 +32,7 @@ export type AssigneeMetric = {
 
 export function ManagerKpisWidget({ kpis }: { kpis: Kpis | null }) {
   return (
-    <div className="grid h-full grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+    <div className="grid h-auto grid-cols-2 gap-2 sm:grid-cols-3 lg:h-full lg:grid-cols-6">
       <MetricCard compact label="Total" value={kpis?.total ?? "—"} tone="info" />
       <MetricCard compact label="Finalizadas" value={kpis?.completadas ?? "—"} tone="success" />
       <MetricCard compact label="En proceso" value={kpis?.proceso ?? "—"} tone="default" />
@@ -200,7 +200,7 @@ export function DevKpisWidget({
   abiertas: number;
 }) {
   return (
-    <div className="grid h-full grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+    <div className="grid h-auto grid-cols-2 gap-2 sm:grid-cols-3 lg:h-full lg:grid-cols-6">
       <MetricCard compact label="Total asignado" value={total} tone="info" />
       <MetricCard compact label="Tareas" value={tareas} tone="default" />
       <MetricCard
@@ -241,7 +241,7 @@ export function DevKpisExtraWidget({
   periodo: number;
 }) {
   return (
-    <div className="grid h-full grid-cols-2 gap-2 md:grid-cols-4">
+    <div className="grid h-auto grid-cols-2 gap-2 md:grid-cols-4 lg:h-full">
       <MetricCard compact label="Avance medio" value={avance} tone="info" />
       <MetricCard compact label="Cumplimiento" value={cumplimiento} tone="success" />
       <MetricCard
@@ -280,8 +280,8 @@ export function ColaPersonalWidget({
       <div className="min-h-0 flex-1 rounded-lg border border-amber-200 bg-amber-50/60 px-2.5 py-2">
         <div className="text-[10px] font-bold uppercase text-amber-800">Tickets abiertos</div>
         <div className="mt-0.5 text-xl font-bold tabular-nums leading-none text-amber-900">{ticketsAbiertos}</div>
-        <Link href="/mis-tareas" className="mt-1 inline-flex text-[10px] font-bold text-amber-800 hover:underline">
-          Gestionar →
+        <Link href="/tickets" className="mt-1 inline-flex text-[10px] font-bold text-amber-800 hover:underline">
+          Ver mis tickets →
         </Link>
       </div>
       <div className="min-h-0 flex-1 rounded-lg border border-red-200 bg-red-50/50 px-2.5 py-2">
@@ -299,6 +299,13 @@ export function DevAccesosWidget({ onReporte }: { onReporte?: () => void }) {
         <Link href="/mis-tareas" className="min-w-0">
           <ClipboardList className="size-3.5 shrink-0" />
           <span className="min-w-0 flex-1 truncate text-left">Mis tareas</span>
+          <ArrowRight className="size-3.5 shrink-0 opacity-60" />
+        </Link>
+      </Button>
+      <Button type="button" variant="outline" size="sm" className="h-9 w-full min-w-0 justify-start gap-2 px-2.5" asChild>
+        <Link href="/tickets" className="min-w-0">
+          <Ticket className="size-3.5 shrink-0" />
+          <span className="min-w-0 flex-1 truncate text-left">Mis tickets</span>
           <ArrowRight className="size-3.5 shrink-0 opacity-60" />
         </Link>
       </Button>

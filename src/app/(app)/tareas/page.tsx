@@ -252,7 +252,7 @@ export default function TareasPage() {
       <main className="flex h-[calc(100dvh-3.5rem)] min-h-0 w-full min-w-0 flex-col overflow-hidden">
         <div className="mx-auto flex min-h-0 w-full min-w-0 max-w-[1400px] flex-1 flex-col px-4 py-3 sm:px-6 sm:py-4">
         <FilterBar className="mb-3">
-          <div className="relative w-[240px]">
+          <div className="relative w-full min-w-0 sm:w-[240px]">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               className="h-9 min-h-0 pl-9 text-sm"
@@ -264,7 +264,7 @@ export default function TareasPage() {
           <Select
             value={filtroEstado}
             onChange={(e) => setFiltroEstado(e.target.value)}
-            wrapperClassName="w-[180px]"
+            wrapperClassName="w-full sm:w-[180px]"
             className="h-9 min-h-0 w-full py-0 text-sm"
           >
             <option value="todos">Todos los estados</option>
@@ -539,7 +539,7 @@ export default function TareasPage() {
                   placeholder="Describe la tarea con formato (negrita, listas, enlaces...)"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Prioridad</Label>
                   <Select value={formPrio} onChange={(e) => setFormPrio(e.target.value)} disabled={formSaving}>

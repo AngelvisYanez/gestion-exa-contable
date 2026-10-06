@@ -1,9 +1,9 @@
 import { PrismaClient } from "@prisma/client";
 import { altDatabase, getPrisma } from "./db";
-import { EMPRESA_TAREAS, tasksDbDis, tasksEmpCod } from "./empresa";
+import { EMPRESA_TAREAS, tasksEmpCod } from "./empresa";
 import { findPanelActivo, ensurePanelUsuarios } from "./panel-usuarios";
 import { canAssignWork, normalizePanelRole, type UserRole } from "./auth/users";
-import { listTickets, ticketEstadoToKanban } from "./tickets";
+import { listTicketsAsignados, ticketEstadoToKanban } from "./tickets";
 import { fechaEnZona } from "./timezone";
 import { estaEnAlmuerzo, estaEnHorarioLaboral, syncMonActivoPorHorario } from "./monitoreo-horario";
 import { ensureMonitoreoSchema } from "./monitoreo-global";
@@ -21,6 +21,7 @@ export type TrabajoMonitorItem = {
   Ava_Ultima_Fecha: string | null;
   tipo: "tarea" | "ticket";
   Tic_Cod?: number;
+  Db_Origen?: string;
   /** Etiqueta corta para listados (Mis tareas). */
   label: string;
   Empresa?: string | null;
@@ -167,7 +168,33 @@ export async function resolveUsuCodesFromPer(
     empCod,
     EMPRESA_TAREAS.sucCod
   );
-  return rows.map((r) => Number(r.Usu_Cod)).filter((n) => n > 0);
+  const codes = rows.map((r) => Number(r.Usu_Cod)).filter((n) => n > 0);
+  // La misma cédula a veces está duplicada (10 dígitos y con sufijo 001).
+  const extra = await prisma.$queryRawUnsafe<Array<{ Usu_Cod: number | bigint }>>(
+    `SELECT DISTINCT u.Usu_Cod
+     FROM personal per
+     INNER JOIN persona p0 ON p0.Prs_Cod = per.Prs_Cod
+     INNER JOIN persona p ON (
+       p.Prs_Ced = p0.Prs_Ced
+       OR p.Prs_Ced = CONCAT(p0.Prs_Ced, '001')
+       OR CONCAT(p.Prs_Ced, '001') = p0.Prs_Ced
+     )
+     INNER JOIN usuarios u ON u.Prs_Cod = p.Prs_Cod AND u.Usu_Est = 'A'
+     WHERE per.Per_Cod = ?
+       AND per.Per_Est = 'A'
+       AND p0.Prs_Ced IS NOT NULL
+       AND p0.Prs_Ced <> ''`,
+    perCod
+  );
+  const seen = new Set(codes);
+  for (const r of extra) {
+    const n = Number(r.Usu_Cod);
+    if (n > 0 && !seen.has(n)) {
+      seen.add(n);
+      codes.push(n);
+    }
+  }
+  return codes;
 }
 
 /** @deprecated Prefer resolveUsuCodesFromPer; conserva 1 código (MATRIZ / más reciente). */
@@ -213,7 +240,7 @@ export async function tareasActivasDev(
   };
 
   const mapTicket = (
-    t: Awaited<ReturnType<typeof listTickets>>[number],
+    t: Awaited<ReturnType<typeof listTicketsAsignados>>[number],
     porAsignar: boolean
   ): TrabajoMonitorItem => {
     const estado = porAsignar ? "Por asignar" : ticketEstadoToKanban(t.Tic_Estado);
@@ -221,9 +248,15 @@ export async function tareasActivasDev(
     const plain = t.Tic_Titulo || `Ticket #${t.Tic_Cod}`;
     const empresa = (t.Emp_Nom || "").trim() || null;
     const llegada = (t.Tic_Fecha_Llegada || "").slice(0, 16).replace("T", " ") || null;
+    const origen =
+      t.Db_Origen === "servicios"
+        ? "Servicios"
+        : t.Db_Origen === "relavera" || String(t.Db_Origen || "").startsWith("relavera")
+          ? "Relavera"
+          : "EXA";
     const label = buildLabel({
       cod: t.Tic_Cod,
-      titulo: plain,
+      titulo: `${origen} · ${plain}`,
       estado,
       pct,
       fin: null,
@@ -241,6 +274,7 @@ export async function tareasActivasDev(
       Ava_Ultima_Fecha: t.Tic_Fecha_Asignacion || t.Tic_Fecha_Llegada || null,
       tipo: "ticket",
       Tic_Cod: t.Tic_Cod,
+      Db_Origen: t.Db_Origen,
       label,
       Empresa: empresa,
       Llegada: llegada,
@@ -249,13 +283,38 @@ export async function tareasActivasDev(
   };
 
   if (canAssignWork(rol)) {
+    let porAsignar: TrabajoMonitorItem[] = [];
     try {
-      const raw = await listTickets(tasksDbDis(), { bandeja: "sin_asignar", limit: 200 });
-      return raw.map((t) => mapTicket(t, true));
+      const raw = await listTicketsAsignados({ bandeja: "sin_asignar", limit: 1000 });
+      porAsignar = raw.map((t) => mapTicket(t, true));
     } catch (err) {
       console.error("[monitoreo] tickets por asignar:", err instanceof Error ? err.message : err);
-      return [];
     }
+
+    const aseCodes = await resolveUsuCodesFromPer(prisma, perCod);
+    if (usuCod && usuCod > 0 && !aseCodes.includes(usuCod)) {
+      aseCodes.unshift(usuCod);
+    }
+    let mios: TrabajoMonitorItem[] = [];
+    if (aseCodes.length || perCod > 0) {
+      try {
+        const raw = await listTicketsAsignados({
+          aseCodes,
+          perCodes: perCod > 0 ? [perCod] : [],
+          limit: 500,
+        });
+        const libres = new Set(porAsignar.map((t) => `${t.Db_Origen || ""}:${t.Tic_Cod}`));
+        mios = raw
+          .filter(
+            (t) =>
+              t.Tic_Estado !== "Cerrado" && !libres.has(`${t.Db_Origen || ""}:${t.Tic_Cod}`)
+          )
+          .map((t) => mapTicket(t, false));
+      } catch (err) {
+        console.error("[monitoreo] tickets del encargado:", err instanceof Error ? err.message : err);
+      }
+    }
+    return [...porAsignar, ...mios];
   }
 
   const empCod = tasksEmpCod();
@@ -335,7 +394,11 @@ export async function tareasActivasDev(
   let tickets: TrabajoMonitorItem[] = [];
   if (aseCodes.length) {
     try {
-      const raw = await listTickets(tasksDbDis(), { aseCodes, limit: 200 });
+      const raw = await listTicketsAsignados({
+        aseCodes,
+        perCodes: perCod > 0 ? [perCod] : [],
+        limit: 500,
+      });
       tickets = raw
         .filter((t) => t.Tic_Estado !== "Cerrado")
         .map((t) => mapTicket(t, false));

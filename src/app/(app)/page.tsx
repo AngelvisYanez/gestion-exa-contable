@@ -171,7 +171,7 @@ export default function HomePage() {
     return (
       <>
         <Topbar title="Dashboard" subtitle={user?.name || "Tu resumen personal"} />
-        <main className="mx-auto w-full min-w-0 max-w-[1400px] animate-fade-in px-4 py-6 sm:px-6">
+        <main className="mx-auto w-full min-w-0 max-w-[1400px] animate-fade-in px-3 py-4 sm:px-6 sm:py-6">
           <DevDashboard userName={user?.name} />
         </main>
       </>
@@ -284,33 +284,36 @@ export default function HomePage() {
   return (
     <>
       <Topbar title="Dashboard" subtitle={user?.name || "Metricas del proyecto"} />
-      <main className="mx-auto w-full min-w-0 max-w-[1400px] animate-fade-in px-4 py-6 sm:px-6">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
+      <main className="mx-auto w-full min-w-0 max-w-[1400px] animate-fade-in px-3 py-4 sm:px-6 sm:py-6">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+          <div className="min-w-0">
             <h1 className="text-lg font-bold tracking-tight text-brand-gray-900">
               Resumen operativo
             </h1>
             <p className="text-sm text-muted-foreground">
-              Widgets personalizables · KPIs, metricas y graficos
+              <span className="sm:hidden">KPIs, metricas y graficos</span>
+              <span className="hidden sm:inline">Widgets personalizables · KPIs, metricas y graficos</span>
               {selectedDev ? ` · ${selectedDev.Nombre}` : ""}
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="secondary" onClick={() => void load()} disabled={loading}>
+          <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+            <Button type="button" variant="secondary" className="h-10 flex-1 sm:flex-none" onClick={() => void load()} disabled={loading}>
               <RefreshCw className={loading ? "animate-spin" : ""} />
               Actualizar
             </Button>
             <Button
               type="button"
               variant={editMode ? "default" : "outline"}
+              className="hidden h-10 lg:inline-flex"
               onClick={() => setEditMode((v) => !v)}
             >
               <Pencil />
               {editMode ? "Terminar edicion" : "Editar layout"}
             </Button>
-            <Button type="button" variant="secondary" onClick={() => setCustomizeOpen(true)}>
+            <Button type="button" variant="secondary" className="h-10 flex-1 sm:flex-none" onClick={() => setCustomizeOpen(true)}>
               <Settings2 />
-              Personalizar
+              <span className="sm:hidden">Widgets</span>
+              <span className="hidden sm:inline">Personalizar</span>
             </Button>
           </div>
         </div>
@@ -336,7 +339,7 @@ export default function HomePage() {
             disabled={loading && !m}
           />
           {editMode && (
-            <Badge variant="info" className="h-9 gap-1">
+            <Badge variant="info" className="hidden h-9 gap-1 lg:inline-flex">
               <LayoutGrid className="size-3" />
               Arrastra por el encabezado · redimensiona desde la esquina
             </Badge>

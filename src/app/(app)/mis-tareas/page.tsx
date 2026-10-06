@@ -245,6 +245,7 @@ export default function MisTareasPage() {
             action: "ticket_estado",
             project: "exa",
             Tic_Cod: t.Tic_Cod ?? t.Tar_Cod,
+            Db_Origen: t.Db_Origen || undefined,
             estado,
           }),
         });
@@ -284,7 +285,7 @@ export default function MisTareasPage() {
             <FileBarChart />
             Reporte de avance
           </Button>
-          <div className="inline-flex shrink-0 rounded-lg border border-border bg-muted/40 p-0.5">
+          <div className="flex max-w-full overflow-x-auto rounded-lg border border-border bg-muted/40 p-0.5">
             {PERIODOS.map((d) => (
               <button
                 key={d}
@@ -315,14 +316,14 @@ export default function MisTareasPage() {
             </button>
           </div>
           {periodo === "rango" && (
-            <div className="inline-flex items-center gap-1.5">
+            <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto">
               <input
                 type="date"
                 aria-label="Desde"
                 value={desde}
                 max={hasta || hoyFecha()}
                 onChange={(e) => setDesde(e.target.value)}
-                className="h-9 rounded-md border border-border bg-background px-2 text-xs"
+                className="h-9 min-w-0 max-w-full flex-1 rounded-md border border-border bg-background px-2 text-xs sm:flex-none"
               />
               <span className="text-xs text-muted-foreground">a</span>
               <input
@@ -332,7 +333,7 @@ export default function MisTareasPage() {
                 min={desde || undefined}
                 max={hoyFecha()}
                 onChange={(e) => setHasta(e.target.value)}
-                className="h-9 rounded-md border border-border bg-background px-2 text-xs"
+                className="h-9 min-w-0 max-w-full flex-1 rounded-md border border-border bg-background px-2 text-xs sm:flex-none"
               />
             </div>
           )}
@@ -376,7 +377,7 @@ export default function MisTareasPage() {
         )}
 
         <FilterBar className="mb-3">
-          <div className="inline-flex shrink-0 rounded-lg border border-border bg-muted/40 p-0.5">
+          <div className="flex max-w-full overflow-x-auto rounded-lg border border-border bg-muted/40 p-0.5">
             {TIPO_TABS.map((f) => (
               <button
                 key={f.id}
@@ -395,7 +396,7 @@ export default function MisTareasPage() {
               </button>
             ))}
           </div>
-          <div className="inline-flex shrink-0 rounded-lg border border-border bg-muted/40 p-0.5">
+          <div className="flex max-w-full overflow-x-auto rounded-lg border border-border bg-muted/40 p-0.5">
             {FILTROS.map((f) => (
               <button
                 key={f.id}
@@ -418,7 +419,7 @@ export default function MisTareasPage() {
               </button>
             ))}
           </div>
-          <div className="relative w-[220px]">
+          <div className="relative w-full min-w-0 sm:w-[220px]">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input className="h-9 min-h-0 pl-9 text-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar..." />
           </div>

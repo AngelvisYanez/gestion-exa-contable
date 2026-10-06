@@ -60,8 +60,9 @@ export function CustomizeWidgetsDialog({
         <DialogHeader>
           <DialogTitle>Personalizar dashboard</DialogTitle>
           <DialogDescription>
-            Activa o desactiva widgets. Con «Editar layout» puedes arrastrarlos y redimensionarlos.
-            Tus preferencias se guardan en este navegador.
+            Activa o desactiva widgets. En pantallas grandes, «Editar layout» permite arrastrarlos
+            y redimensionarlos. En el celular se apilan a todo el ancho. Las preferencias se guardan
+            en este navegador.
           </DialogDescription>
         </DialogHeader>
 

@@ -26,10 +26,13 @@ import { isImagePath } from "@/lib/avance-format";
 import {
   attachTicketEvidencias,
   assignTicket,
+  findTicketAsignado,
   kanbanToTicketEstado,
   listTicketAssignees,
-  listTickets,
+  listTicketsAsignados,
+  pickTicketByOrigen,
   ticketEstadoToKanban,
+  ticketPerteneceA,
   updateTicketEstado,
 } from "@/lib/tickets";
 // Auto-purga NO en hot path: satura MySQL. Ejecutar desde Config → ExaMonitor.
@@ -314,14 +317,24 @@ async function handle(req: NextRequest) {
 
       if (tipo === "ticket") {
         const mesa = canAssignWork(rol);
+        const preferDb = pick(form, json, req, "Db_Origen");
         const ticket = mesa
-          ? (await listTickets(dbDis, { ticCod: cod, limit: 1 }))[0]
-          : (await listTickets(dbDis, { aseCodes, limit: 300 })).find((t) => t.Tic_Cod === cod);
+          ? await (async () => {
+              const rows = await listTicketsAsignados({ ticCod: cod, limit: 5 });
+              return pickTicketByOrigen(rows, preferDb);
+            })()
+          : await findTicketAsignado({
+              ticCod: cod,
+              aseCodes,
+              perCodes: perCod > 0 ? [perCod] : [],
+              preferDb,
+            });
         if (!ticket) {
           return jsonRes("error", "Ticket no encontrado o no asignado a ti.");
         }
         const sinAsignar = !ticket.Asignado_Usu_Cod;
-        if (mesa && !sinAsignar) {
+        const mio = ticketPerteneceA(ticket, aseCodes, perCod);
+        if (mesa && !sinAsignar && !mio) {
           return jsonRes("error", "Este ticket ya fue asignado.");
         }
         const asignables = mesa ? await asignablesMonitor() : [];
@@ -344,14 +357,15 @@ async function handle(req: NextRequest) {
                     ? 10
                     : 0,
             puede_registrar_avance: false,
-            puede_cambiar_estado: !mesa && ticket.Tic_Estado !== "Cerrado",
-            puede_subir_evidencia: !mesa,
+            puede_cambiar_estado: (mio || !mesa) && ticket.Tic_Estado !== "Cerrado",
+            puede_subir_evidencia: mio || !mesa,
             puede_asignar: mesa && sinAsignar,
             Enviado_Por: ticket.Enviado_Por || ticket.Creador_Nombre || null,
             Empresa: ticket.Emp_Nom || null,
             Telefono: ticket.Tic_Tel || null,
             Proceso: ticket.Proceso || null,
             Asignado_Nombre: ticket.Asignado_Nombre || null,
+            Db_Origen: ticket.Db_Origen || null,
           },
           evidencias: ticket.Evidencias || [],
           asignables,
@@ -487,18 +501,24 @@ async function handle(req: NextRequest) {
       if (usuCod && usuCod > 0 && !aseCodes.includes(usuCod)) aseCodes.unshift(usuCod);
       if (!aseCodes.length) return jsonRes("error", "Sin Usu_Cod vinculado.");
 
-      const mios = await listTickets(dbDis, { aseCodes, limit: 500 });
-      if (!mios.some((t) => t.Tic_Cod === ticCod)) {
+      const mio = await findTicketAsignado({
+        ticCod,
+        aseCodes,
+        perCodes: perCod > 0 ? [perCod] : [],
+        preferDb: pick(form, json, req, "Db_Origen"),
+      });
+      if (!mio) {
         return jsonRes("error", "Ese ticket no esta asignado a ti.");
       }
 
       const estado = kanbanToTicketEstado(estadoRaw);
-      await updateTicketEstado(dbDis, ticCod, estado);
+      const ticketDb = mio.Db_Origen || dbDis;
+      await updateTicketEstado(ticketDb, ticCod, estado);
       publishEvent({
         type: "estado_cambiado",
         title: "Ticket actualizado",
         message: `ExaMonitor · ticket #${ticCod} → ${estado}`,
-        db: dbDis,
+        db: ticketDb,
         ticCod,
         estado,
         kind: "ticket",
@@ -533,8 +553,17 @@ async function handle(req: NextRequest) {
         return jsonRes("error", "Solo el encargado o atencion al cliente pueden asignar tickets desde ExaMonitor.");
       }
 
-      const ticket = (await listTickets(dbDis, { ticCod, limit: 1 }))[0];
-      if (!ticket) return jsonRes("error", "Ticket no encontrado.");
+      const preferDb = pick(form, json, req, "Db_Origen");
+      const candidatos = await listTicketsAsignados({ ticCod, limit: 5 });
+      const ticket = pickTicketByOrigen(candidatos, preferDb);
+      if (!ticket) {
+        return jsonRes(
+          "error",
+          candidatos.length > 1
+            ? "Hay un ticket con el mismo numero en EXA y en Servicios. Actualiza ExaMonitor."
+            : "Ticket no encontrado."
+        );
+      }
       if (ticket.Asignado_Usu_Cod) {
         return jsonRes("error", "Este ticket ya fue asignado.");
       }
@@ -543,7 +572,8 @@ async function handle(req: NextRequest) {
       const elegido = asignables.find((a) => a.Usu_Cod === usuCod);
       if (!elegido) return jsonRes("error", "Ese desarrollador no esta en el equipo.");
 
-      const res = await assignTicket(dbDis, { ticCod, usuCod, perCod: elegido.Per_Cod });
+      const ticketDb = ticket.Db_Origen || dbDis;
+      const res = await assignTicket(ticketDb, { ticCod, usuCod, perCod: elegido.Per_Cod });
       const titulo = res.ticket?.Tic_Titulo || ticket.Tic_Titulo || `Ticket #${ticCod}`;
       const nombre = res.ticket?.Asignado_Nombre || elegido.Nombre;
       const actorRow = await findDesarrollador(prisma, String(perCod));
@@ -554,7 +584,7 @@ async function handle(req: NextRequest) {
         kind: "ticket",
         title: "Ticket asignado",
         message: `#${ticCod} · ${titulo} → ${nombre}`,
-        db: dbDis,
+        db: ticketDb,
         ticCod,
         perCod: elegido.Per_Cod,
         usuCod,
@@ -585,11 +615,25 @@ async function handle(req: NextRequest) {
       const aseCodes = await resolveUsuCodesFromPer(prisma, perCod);
       if (usuCod && usuCod > 0 && !aseCodes.includes(usuCod)) aseCodes.unshift(usuCod);
 
+      let ticketDb = dbDis;
       if (ticCod > 0) {
-        const mios = await listTickets(dbDis, { aseCodes, limit: 500 });
-        if (!mios.some((t) => t.Tic_Cod === ticCod)) {
+        const rolEv = (await resolvePanelRol(prisma, perCod)) || "developer";
+        const preferDb = pick(form, json, req, "Db_Origen");
+        const ticket = canAssignWork(rolEv)
+          ? await (async () => {
+              const rows = await listTicketsAsignados({ ticCod, limit: 5 });
+              return pickTicketByOrigen(rows, preferDb);
+            })()
+          : await findTicketAsignado({
+              ticCod,
+              aseCodes,
+              perCodes: perCod > 0 ? [perCod] : [],
+              preferDb,
+            });
+        if (!ticket) {
           return jsonRes("error", "No puedes adjuntar evidencias a ese ticket.");
         }
+        ticketDb = ticket.Db_Origen || dbDis;
       } else {
         const assigned = await prisma.$queryRawUnsafe<Array<{ n: number }>>(
           `SELECT 1 AS n FROM aud_tareas_asignadas
@@ -629,7 +673,7 @@ async function handle(req: NextRequest) {
       // En tickets se vinculan al cuerpo; en tareas las rutas se usan al registrar avance.
       if (ticCod > 0) {
         await attachTicketEvidencias(
-          dbDis,
+          ticketDb,
           ticCod,
           adjuntos.map((a) => a.ruta)
         );

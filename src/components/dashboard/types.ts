@@ -37,6 +37,8 @@ export type Tarea = {
   Enviado_Por?: string | null;
   Proceso?: string | null;
   Evidencias?: Array<{ ruta: string; url: string; nombre: string; esImagen: boolean }>;
+  /** Base del ticket cuando viene de EXA o Servicios. */
+  Db_Origen?: string | null;
 };
 
 export type Dev = {

@@ -29,6 +29,8 @@ export type Ticket = {
   Enviado_Por: string | null;
   Proceso: string | null;
   Evidencias: Array<{ ruta: string; url: string; nombre: string; esImagen: boolean }>;
+  /** Base donde vive la fila (`exa` o `servicios`). */
+  Db_Origen?: string;
 };
 
 /** Mapea estado de ticket EXA → columnas Kanban de tareas. */
@@ -72,5 +74,6 @@ export function ticketAsTarea(t: Ticket) {
     Enviado_Por: t.Enviado_Por,
     Proceso: t.Proceso,
     Evidencias: t.Evidencias,
+    Db_Origen: t.Db_Origen || null,
   };
 }

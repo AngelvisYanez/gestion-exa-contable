@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
     cedula: String(body.cedula || "22600781").replace(/\D/g, "") || "22600781",
     name: String(body.name || "Yanez Angelvis"),
     role,
-    projects: ["exa", "servicios"],
+    projects: ["exa", "servicios", "relavera"],
     perCod: Number(body.perCod || 0) || 0,
     usuCod: Number(body.usuCod || 0) || 0,
     prsCod: Number(body.prsCod || 0) || 0,

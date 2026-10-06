@@ -64,6 +64,12 @@ export const PROJECTS: ProjectInfo[] = [
     dbDis: "servicios",
     description: "Base distribuida Servicios - operaciones",
   },
+  {
+    id: "relavera",
+    name: "EXA Relavera",
+    dbDis: "relavera",
+    description: "Instalacion EXA Relavera - tickets en otro servidor",
+  },
 ];
 
 export const TEAM_MANAGERS: TeamMember[] = [

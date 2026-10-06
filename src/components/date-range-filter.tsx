@@ -198,12 +198,12 @@ export function DateRangeFilter({
     "inline-flex h-8 items-center rounded-md px-2.5 text-xs font-bold transition-colors whitespace-nowrap";
 
   const dayPresetsBar = showDayBar ? (
-    <div className="inline-flex h-10 items-center gap-2 rounded-lg border border-border/70 bg-card px-2 shadow-sm">
+    <div className="flex h-auto max-w-full flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-card px-2 py-1.5 shadow-sm sm:h-10 sm:flex-nowrap sm:py-0">
       <CalendarDays className="size-4 shrink-0 text-muted-foreground" />
       {!compact && (
         <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Dia</span>
       )}
-      <div className="inline-flex items-center gap-0.5 rounded-md bg-muted/50 p-0.5">
+      <div className="flex max-w-full flex-wrap items-center gap-0.5 rounded-md bg-muted/50 p-0.5">
         {DAY_PRESETS.map((p) => (
           <button
             key={p.id}
@@ -241,16 +241,16 @@ export function DateRangeFilter({
 
   if (isDayOnly) {
     return (
-      <div className={cn("flex flex-wrap items-center gap-3", className)}>
+      <div className={cn("flex max-w-full flex-wrap items-center gap-2 sm:gap-3", className)}>
         {dayPresetsBar}
-        <div className="inline-flex h-10 items-center gap-2 rounded-lg border border-border/70 bg-card px-2 shadow-sm">
+        <div className="flex h-auto max-w-full flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-card px-2 py-1.5 shadow-sm sm:h-10 sm:flex-nowrap sm:py-0">
           <Label htmlFor="filtro-dia" className="mb-0 normal-case tracking-normal">
             Fecha
           </Label>
           <DatePicker
             id="filtro-dia"
             size="sm"
-            className="h-8 w-[9.5rem]"
+            className="h-8 w-[min(9.5rem,42vw)]"
             value={diaActivo}
             min={min}
             max={max}
@@ -267,11 +267,11 @@ export function DateRangeFilter({
   }
 
   return (
-    <div className={cn("flex flex-wrap items-center gap-3", className)}>
+    <div className={cn("flex max-w-full flex-wrap items-center gap-2 sm:gap-3", className)}>
       {dayPresetsBar}
 
       {showPresets && !showDayBar && (
-        <div className="inline-flex h-10 items-center gap-0.5 rounded-lg border border-border/70 bg-muted/40 px-1 shadow-sm">
+        <div className="flex h-auto max-w-full flex-wrap items-center gap-0.5 rounded-lg border border-border/70 bg-muted/40 px-1 py-1 shadow-sm sm:h-10 sm:py-0">
           {RANGE_PRESETS.map((p) => (
             <button
               key={p.id}
@@ -292,7 +292,7 @@ export function DateRangeFilter({
         </div>
       )}
 
-      <div className="inline-flex h-10 items-center gap-2 rounded-lg border border-border/70 bg-card px-2 shadow-sm">
+      <div className="flex h-auto max-w-full flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-card px-2 py-1.5 shadow-sm sm:h-10 sm:flex-nowrap sm:py-0">
         <CalendarRange className="size-4 shrink-0 text-muted-foreground" />
         {!compact && (
           <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Rango</span>
@@ -303,7 +303,7 @@ export function DateRangeFilter({
         <DatePicker
           id="rango-desde"
           size="sm"
-          className="h-8 w-[9.5rem]"
+          className="h-8 w-[min(9.5rem,42vw)]"
           value={value.desde}
           min={min}
           max={value.hasta || max}
@@ -316,7 +316,7 @@ export function DateRangeFilter({
         <DatePicker
           id="rango-hasta"
           size="sm"
-          className="h-8 w-[9.5rem]"
+          className="h-8 w-[min(9.5rem,42vw)]"
           value={value.hasta}
           min={value.desde || min}
           max={max}

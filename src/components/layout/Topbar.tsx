@@ -7,6 +7,7 @@ import { roleLabel } from "@/lib/auth/users";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSidebar } from "@/contexts/SidebarContext";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
+import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { Select } from "@/components/ui/select";
 
 type Props = {
@@ -37,12 +38,12 @@ export default function Topbar({ title, subtitle, showDbSelector = true }: Props
   }, []);
 
   return (
-    <header className="bg-white/95 backdrop-blur-md border-b border-brand-gray-200 px-4 md:px-6 h-14 flex items-center justify-between sticky top-0 z-40 select-none shadow-2xs shrink-0">
-      <div className="flex items-center gap-3 min-w-0">
+    <header className="sticky top-0 z-40 flex h-14 shrink-0 select-none items-center justify-between gap-2 border-b border-brand-gray-200 bg-white/95 px-3 shadow-2xs backdrop-blur-md sm:px-4 md:px-6">
+      <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
         <button
           type="button"
           onClick={() => setMobileOpen(true)}
-          className="md:hidden w-8 h-8 text-brand-gray-600 hover:text-brand-gray-900 hover:bg-brand-gray-100 rounded-lg cursor-pointer flex items-center justify-center transition-colors"
+          className="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-lg text-brand-gray-600 transition-colors hover:bg-brand-gray-100 hover:text-brand-gray-900 md:hidden"
           aria-label="Abrir menu"
         >
           <Menu className="w-[18px] h-[18px]" strokeWidth={2} />
@@ -59,7 +60,7 @@ export default function Topbar({ title, subtitle, showDbSelector = true }: Props
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex shrink-0 items-center gap-1 sm:gap-2">
         {showDbSelector && projects.length > 0 && (
           <Select
             value={db}
@@ -75,13 +76,14 @@ export default function Topbar({ title, subtitle, showDbSelector = true }: Props
           </Select>
         )}
 
+        <ThemeToggle />
         <NotificationBell />
 
         <div ref={menuRef} className="relative">
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
-            className="flex items-center gap-2 pl-2 pr-2.5 py-1 rounded-lg border border-transparent hover:border-brand-gray-200 hover:bg-brand-gray-100/80 transition-all duration-150 cursor-pointer"
+            className="flex min-h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-transparent py-1 pl-1 pr-1.5 transition-all duration-150 hover:border-brand-gray-200 hover:bg-brand-gray-100/80 sm:gap-2 sm:pl-2 sm:pr-2.5"
           >
             <div className="w-7 h-7 bg-brand-red rounded-lg flex items-center justify-center font-bold text-[11px] text-white shrink-0">
               {initials}
@@ -101,11 +103,33 @@ export default function Topbar({ title, subtitle, showDbSelector = true }: Props
           </button>
 
           {open && (
-            <div className="absolute right-0 mt-1.5 w-64 bg-white border border-brand-gray-200 rounded-xl shadow-lg z-50 overflow-hidden">
-              <div className="px-4 py-3 border-b border-brand-gray-100 bg-brand-gray-50/50">
-                <p className="text-[13px] font-bold text-brand-gray-900 truncate">{user?.name}</p>
-                <p className="text-[10.5px] text-brand-gray-500 truncate">{user?.cedula}</p>
+            <div className="absolute right-0 z-50 mt-1.5 w-[min(16rem,calc(100vw-1.25rem))] overflow-hidden rounded-xl border border-brand-gray-200 bg-white shadow-lg">
+              <div className="border-b border-brand-gray-100 bg-brand-gray-50/50 px-4 py-3">
+                <p className="truncate text-[13px] font-bold text-brand-gray-900">{user?.name}</p>
+                <p className="truncate text-[10.5px] text-brand-gray-500">{user?.cedula}</p>
+                <p className="mt-0.5 text-[10.5px] font-semibold text-brand-gray-600 md:hidden">
+                  {roleLabel(user?.role)}
+                </p>
               </div>
+              {showDbSelector && projects.length > 0 && (
+                <div className="border-b border-brand-gray-100 px-3 py-2.5 sm:hidden">
+                  <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-brand-gray-500">
+                    Proyecto
+                  </p>
+                  <Select
+                    value={db}
+                    onChange={(e) => setDb(e.target.value)}
+                    wrapperClassName="w-full"
+                    className="h-10 min-h-10 w-full py-1 text-sm font-semibold"
+                  >
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name || p.id}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              )}
               {user?.role === "manager" && (
                 <>
                   <Link

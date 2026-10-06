@@ -62,8 +62,12 @@ export async function middleware(req: NextRequest) {
     return deny(req, "Solo el encargado puede ver monitoreo y configuracion.");
   }
 
+  const devTickets =
+    session.role === "developer" &&
+    (pathname === "/tickets" || pathname.startsWith("/api/tickets"));
+
   if ((desk || pathname.startsWith("/api/devs")) && !canAssignWork(session.role)) {
-    if (devsAsignables && canAssignWork(session.role)) return NextResponse.next();
+    if (devTickets) return NextResponse.next();
     return deny(req, "No tienes acceso a esa seccion.");
   }
 

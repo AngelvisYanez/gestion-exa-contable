@@ -96,6 +96,18 @@ function estadoTone(estado: string) {
   return "muted" as const;
 }
 
+function origenLabel(db?: string | null) {
+  const id = String(db || "");
+  if (id === "servicios") return "Servicios";
+  if (id === "relavera" || id.startsWith("relavera")) return "Relavera";
+  return "EXA";
+}
+
+function origenEsRelavera(db?: string | null) {
+  const id = String(db || "");
+  return id === "relavera" || id.startsWith("relavera");
+}
+
 function fmtWhen(v: string) {
   if (!v) return "—";
   const formatted = fmtFechaHoraZona(v, {
@@ -110,7 +122,9 @@ function fmtWhen(v: string) {
 }
 
 export default function TicketsPage() {
-  const { db, user } = useAuth();
+  const { db, user, loading: authLoading } = useAuth();
+  const isDev = user?.role === "developer";
+  const puedeAsignar = user?.role === "manager" || user?.role === "atencion";
   const { lastTaskEventAt } = useNotifications();
 
   const [loading, setLoading] = useState(true);
@@ -122,14 +136,33 @@ export default function TicketsPage() {
   const [kpis, setKpis] = useState<Kpis | null>(null);
   const [bandeja, setBandeja] = useState<Bandeja>("todos");
   const [rango, setRango] = useState<DateRangeValue>(() => rangoTicketsPreset("hoy"));
+  const [todasLasFechas, setTodasLasFechas] = useState(false);
+  const [vistaLista, setVistaLista] = useState(false);
   const [q, setQ] = useState("");
   const [viewMode, setViewMode] = useState<ListViewMode>("lista");
   const [detalleCod, setDetalleCod] = useState<number | null>(null);
+  const [detalleDb, setDetalleDb] = useState<string | null>(null);
   const pager = usePagination(tickets, {
     resetKey: `${bandeja}|${q}|${rango.desde}|${rango.hasta}`,
   });
   const detalleTicket =
-    detalleCod != null ? tickets.find((t) => t.Tic_Cod === detalleCod) ?? null : null;
+    detalleCod != null
+      ? tickets.find(
+          (t) => t.Tic_Cod === detalleCod && (!detalleDb || t.Db_Origen === detalleDb)
+        ) ?? null
+      : null;
+  const bandejasVisibles = isDev
+    ? [
+        { id: "asignados" as Bandeja, label: "Abiertos" },
+        { id: "resueltos" as Bandeja, label: "Resueltos" },
+        { id: "todos" as Bandeja, label: "Todos" },
+      ]
+    : BANDEJAS;
+
+  const abrirDetalle = (t: Ticket) => {
+    setDetalleCod(t.Tic_Cod);
+    setDetalleDb(t.Db_Origen || null);
+  };
 
   const [formOpen, setFormOpen] = useState(false);
   const [formEnviadoPor, setFormEnviadoPor] = useState("");
@@ -191,7 +224,18 @@ export default function TicketsPage() {
     setLoading(true);
     setError("");
     try {
-      const url = `/api/tickets?Ses_Dat_Dis=${encodeURIComponent(db)}&bandeja=${encodeURIComponent(bandeja)}&q=${encodeURIComponent(q)}&desde=${encodeURIComponent(rango.desde)}&hasta=${encodeURIComponent(rango.hasta)}&assignees=1&limit=2000`;
+      const params = new URLSearchParams({
+        Ses_Dat_Dis: db,
+        bandeja,
+        q,
+        limit: "2000",
+      });
+      if (!todasLasFechas) {
+        params.set("desde", rango.desde);
+        params.set("hasta", rango.hasta);
+      }
+      if (puedeAsignar) params.set("assignees", "1");
+      const url = `/api/tickets?${params.toString()}`;
       const res = await fetch(url);
       const j = await res.json();
       if (!j.success) throw new Error(j.message || "Error al cargar tickets");
@@ -204,17 +248,29 @@ export default function TicketsPage() {
     } finally {
       setLoading(false);
     }
-  }, [bandeja, q, rango.desde, rango.hasta, db]);
+  }, [bandeja, q, rango.desde, rango.hasta, db, todasLasFechas, puedeAsignar]);
+
+  const vistaIniciada = useRef(false);
+  useEffect(() => {
+    if (authLoading || !user || vistaIniciada.current) return;
+    vistaIniciada.current = true;
+    if (user.role === "developer") {
+      setBandeja("asignados");
+      setTodasLasFechas(true);
+    }
+    setVistaLista(true);
+  }, [authLoading, user]);
 
   useEffect(() => {
+    if (!vistaLista) return;
     void load();
-  }, [load]);
+  }, [vistaLista, load]);
 
   useEffect(() => {
-    if (!lastTaskEventAt) return;
+    if (!lastTaskEventAt || !vistaLista) return;
     const t = setTimeout(() => void load(), 400);
     return () => clearTimeout(t);
-  }, [lastTaskEventAt, load]);
+  }, [lastTaskEventAt, load, vistaLista]);
 
   const crearTicket = async () => {
     if (!formTitulo.trim()) {
@@ -302,7 +358,8 @@ export default function TicketsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "assign",
-          Ses_Dat_Dis: db,
+          Ses_Dat_Dis: assignOpen.Db_Origen || db,
+          Db_Origen: assignOpen.Db_Origen || undefined,
           Tic_Cod: assignOpen.Tic_Cod,
           asignados,
         }),
@@ -339,7 +396,8 @@ export default function TicketsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "estado",
-          Ses_Dat_Dis: db,
+          Ses_Dat_Dis: t.Db_Origen || db,
+          Db_Origen: t.Db_Origen || undefined,
           Tic_Cod: t.Tic_Cod,
           estado,
         }),
@@ -357,7 +415,9 @@ export default function TicketsPage() {
 
   const moverKanban = async (t: Tarea, estado: KanbanEstado) => {
     const ticCod = t.Tic_Cod || t.Tar_Cod;
-    const ticket = tickets.find((x) => x.Tic_Cod === ticCod);
+    const ticket = tickets.find(
+      (x) => x.Tic_Cod === ticCod && (!t.Db_Origen || x.Db_Origen === t.Db_Origen)
+    );
     if (!ticket) return;
     const next = estado === "Finalizada" ? "Cerrado" : estado === "Pendiente" ? "Nuevo" : estado;
     await setEstado(ticket, next);
@@ -366,32 +426,57 @@ export default function TicketsPage() {
   return (
     <>
       <Topbar
-        title="Tickets"
-        subtitle={`${db === "servicios" ? "Servicios" : "EXA"} · ${rango.desde} a ${rango.hasta}`}
+        title={isDev ? "Mis tickets" : "Tickets"}
+        subtitle={
+          isDev
+            ? todasLasFechas
+              ? "Asignados a ti · EXA, Servicios y Relavera"
+              : `Asignados a ti · ${rango.desde} a ${rango.hasta}`
+            : todasLasFechas
+              ? "EXA, Servicios y Relavera juntos"
+              : `EXA, Servicios y Relavera · ${rango.desde} a ${rango.hasta}`
+        }
       />
       <main className="mx-auto w-full min-w-0 max-w-[1400px] animate-fade-in px-4 py-6 sm:px-6">
-        <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {[
-            { label: "Total", value: kpis?.total ?? 0, tone: "text-sky-700", id: "todos" as Bandeja },
-            {
-              label: "Sin asignar",
-              value: kpis?.sin_asignar ?? kpis?.nuevos ?? 0,
-              tone: "text-amber-700",
-              id: "sin_asignar" as Bandeja,
-            },
-            {
-              label: "Asignados",
-              value: kpis?.asignados ?? 0,
-              tone: "text-violet-700",
-              id: "asignados" as Bandeja,
-            },
-            {
-              label: "Resueltos",
-              value: kpis?.resueltos ?? kpis?.cerrados ?? 0,
-              tone: "text-emerald-700",
-              id: "resueltos" as Bandeja,
-            },
-          ].map((k) => (
+        <div className={cn("mb-5 grid grid-cols-2 gap-3", isDev ? "sm:grid-cols-3" : "sm:grid-cols-4")}>
+          {(isDev
+            ? [
+                { label: "Total", value: kpis?.total ?? 0, tone: "text-sky-700", id: "todos" as Bandeja },
+                {
+                  label: "Abiertos",
+                  value: kpis?.asignados ?? 0,
+                  tone: "text-violet-700",
+                  id: "asignados" as Bandeja,
+                },
+                {
+                  label: "Resueltos",
+                  value: kpis?.resueltos ?? kpis?.cerrados ?? 0,
+                  tone: "text-emerald-700",
+                  id: "resueltos" as Bandeja,
+                },
+              ]
+            : [
+                { label: "Total", value: kpis?.total ?? 0, tone: "text-sky-700", id: "todos" as Bandeja },
+                {
+                  label: "Sin asignar",
+                  value: kpis?.sin_asignar ?? kpis?.nuevos ?? 0,
+                  tone: "text-amber-700",
+                  id: "sin_asignar" as Bandeja,
+                },
+                {
+                  label: "Asignados",
+                  value: kpis?.asignados ?? 0,
+                  tone: "text-violet-700",
+                  id: "asignados" as Bandeja,
+                },
+                {
+                  label: "Resueltos",
+                  value: kpis?.resueltos ?? kpis?.cerrados ?? 0,
+                  tone: "text-emerald-700",
+                  id: "resueltos" as Bandeja,
+                },
+              ]
+          ).map((k) => (
             <button
               key={k.label}
               type="button"
@@ -411,14 +496,31 @@ export default function TicketsPage() {
 
         <div className="mb-4 space-y-2">
           <FilterBar>
-            <div className="inline-flex h-10 items-center gap-0.5 rounded-lg border border-border/70 bg-muted/40 px-1 shadow-sm">
+            <div className="flex h-10 max-w-full items-center gap-0.5 overflow-x-auto rounded-lg border border-border/70 bg-muted/40 px-1 shadow-sm">
+              {isDev && (
+                <button
+                  type="button"
+                  onClick={() => setTodasLasFechas(true)}
+                  className={cn(
+                    "whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-bold transition-colors",
+                    todasLasFechas
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  Todas
+                </button>
+              )}
               {TICKET_FECHA_PRESETS.map((p) => {
-                const activo = detectTicketFechaPreset(rango) === p.id;
+                const activo = !todasLasFechas && detectTicketFechaPreset(rango) === p.id;
                 return (
                   <button
                     key={p.id}
                     type="button"
-                    onClick={() => setRango(rangoTicketsPreset(p.id))}
+                    onClick={() => {
+                      setTodasLasFechas(false);
+                      setRango(rangoTicketsPreset(p.id));
+                    }}
                     className={cn(
                       "whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-bold transition-colors",
                       activo
@@ -431,25 +533,34 @@ export default function TicketsPage() {
                 );
               })}
             </div>
-            <DateRangeFilter compact value={rango} onChange={setRango} />
+            <DateRangeFilter
+              compact
+              value={rango}
+              onChange={(next) => {
+                setTodasLasFechas(false);
+                setRango(next);
+              }}
+            />
             <Button type="button" variant="secondary" className="h-9" onClick={() => void load()} disabled={loading}>
               <RefreshCw className={loading ? "animate-spin" : ""} />
               Actualizar
             </Button>
-            <Button
-              type="button"
-              className="h-9"
-              onClick={() => {
-                setFormError("");
-                setFormOpen(true);
-              }}
-            >
-              <Plus />
-              Nuevo ticket
-            </Button>
+            {puedeAsignar && (
+              <Button
+                type="button"
+                className="h-9"
+                onClick={() => {
+                  setFormError("");
+                  setFormOpen(true);
+                }}
+              >
+                <Plus />
+                Nuevo ticket
+              </Button>
+            )}
           </FilterBar>
           <FilterBar>
-            <div className="relative w-[260px]">
+            <div className="relative w-full min-w-0 sm:w-[260px]">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 className="h-9 min-h-0 pl-9 text-sm"
@@ -458,8 +569,8 @@ export default function TicketsPage() {
                 placeholder="Buscar por #, tema, empresa..."
               />
             </div>
-            <div className="inline-flex shrink-0 rounded-lg border border-border bg-muted/40 p-0.5">
-              {BANDEJAS.map((b) => (
+            <div className="flex max-w-full overflow-x-auto rounded-lg border border-border bg-muted/40 p-0.5">
+              {bandejasVisibles.map((b) => (
                 <button
                   key={b.id}
                   type="button"
@@ -498,21 +609,24 @@ export default function TicketsPage() {
                 loading={loading}
                 onAvance={() => undefined}
                 onMoveEstado={moverKanban}
-                onOpen={(t) => setDetalleCod(t.Tic_Cod || t.Tar_Cod)}
+                onOpen={(t) => {
+                  setDetalleCod(t.Tic_Cod || t.Tar_Cod);
+                  setDetalleDb(t.Db_Origen || null);
+                }}
                 className="min-h-0 flex-1"
               />
             ) : viewMode === "grid" ? (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {pager.slice.map((t) => (
                   <article
-                    key={t.Tic_Cod}
+                    key={`${t.Db_Origen || "db"}-${t.Tic_Cod}`}
                     role="button"
                     tabIndex={0}
-                    onClick={() => setDetalleCod(t.Tic_Cod)}
+                    onClick={() => abrirDetalle(t)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
-                        setDetalleCod(t.Tic_Cod);
+                        abrirDetalle(t);
                       }
                     }}
                     className={cn(
@@ -522,6 +636,9 @@ export default function TicketsPage() {
                   >
                     <div className="mb-1 flex flex-wrap items-center gap-2">
                       <span className="font-mono text-xs text-muted-foreground">#{t.Tic_Cod}</span>
+                      <Badge variant={t.Db_Origen === "servicios" ? "warning" : origenEsRelavera(t.Db_Origen) ? "secondary" : "info"}>
+                        {origenLabel(t.Db_Origen)}
+                      </Badge>
                       <Badge variant={estadoTone(t.Tic_Estado)}>{t.Tic_Estado}</Badge>
                       <PrioridadBadge prioridad={t.Tic_Prioridad} />
                     </div>
@@ -553,7 +670,7 @@ export default function TicketsPage() {
                       </div>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {t.Tic_Estado !== "Cerrado" && (
+                      {puedeAsignar && t.Tic_Estado !== "Cerrado" && (
                         <Button
                           type="button"
                           size="sm"
@@ -618,15 +735,23 @@ export default function TicketsPage() {
                   <TableBody>
                     {pager.slice.map((t) => (
                       <TableRow
-                        key={t.Tic_Cod}
+                        key={`${t.Db_Origen || "db"}-${t.Tic_Cod}`}
                         className={cn(
                           "cursor-pointer",
                           t.Tic_Estado === "Nuevo" ? "bg-amber-50/40" : undefined
                         )}
-                        onClick={() => setDetalleCod(t.Tic_Cod)}
+                        onClick={() => abrirDetalle(t)}
                       >
                         <TableCell className="whitespace-nowrap font-mono text-muted-foreground">
                           {t.Tic_Cod}
+                          <div
+                            className={cn(
+                              "text-[10px] font-sans font-bold",
+                              t.Db_Origen === "servicios" ? "text-amber-700" : origenEsRelavera(t.Db_Origen) ? "text-violet-700" : "text-sky-700"
+                            )}
+                          >
+                            {origenLabel(t.Db_Origen)}
+                          </div>
                         </TableCell>
                         <TableCell className="min-w-[240px]">
                           <div className="font-semibold leading-snug">{t.Tic_Titulo}</div>
@@ -668,7 +793,7 @@ export default function TicketsPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="inline-flex flex-nowrap items-center justify-end gap-1.5 whitespace-nowrap">
-                            {t.Tic_Estado !== "Cerrado" && (
+                            {puedeAsignar && t.Tic_Estado !== "Cerrado" && (
                               <Button
                                 type="button"
                                 size="sm"
@@ -718,7 +843,9 @@ export default function TicketsPage() {
                     {!loading && tickets.length === 0 && (
                       <TableRow>
                         <TableCell colSpan={9} className="py-12 text-center text-muted-foreground">
-                          No hay tickets entre {rango.desde} y {rango.hasta}. Prueba otro periodo.
+                          {isDev
+                            ? "No tienes tickets asignados en este filtro."
+                            : `No hay tickets entre ${rango.desde} y ${rango.hasta}. Prueba otro periodo.`}
                         </TableCell>
                       </TableRow>
                     )}
@@ -729,7 +856,9 @@ export default function TicketsPage() {
 
             {!loading && tickets.length === 0 && viewMode === "grid" && (
               <div className="rounded-xl border border-dashed border-border py-16 text-center text-sm text-muted-foreground">
-                No hay tickets entre {rango.desde} y {rango.hasta}. Prueba otro periodo.
+                {isDev
+                  ? "No tienes tickets asignados en este filtro."
+                  : `No hay tickets entre ${rango.desde} y ${rango.hasta}. Prueba otro periodo.`}
               </div>
             )}
 
@@ -774,8 +903,8 @@ export default function TicketsPage() {
             <DialogHeader>
               <DialogTitle>Nuevo ticket</DialogTitle>
               <DialogDescription>
-                Mismo formato que llega por WhatsApp: remitente, empresa, telefono, proceso, titulo y
-                descripcion del problema.
+                Mismo formato que llega por WhatsApp. Este ticket nuevo se guarda en{" "}
+                {origenLabel(db)}. La lista muestra EXA, Servicios y Relavera juntos.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
@@ -825,7 +954,7 @@ export default function TicketsPage() {
                     ))}
                 </Select>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Telefono</Label>
                   <Input
@@ -955,17 +1084,18 @@ export default function TicketsPage() {
             <DialogHeader>
               <DialogTitle>Asignar ticket</DialogTitle>
               <DialogDescription>
-                #{assignOpen?.Tic_Cod} {assignOpen?.Tic_Titulo}. Puedes marcar varios desarrolladores.
+                #{assignOpen?.Tic_Cod} · {origenLabel(assignOpen?.Db_Origen)} · {assignOpen?.Tic_Titulo}.
+                Puedes marcar varios del equipo.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
               {assignError ? <Alert variant="destructive">{assignError}</Alert> : null}
               <div className="space-y-2">
-                <Label>Desarrolladores ({assignUsus.length})</Label>
+                <Label>Equipo ({assignUsus.length})</Label>
                 <div className="max-h-64 space-y-1 overflow-y-auto rounded-lg border border-border/70 p-2">
                   {asignables.filter((a) => a.Usu_Cod).length === 0 ? (
                     <p className="px-2 py-3 text-sm text-muted-foreground">
-                      No hay desarrolladores con usuario EXA.
+                      No hay personas del equipo con usuario EXA.
                     </p>
                   ) : (
                     asignables

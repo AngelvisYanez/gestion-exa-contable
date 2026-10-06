@@ -1,17 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/auth/session";
-import { canSeeOversight } from "@/lib/auth/users";
+import { canAssignWork, canSeeOversight } from "@/lib/auth/users";
 import { publishAsignacion, publishEvent } from "@/lib/events";
-import { sanitizeDbDis } from "@/lib/db";
+import { resolveTicketDatabaseIds, sanitizeDbDis } from "@/lib/db";
+import { ticketScopeForSession } from "@/lib/ticket-scope";
 import {
   assignTicket,
   attachTicketEvidencias,
   createTicket,
+  findTicketAsignado,
   listCapturasTicket,
   listTicketAssignees,
   listTicketEmpresas,
-  listTickets,
-  ticketsKpis,
+  listTicketsAsignados,
+  resumirTickets,
+  ticketsKpisBases,
   updateTicketEstado,
   type TicketEstado,
 } from "@/lib/tickets";
@@ -54,23 +57,61 @@ export async function GET(req: NextRequest) {
     const withAssignees = sp.get("assignees") === "1";
     const limit = parseInt(sp.get("limit") || "500", 10) || 500;
     const db = sanitizeDbDis(sp.get("Ses_Dat_Dis"));
+    const session = await getSessionFromRequest(req);
 
+    if (session?.role === "developer") {
+      const scope = await ticketScopeForSession(session);
+      const all =
+        scope.aseCodes.length || scope.perCodes.length
+          ? await listTicketsAsignados({
+              aseCodes: scope.aseCodes,
+              perCodes: scope.perCodes,
+              q: q || undefined,
+              desde: desde || undefined,
+              hasta: hasta || undefined,
+              limit: Math.max(limit, 500),
+            })
+          : [];
+      const kpisMios = resumirTickets(all);
+      const vista = bandeja === "resueltos" ? "resueltos" : bandeja === "todos" ? "todos" : "asignados";
+      const tickets =
+        vista === "resueltos"
+          ? all.filter((t) => t.Tic_Estado === "Cerrado")
+          : vista === "todos"
+            ? all
+            : all.filter((t) => t.Tic_Estado !== "Cerrado");
+      return NextResponse.json({
+        success: true,
+        db,
+        source: "tickets-mios",
+        solo_mios: true,
+        tickets,
+        kpis: kpisMios,
+        bandeja: vista,
+        desde: desde || null,
+        hasta: hasta || null,
+      });
+    }
+
+    const bases = await resolveTicketDatabaseIds();
     const [tickets, kpis] = await Promise.all([
-      listTickets(db, {
+      listTicketsAsignados({
         estado: bandeja ? "todos" : estado,
         bandeja: bandeja || undefined,
         q,
         desde: desde || undefined,
         hasta: hasta || undefined,
         limit,
+        bases,
       }),
-      ticketsKpis(db, { desde: desde || undefined, hasta: hasta || undefined }),
+      ticketsKpisBases({ desde: desde || undefined, hasta: hasta || undefined, bases }),
     ]);
 
     const payload: Record<string, unknown> = {
       success: true,
       db,
       source: "tickets",
+      bases,
       tickets,
       kpis,
       bandeja: bandeja || "todos",
@@ -98,6 +139,15 @@ export async function POST(req: NextRequest) {
     const db = sanitizeDbDis(body.Ses_Dat_Dis);
     const action = String(body.action || "create");
     const session = await getSessionFromRequest(req);
+
+    if (!canAssignWork(session?.role)) {
+      if (session?.role !== "developer" || action !== "estado") {
+        return NextResponse.json(
+          { success: false, message: "No tienes acceso a esa accion." },
+          { status: 403 }
+        );
+      }
+    }
 
     if (action === "create") {
       const adjuntos = Array.isArray(body.adjuntos) ? body.adjuntos.map(String) : [];
@@ -153,7 +203,8 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         );
       }
-      const res = await assignTicket(db, {
+      const ticketDb = sanitizeDbDis(body.Db_Origen || db);
+      const res = await assignTicket(ticketDb, {
         ticCod,
         usuCod: usuCod || undefined,
         perCod,
@@ -170,7 +221,7 @@ export async function POST(req: NextRequest) {
           kind: "ticket",
           title: "Ticket asignado",
           message: `#${ticCod} · ${titulo} → ${nombre}`,
-          db,
+          db: ticketDb,
           ticCod,
           perCod: dest.perCod ?? undefined,
           usuCod: dest.usuCod,
@@ -187,12 +238,29 @@ export async function POST(req: NextRequest) {
       if (!ticCod || !estado) {
         return NextResponse.json({ success: false, message: "Datos incompletos" }, { status: 400 });
       }
-      await updateTicketEstado(db, ticCod, estado);
+      let ticketDb = db;
+      if (session?.role === "developer") {
+        const scope = await ticketScopeForSession(session);
+        const mio = await findTicketAsignado({
+          ticCod,
+          aseCodes: scope.aseCodes,
+          perCodes: scope.perCodes,
+          preferDb: body.Db_Origen || db,
+        });
+        if (!mio) {
+          return NextResponse.json(
+            { success: false, message: "Ese ticket no esta asignado a ti." },
+            { status: 403 }
+          );
+        }
+        ticketDb = mio.Db_Origen || db;
+      }
+      await updateTicketEstado(ticketDb, ticCod, estado);
       publishEvent({
         type: "estado_cambiado",
         title: "Ticket actualizado",
         message: `#${ticCod} → ${estado}`,
-        db,
+        db: ticketDb,
         ticCod,
         estado,
         kind: "ticket",

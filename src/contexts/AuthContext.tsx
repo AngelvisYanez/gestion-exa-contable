@@ -81,7 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (typeof window === "undefined") return;
     // Mis tareas / personal Emp 96 viven en exa; no persistir "servicios" como BD operativa
     const saved = window.localStorage.getItem("exa-tareas-db");
-    if (saved === "exa" || saved === "servicios") setDbState("exa");
+    if (saved === "exa" || saved === "servicios" || saved === "relavera") setDbState("exa");
   }, []);
 
   const value = useMemo(

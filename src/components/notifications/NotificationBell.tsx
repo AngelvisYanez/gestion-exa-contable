@@ -37,7 +37,7 @@ export function NotificationBell() {
           setOpen((v) => !v);
           if (!open) markAllRead();
         }}
-        className="relative flex h-8 w-8 items-center justify-center rounded-lg border border-transparent text-brand-gray-600 transition-colors hover:border-brand-gray-200 hover:bg-brand-gray-100 hover:text-brand-gray-900"
+        className="relative flex size-10 items-center justify-center rounded-lg border border-transparent text-brand-gray-600 transition-colors hover:border-brand-gray-200 hover:bg-brand-gray-100 hover:text-brand-gray-900 sm:size-8"
         aria-label="Notificaciones"
       >
         <Bell className="h-4 w-4" strokeWidth={2} />
@@ -49,7 +49,7 @@ export function NotificationBell() {
       </button>
 
       {open && (
-        <div className="absolute right-0 z-50 mt-1.5 w-[340px] overflow-hidden rounded-xl border border-brand-gray-200 bg-white shadow-lg">
+        <div className="absolute right-0 z-50 mt-1.5 w-[min(340px,calc(100vw-1.25rem))] overflow-hidden rounded-xl border border-brand-gray-200 bg-white shadow-lg">
           <div className="flex items-center justify-between border-b border-brand-gray-100 px-3 py-2.5">
             <div>
               <p className="text-[13px] font-bold text-brand-gray-900">Notificaciones</p>

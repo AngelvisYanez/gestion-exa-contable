@@ -11,13 +11,25 @@ type Props = {
   children: React.ReactNode;
   className?: string;
   bodyClassName?: string;
+  /** `auto`: la altura la marca el contenido (apilado en móvil). `fill`: ocupa el alto del padre. */
+  layout?: "fill" | "auto";
 };
 
-export function WidgetShell({ title, editMode, onRemove, children, className, bodyClassName }: Props) {
+export function WidgetShell({
+  title,
+  editMode,
+  onRemove,
+  children,
+  className,
+  bodyClassName,
+  layout = "fill",
+}: Props) {
+  const fill = layout === "fill";
   return (
     <div
       className={cn(
-        "flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-sm",
+        "flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-sm",
+        fill ? "h-full" : "h-auto",
         editMode && "ring-2 ring-primary/30",
         className
       )}
@@ -46,7 +58,15 @@ export function WidgetShell({ title, editMode, onRemove, children, className, bo
           </Button>
         )}
       </div>
-      <div className={cn("min-h-0 flex-1 overflow-hidden p-2.5", bodyClassName)}>{children}</div>
+      <div
+        className={cn(
+          "p-2.5 sm:p-3",
+          fill ? "min-h-0 flex-1 overflow-auto" : "overflow-visible",
+          bodyClassName
+        )}
+      >
+        {children}
+      </div>
     </div>
   );
 }

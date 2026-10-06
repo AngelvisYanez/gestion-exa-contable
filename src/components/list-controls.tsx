@@ -8,7 +8,7 @@ import { Select } from "@/components/ui/select";
 import { PAGE_SIZE_OPTIONS, type PageSize } from "@/hooks/use-pagination";
 import { cn } from "@/lib/utils";
 
-/** Barra de filtros: siempre una sola fila (desplaza en horizontal si no cabe). */
+/** Barra de filtros: en pantallas chicas baja de línea; en escritorio queda en una fila. */
 export function FilterBar({
   children,
   className,
@@ -19,8 +19,9 @@ export function FilterBar({
   return (
     <div
       className={cn(
-        "flex w-full min-w-0 flex-nowrap items-center gap-2 overflow-x-auto overscroll-x-contain filter-scroll",
-        "[&>*]:shrink-0",
+        "flex w-full min-w-0 flex-wrap items-center gap-2",
+        "lg:flex-nowrap lg:overflow-x-auto lg:overscroll-x-contain filter-scroll",
+        "[&>*]:min-w-0 [&>*]:max-w-full lg:[&>*]:shrink-0",
         className
       )}
     >
@@ -74,7 +75,7 @@ export function ViewModeToggle({ value, onChange, withKanban, className }: ViewM
             )}
           >
             <Icon className="size-3.5 shrink-0" />
-            <span>{o.label}</span>
+            <span className="hidden sm:inline">{o.label}</span>
           </button>
         );
       })}

@@ -224,15 +224,15 @@ export function DevDashboard({ userName }: { userName?: string }) {
 
   return (
     <>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h1 className="text-lg font-bold tracking-tight text-brand-gray-900">Tu resumen</h1>
           <p className="text-sm text-muted-foreground">
-            Widgets personalizables · KPIs y metricas de tus asignaciones
+            KPIs y metricas de tus asignaciones
           </p>
         </div>
-        <div className="flex min-w-0 flex-nowrap items-center gap-2 overflow-x-auto">
-          <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
+        <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto">
+          <div className="inline-flex max-w-full overflow-x-auto rounded-lg border border-border bg-muted/40 p-0.5">
             {([7, 30] as const).map((d) => (
               <button
                 key={d}
@@ -249,28 +249,30 @@ export function DevDashboard({ userName }: { userName?: string }) {
               </button>
             ))}
           </div>
-          <Button type="button" variant="secondary" onClick={() => void load()} disabled={loading}>
+          <Button type="button" variant="secondary" className="h-10 flex-1 sm:flex-none" onClick={() => void load()} disabled={loading}>
             <RefreshCw className={loading ? "animate-spin" : ""} />
             Actualizar
           </Button>
           <Button
             type="button"
             variant={editMode ? "default" : "outline"}
+            className="hidden h-10 lg:inline-flex"
             onClick={() => setEditMode((v) => !v)}
           >
             <Pencil />
             {editMode ? "Terminar" : "Editar layout"}
           </Button>
-          <Button type="button" variant="secondary" onClick={() => setCustomizeOpen(true)}>
+          <Button type="button" variant="secondary" className="h-10 flex-1 sm:flex-none" onClick={() => setCustomizeOpen(true)}>
             <Settings2 />
-            Personalizar
+            <span className="sm:hidden">Widgets</span>
+            <span className="hidden sm:inline">Personalizar</span>
           </Button>
         </div>
       </div>
 
       {editMode && (
         <div className="mb-3">
-          <Badge variant="info" className="gap-1">
+          <Badge variant="info" className="hidden gap-1 lg:inline-flex">
             <LayoutGrid className="size-3" />
             Arrastra por el encabezado · redimensiona desde la esquina
           </Badge>

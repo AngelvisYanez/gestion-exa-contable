@@ -258,7 +258,7 @@ export default function IncidenciasPage() {
         )}
 
         <FilterBar className="mb-4">
-          <div className="relative w-[260px]">
+          <div className="relative w-full min-w-0 sm:w-[260px]">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               className="h-9 min-h-0 pl-9 text-sm"
@@ -270,7 +270,7 @@ export default function IncidenciasPage() {
           <Select
             value={filtroEstado}
             onChange={(e) => setFiltroEstado(e.target.value)}
-            wrapperClassName="w-[170px]"
+            wrapperClassName="w-full sm:w-[170px]"
             className="h-9 min-h-0 w-full py-0 text-sm"
           >
             <option value="todos">Todos los estados</option>
@@ -283,7 +283,7 @@ export default function IncidenciasPage() {
           <Select
             value={filtroNivel}
             onChange={(e) => setFiltroNivel(e.target.value)}
-            wrapperClassName="w-[150px]"
+            wrapperClassName="w-full sm:w-[150px]"
             className="h-9 min-h-0 w-full py-0 text-sm"
           >
             <option value="todos">Todos los niveles</option>
@@ -494,7 +494,7 @@ export default function IncidenciasPage() {
             </DialogDescription>
           </DialogHeader>
           {detail && (
-            <pre className="max-h-[50vh] overflow-auto rounded-lg border border-border bg-brand-gray-900 p-3 text-[11px] leading-relaxed text-brand-gray-100 whitespace-pre-wrap break-words">
+            <pre className="max-h-[50vh] overflow-auto rounded-lg border border-border bg-[#141413] p-3 text-[11px] leading-relaxed text-[#e8e8e4] whitespace-pre-wrap break-words">
               {detail.Inc_Mensaje || detail.Inc_Titulo}
             </pre>
           )}

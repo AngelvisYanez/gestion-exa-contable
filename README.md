@@ -62,7 +62,7 @@ Login con **cédula + contraseña EXA** (mismo usuario del panel). Ya no usa Per
 
 La contraseña no se guarda en `config.json`.
 
-El agente lista **Mis tareas** (tareas + tickets abiertos) con estado, avance % y fecha de vencimiento. El programa vive en `agente_monitoreo/` y el ejecutable en `agente_monitoreo/dist/ExaMonitor.exe`. Las capturas se guardan en `capturas/` (`CAPTURES_DIR`). Recompilar con:
+El agente lista **Mis tareas** (tareas + tickets abiertos) con estado, avance % y fecha de vencimiento. El programa vive en `agente_monitoreo/`. Las versiones compiladas están en `agente_monitoreo/VERSIONES.md` (la vigente es `dist/ExaMonitor-2.8.3.exe`). Las capturas se guardan en `capturas/` (`CAPTURES_DIR`). Recompilar con:
 
 ```bash
 cd agente_monitoreo
@@ -73,7 +73,7 @@ py -m PyInstaller --noconfirm --distpath dist --workpath build ExaMonitor.spec
 | Variable | Uso |
 |----------|-----|
 | `DATABASE_*` / `DATABASE_URL` | MySQL |
-| `DATABASE_NAMES` | `exa,servicios` |
+| `DATABASE_NAMES` | `exa,servicios,relavera` |
 | `CAPTURES_DIR` | Carpeta de capturas del agente (`capturas/`) |
 | `EXA_ERROR_LOG` | Carpeta/archivo de logs EXA (`exa-ofsercont/logs`) |
 | `AUTH_SECRET` | Firma de sesión |

@@ -31,7 +31,7 @@ export function OverallWidget({ kpis }: { kpis: Kpis | null }) {
     : { p: 0, f: 0, c: 0, pend: 0 };
 
   return (
-    <div className="flex h-full min-h-0 flex-col justify-between gap-2 overflow-hidden">
+    <div className="flex h-auto min-h-0 flex-col justify-between gap-2 overflow-hidden lg:h-full">
       <div className="min-w-0 shrink-0">
         <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Tareas</div>
         <div className="mt-0.5 flex items-end gap-1.5">
@@ -70,7 +70,7 @@ export function OverallWidget({ kpis }: { kpis: Kpis | null }) {
 export function CumplimientoWidget({ kpis }: { kpis: Kpis | null }) {
   const pct = kpis?.tasa_cumplimiento ?? 0;
   return (
-    <div className="flex h-full min-h-0 flex-col justify-between gap-2 overflow-hidden">
+    <div className="flex h-auto min-h-0 flex-col justify-between gap-2 overflow-hidden lg:h-full">
       <div className="min-w-0 shrink-0">
         <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Cumplimiento</div>
         <div className="mt-0.5 text-3xl font-bold tabular-nums leading-none tracking-tight text-primary">{pct}%</div>

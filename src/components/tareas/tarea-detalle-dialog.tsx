@@ -613,14 +613,20 @@ export function TareaDetalleDialog({
                           ))}
                           {item.avance.adjuntos.map((f) =>
                             f.esImagen ? (
-                              <a key={f.ruta} href={f.url} target="_blank" rel="noreferrer" title={f.nombre}>
+                              <button
+                                key={f.ruta}
+                                type="button"
+                                title={f.nombre}
+                                onClick={() => setZoom(f.url)}
+                                className="overflow-hidden rounded-md border border-border/70"
+                              >
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
                                   src={f.url}
                                   alt={f.nombre}
-                                  className="h-16 w-24 rounded-md border border-border/70 object-cover transition hover:opacity-80"
+                                  className="h-16 w-24 object-cover transition hover:opacity-80"
                                 />
-                              </a>
+                              </button>
                             ) : (
                               <a
                                 key={f.ruta}
@@ -852,7 +858,7 @@ export function TareaDetalleDialog({
 
       <Dialog open={!!zoom} onOpenChange={(o) => !o && setZoom(null)}>
         <DialogContent className="max-h-[94vh] max-w-5xl overflow-auto p-2 sm:p-4">
-          <DialogTitle className="sr-only">Captura ampliada</DialogTitle>
+          <DialogTitle className="sr-only">Imagen ampliada</DialogTitle>
           {zoom && (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={zoom} alt="captura" className="max-h-[85vh] w-full rounded-lg object-contain" />

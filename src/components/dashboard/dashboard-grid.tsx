@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import GridLayout, { WidthProvider } from "react-grid-layout/legacy";
+import { useMediaQuery } from "@/hooks/use-media-query";
+import { cn } from "@/lib/utils";
 import { WidgetShell } from "./widget-shell";
 import {
   DashboardPrefs,
@@ -16,6 +18,27 @@ import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 
 const ResponsiveGrid = WidthProvider(GridLayout);
+
+/** Por debajo de `lg`: una columna en teléfono y dos en tablet, sin arrastrar. */
+const COMPACT_QUERY = "(max-width: 1023px)";
+
+/** En tablet estos widgets comparten fila. El resto ocupa el ancho completo. */
+const STACK_HALF = new Set(["overall", "cumplimiento", "equipo-cola", "accesos", "cola-personal"]);
+
+/** Alto fijo para gráficos que miden el padre. El resto crece con el contenido. */
+const STACK_FILL: Record<string, string> = {
+  "rendimiento-onda": "h-[300px] sm:h-[340px]",
+  "rendimiento-barras": "h-[320px] sm:h-[360px]",
+  "rendimiento-radar": "h-[300px] sm:h-[340px]",
+  "chart-estado": "h-[320px]",
+  "chart-prioridad": "h-[320px]",
+  "chart-tipo": "h-[320px]",
+  actividad: "h-[260px] sm:h-[280px]",
+  "carga-asignado": "h-[260px] sm:h-[300px]",
+  "avance-persona": "h-[280px] sm:h-[320px]",
+  metricas: "h-[340px] sm:h-[380px]",
+  atrasadas: "h-[280px] sm:h-[320px]",
+};
 
 type Props = {
   role: DashboardRole;
@@ -43,6 +66,7 @@ export function useDashboardPrefs(role: DashboardRole) {
 }
 
 export function DashboardGrid({ role, editMode, prefs, onPrefsChange, renderWidget }: Props) {
+  const compact = useMediaQuery(COMPACT_QUERY);
   const layout = useMemo(() => {
     const byId = new Map(prefs.layouts.map((l) => [l.i, l]));
     return prefs.enabled.map((id) => {
@@ -84,6 +108,27 @@ export function DashboardGrid({ role, editMode, prefs, onPrefsChange, renderWidg
       enabled: prefs.enabled.filter((w) => w !== id),
     });
   };
+
+  if (compact) {
+    return (
+      <div className="dashboard-stack grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {prefs.enabled.map((id) => {
+          const meta = metaFor(role, id);
+          const fill = STACK_FILL[id];
+          return (
+            <div
+              key={id}
+              className={cn("min-w-0", !STACK_HALF.has(id) && "sm:col-span-2", fill)}
+            >
+              <WidgetShell title={meta.title} layout={fill ? "fill" : "auto"}>
+                {renderWidget(id)}
+              </WidgetShell>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
 
   return (
     <ResponsiveGrid
