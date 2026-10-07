@@ -16,6 +16,7 @@ import {
 } from "./ticket-format";
 import { isImagePath } from "./avance-format";
 import { type Ticket } from "./ticket-view";
+import { attachAvancePorcentaje } from "./ticket-avances";
 import { ensureMonitoreoSchema } from "./monitoreo-global";
 
 export { TIC_ESTADO_CODE, TIC_ESTADO_MAP, type TicketEstado };
@@ -53,6 +54,8 @@ export type TicketAsignado = {
   Usu_Cod: number;
   Per_Cod: number | null;
   Nombre: string;
+  /** Fecha en que se asignó a esta persona (Tia_Fecha). */
+  Fecha?: string | null;
 };
 
 export type TicketEmpresa = {
@@ -376,9 +379,10 @@ export async function listTickets(
         Usu_Cod: number | bigint;
         Per_Cod: number | bigint | null;
         Nombre: string | null;
+        Tia_Fecha: Date | string | null;
       }>
     >(
-      `SELECT a.Tic_Cod, a.Usu_Cod, a.Per_Cod,
+      `SELECT a.Tic_Cod, a.Usu_Cod, a.Per_Cod, a.Tia_Fecha,
               CONVERT(CONCAT(IFNULL(p.Prs_Ape,''), ' ', IFNULL(p.Prs_Nom,'')) USING utf8mb4) AS Nombre
        FROM aud_ticket_asignados a
        LEFT JOIN ${uaTable} u ON u.Usu_Cod = a.Usu_Cod
@@ -395,12 +399,13 @@ export async function listTickets(
         Usu_Cod: Number(a.Usu_Cod),
         Per_Cod: a.Per_Cod != null ? Number(a.Per_Cod) : null,
         Nombre: nombre || `Usuario ${Number(a.Usu_Cod)}`,
+        Fecha: asIso(a.Tia_Fecha),
       });
       extra.set(id, list);
     }
   }
 
-  return rows.map((r) => {
+  const mapped = rows.map((r) => {
     const estCod = String(r.Tic_Est ?? "0");
     const ase = r.Ase_Cod != null && Number(r.Ase_Cod) > 0 ? Number(r.Ase_Cod) : null;
     const parsed = parseTicketWhatsApp(r.Tic_Des);
@@ -423,6 +428,7 @@ export async function listTickets(
       ];
     }
     const nombres = asignados.map((a) => a.Nombre).filter(Boolean);
+    const fechas = asignados.map((a) => a.Fecha).filter((f): f is string => !!f).sort();
     return {
       Tic_Cod: Number(r.Tic_Cod),
       Tic_Titulo: titleFrom(r.Tic_Tem || parsed.titulo, r.Tic_Des),
@@ -443,6 +449,8 @@ export async function listTickets(
         (r.Creador_Nombre || "").trim() || parsed.enviadoPor || null,
       Tic_Fecha_Llegada: asIso(r.Tic_Fec_Cre) || "",
       Tic_Fecha_Asignacion: asIso(r.Tic_Fec_Ter),
+      Fecha_Asignacion: fechas[0] || null,
+      Ava_Porcentaje: null,
       Tic_Tel: tel,
       Tic_Obs: r.Tic_Obs,
       Enviado_Por: parsed.enviadoPor || null,
@@ -459,6 +467,8 @@ export async function listTickets(
       }),
     };
   });
+  await attachAvancePorcentaje(prisma, mapped);
+  return mapped;
 }
 
 /** Tickets del colaborador en EXA y Servicios (mismo Usu_Cod / Per_Cod del equipo). */

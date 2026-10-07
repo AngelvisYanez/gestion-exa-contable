@@ -3,6 +3,7 @@ import { altDatabase, getPrisma } from "./db";
 import { EMPRESA_TAREAS, tasksEmpCod } from "./empresa";
 import { findPanelActivo, ensurePanelUsuarios } from "./panel-usuarios";
 import { canAssignWork, normalizePanelRole, type UserRole } from "./auth/users";
+import { armarBandejaMesa, bandejaAsignadaDev } from "./monitoreo-bandeja";
 import { listTicketsAsignados, ticketEstadoToKanban } from "./tickets";
 import { fechaEnZona } from "./timezone";
 import { estaEnAlmuerzo, estaEnHorarioLaboral, syncMonActivoPorHorario } from "./monitoreo-horario";
@@ -26,16 +27,23 @@ export type TrabajoMonitorItem = {
   label: string;
   Empresa?: string | null;
   Llegada?: string | null;
+  Fecha_Asignacion?: string | null;
+  Asignado?: string | null;
   por_asignar?: boolean;
 };
 
-/** Rol del panel (developer / atencion / manager) a partir de la ficha. */
+/** Rol del panel. Primero el usuario EXA; la ficha sola a veces no está en el panel. */
 export async function resolvePanelRol(
   prisma: PrismaClient,
-  perCod: number
+  perCod: number,
+  usuCod?: number
 ): Promise<UserRole | null> {
-  if (!perCod || perCod <= 0) return null;
   await ensurePanelUsuarios(prisma);
+  if (usuCod && usuCod > 0) {
+    const directo = await findPanelActivo(prisma, usuCod);
+    if (directo) return directo.rol;
+  }
+  if (!perCod || perCod <= 0) return null;
   const rows = await prisma.$queryRawUnsafe<Array<{ Pan_Rol: string | null }>>(
     `SELECT Pan_Rol FROM aud_panel_usuarios
      WHERE Pan_Est = 'A' AND Per_Cod = ?
@@ -244,7 +252,13 @@ export async function tareasActivasDev(
     porAsignar: boolean
   ): TrabajoMonitorItem => {
     const estado = porAsignar ? "Por asignar" : ticketEstadoToKanban(t.Tic_Estado);
-    const pct = porAsignar ? 0 : estado === "En Proceso" ? 40 : estado === "Asignado" ? 10 : 0;
+    const pct = porAsignar
+      ? 0
+      : t.Ava_Porcentaje != null
+        ? Number(t.Ava_Porcentaje)
+        : t.Tic_Estado === "Cerrado"
+          ? 100
+          : 0;
     const plain = t.Tic_Titulo || `Ticket #${t.Tic_Cod}`;
     const empresa = (t.Emp_Nom || "").trim() || null;
     const llegada = (t.Tic_Fecha_Llegada || "").slice(0, 16).replace("T", " ") || null;
@@ -278,44 +292,11 @@ export async function tareasActivasDev(
       label,
       Empresa: empresa,
       Llegada: llegada,
+      Fecha_Asignacion: porAsignar ? null : t.Fecha_Asignacion || null,
+      Asignado: porAsignar ? null : t.Asignado_Nombre,
       por_asignar: porAsignar,
     };
   };
-
-  if (canAssignWork(rol)) {
-    let porAsignar: TrabajoMonitorItem[] = [];
-    try {
-      const raw = await listTicketsAsignados({ bandeja: "sin_asignar", limit: 1000 });
-      porAsignar = raw.map((t) => mapTicket(t, true));
-    } catch (err) {
-      console.error("[monitoreo] tickets por asignar:", err instanceof Error ? err.message : err);
-    }
-
-    const aseCodes = await resolveUsuCodesFromPer(prisma, perCod);
-    if (usuCod && usuCod > 0 && !aseCodes.includes(usuCod)) {
-      aseCodes.unshift(usuCod);
-    }
-    let mios: TrabajoMonitorItem[] = [];
-    if (aseCodes.length || perCod > 0) {
-      try {
-        const raw = await listTicketsAsignados({
-          aseCodes,
-          perCodes: perCod > 0 ? [perCod] : [],
-          limit: 500,
-        });
-        const libres = new Set(porAsignar.map((t) => `${t.Db_Origen || ""}:${t.Tic_Cod}`));
-        mios = raw
-          .filter(
-            (t) =>
-              t.Tic_Estado !== "Cerrado" && !libres.has(`${t.Db_Origen || ""}:${t.Tic_Cod}`)
-          )
-          .map((t) => mapTicket(t, false));
-      } catch (err) {
-        console.error("[monitoreo] tickets del encargado:", err instanceof Error ? err.message : err);
-      }
-    }
-    return [...porAsignar, ...mios];
-  }
 
   const empCod = tasksEmpCod();
   type Row = {
@@ -328,8 +309,7 @@ export async function tareasActivasDev(
     Ava_Ultima_Fecha: Date | string | null;
   };
 
-  const rows = await prisma.$queryRawUnsafe<Row[]>(
-    `SELECT
+  const tareaSelect = `
        t.Tar_Cod,
        CONVERT(t.Tar_Titulo USING utf8mb4) AS Tar_Titulo,
        CONVERT(t.Tar_Prioridad USING utf8mb4) AS Tar_Prioridad,
@@ -346,20 +326,9 @@ export async function tareasActivasDev(
          SELECT MAX(av.Ava_Fecha)
          FROM aud_tareas_avances av
          WHERE av.Tar_Cod = t.Tar_Cod AND av.Ava_Est = 'A'
-       ) AS Ava_Ultima_Fecha
-     FROM aud_tareas_asignadas a
-     INNER JOIN aud_tareas t ON t.Tar_Cod = a.Tar_Cod
-     WHERE a.Per_Cod = ?
-       AND a.Tas_Est = 'A'
-       AND t.Emp_Cod = ?
-       AND t.Tar_Est = 'A'
-       AND t.Tar_Estado <> 'Finalizada'
-     ORDER BY t.Tar_Fecha_Fin IS NULL, t.Tar_Fecha_Fin ASC, a.Tas_Cod ASC`,
-    perCod,
-    empCod
-  );
+       ) AS Ava_Ultima_Fecha`;
 
-  const tareas: TrabajoMonitorItem[] = rows.map((r) => {
+  const mapTarea = (r: Row): TrabajoMonitorItem => {
     const plain = (r.Tar_Titulo || "").trim() || `Tarea #${r.Tar_Cod}`;
     const estado = r.Tar_Estado || "";
     const pct = r.Ava_Porcentaje != null ? Number(r.Ava_Porcentaje) : 0;
@@ -384,7 +353,22 @@ export async function tareasActivasDev(
       tipo: "tarea" as const,
       label,
     };
-  });
+  };
+
+  const rows = await prisma.$queryRawUnsafe<Row[]>(
+    `SELECT ${tareaSelect}
+     FROM aud_tareas_asignadas a
+     INNER JOIN aud_tareas t ON t.Tar_Cod = a.Tar_Cod
+     WHERE a.Per_Cod = ?
+       AND a.Tas_Est = 'A'
+       AND t.Emp_Cod = ?
+       AND t.Tar_Est = 'A'
+       AND t.Tar_Estado <> 'Finalizada'
+     ORDER BY t.Tar_Fecha_Fin IS NULL, t.Tar_Fecha_Fin ASC, a.Tas_Cod ASC`,
+    perCod,
+    empCod
+  );
+  const tareas = rows.map(mapTarea);
 
   const aseCodes = await resolveUsuCodesFromPer(prisma, perCod);
   if (usuCod && usuCod > 0 && !aseCodes.includes(usuCod)) {
@@ -407,7 +391,91 @@ export async function tareasActivasDev(
     }
   }
 
-  return [...tareas, ...tickets];
+  if (!canAssignWork(rol)) {
+    return bandejaAsignadaDev([...tareas, ...tickets]);
+  }
+
+  let tareasSinAsignar: TrabajoMonitorItem[] = [];
+  const libres = await prisma.$queryRawUnsafe<Row[]>(
+    `SELECT ${tareaSelect}
+     FROM aud_tareas t
+     WHERE t.Emp_Cod = ?
+       AND t.Tar_Est = 'A'
+       AND t.Tar_Estado <> 'Finalizada'
+       AND NOT EXISTS (
+         SELECT 1 FROM aud_tareas_asignadas a
+         WHERE a.Tar_Cod = t.Tar_Cod AND a.Tas_Est = 'A'
+       )
+     ORDER BY t.Tar_Fecha_Fin IS NULL, t.Tar_Fecha_Fin ASC, t.Tar_Cod ASC`,
+    empCod
+  );
+  tareasSinAsignar = libres.map(mapTarea);
+
+  let tareasEquipo: TrabajoMonitorItem[] = [];
+  const delEquipo = await prisma.$queryRawUnsafe<Row[]>(
+    `SELECT ${tareaSelect}
+     FROM aud_tareas t
+     WHERE t.Emp_Cod = ?
+       AND t.Tar_Est = 'A'
+       AND t.Tar_Estado <> 'Finalizada'
+       AND EXISTS (
+         SELECT 1 FROM aud_tareas_asignadas a
+         WHERE a.Tar_Cod = t.Tar_Cod AND a.Tas_Est = 'A'
+       )
+     ORDER BY t.Tar_Fecha_Fin IS NULL, t.Tar_Fecha_Fin ASC, t.Tar_Cod ASC
+     LIMIT 400`,
+    empCod
+  );
+  const nombresPorTarea = new Map<number, string>();
+  const idsEquipo = delEquipo.map((r) => Number(r.Tar_Cod)).filter((n) => n > 0);
+  if (idsEquipo.length) {
+    const marks = idsEquipo.map(() => "?").join(",");
+    const nombres = await prisma.$queryRawUnsafe<
+      Array<{ Tar_Cod: number | bigint; Nombre: string | null }>
+    >(
+      `SELECT a.Tar_Cod,
+              CONVERT(TRIM(CONCAT(IFNULL(p.Prs_Ape,''), ' ', IFNULL(p.Prs_Nom,''))) USING utf8mb4) AS Nombre
+       FROM aud_tareas_asignadas a
+       LEFT JOIN personal per ON per.Per_Cod = a.Per_Cod
+       LEFT JOIN persona p ON p.Prs_Cod = per.Prs_Cod
+       WHERE a.Tas_Est = 'A' AND a.Tar_Cod IN (${marks})`,
+      ...idsEquipo
+    );
+    for (const n of nombres) {
+      const id = Number(n.Tar_Cod);
+      const nombre = (n.Nombre || "").trim();
+      if (!nombre) continue;
+      const prev = nombresPorTarea.get(id);
+      nombresPorTarea.set(id, prev ? `${prev}, ${nombre}` : nombre);
+    }
+  }
+  tareasEquipo = delEquipo.map((r) => ({
+    ...mapTarea(r),
+    Asignado: nombresPorTarea.get(Number(r.Tar_Cod)) || null,
+  }));
+
+  let ticketsSinAsignar: TrabajoMonitorItem[] = [];
+  try {
+    const raw = await listTicketsAsignados({ bandeja: "sin_asignar", limit: 1000 });
+    ticketsSinAsignar = raw.map((t) => mapTicket(t, true));
+  } catch (err) {
+    console.error("[monitoreo] tickets por asignar:", err instanceof Error ? err.message : err);
+  }
+
+  let ticketsEquipo: TrabajoMonitorItem[] = [];
+  try {
+    const raw = await listTicketsAsignados({ bandeja: "asignados", limit: 500 });
+    ticketsEquipo = raw.map((t) => mapTicket(t, false));
+  } catch (err) {
+    console.error("[monitoreo] tickets del equipo:", err instanceof Error ? err.message : err);
+  }
+
+  return armarBandejaMesa({
+    tareasSinAsignar,
+    ticketsSinAsignar,
+    tareasMias: tareasEquipo,
+    ticketsMios: ticketsEquipo,
+  });
 }
 
 export async function loadBandejaFlags(prisma: PrismaClient, perCod: number) {

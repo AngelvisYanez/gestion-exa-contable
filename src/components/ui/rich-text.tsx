@@ -18,6 +18,7 @@ const ALLOWED_TAGS = [
   "h2",
   "h3",
   "a",
+  "img",
   "blockquote",
   "code",
   "pre",
@@ -33,7 +34,8 @@ export function sanitizeRichHtml(html?: string | null) {
   }
   return DOMPurify.sanitize(html, {
     ALLOWED_TAGS,
-    ALLOWED_ATTR: ["href", "target", "rel", "class"],
+    ALLOWED_ATTR: ["href", "target", "rel", "class", "src", "alt"],
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto):|\/)/i,
   });
 }
 
@@ -77,6 +79,7 @@ export function RichTextHtml({ html, className, empty = "Sin descripcion." }: Pr
         "rich-html prose prose-sm max-w-none text-sm leading-relaxed",
         "[&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5",
         "[&_a]:font-semibold [&_a]:text-sky-700 [&_a]:underline",
+        "[&_img]:my-2 [&_img]:max-h-64 [&_img]:rounded-md [&_img]:border [&_img]:border-border",
         "[&_h2]:mb-1 [&_h2]:mt-2 [&_h2]:text-base [&_h2]:font-bold",
         "[&_p]:mb-2 [&_p:last-child]:mb-0",
         className

@@ -18,6 +18,11 @@ import {
   updateTicketEstado,
   type TicketEstado,
 } from "@/lib/tickets";
+import {
+  descripcionTicketAvance,
+  listAvancesTicket,
+  registrarAvanceTicket,
+} from "@/lib/ticket-avances";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +51,39 @@ export async function GET(req: NextRequest) {
         Tic_Cod: detalleCod,
         can_view_capturas: true,
         ...capturas,
+      });
+    }
+
+    const historial = parseInt(sp.get("historial") || "0", 10);
+    if (historial > 0) {
+      const session = await getSessionFromRequest(req);
+      if (!session) {
+        return NextResponse.json({ success: false, message: "Debe iniciar sesion." }, { status: 401 });
+      }
+      const prefer = sp.get("Db_Origen") || sp.get("Ses_Dat_Dis");
+      let ticketDb = sanitizeDbDis(prefer);
+      if (!canAssignWork(session.role) && !canSeeOversight(session.role)) {
+        const scope = await ticketScopeForSession(session);
+        const mio = await findTicketAsignado({
+          ticCod: historial,
+          aseCodes: scope.aseCodes,
+          perCodes: scope.perCodes,
+          preferDb: prefer,
+        });
+        if (!mio) {
+          return NextResponse.json(
+            { success: false, message: "Ese ticket no esta asignado a ti." },
+            { status: 403 }
+          );
+        }
+        ticketDb = mio.Db_Origen || ticketDb;
+      }
+      const avances = await listAvancesTicket(ticketDb, historial);
+      return NextResponse.json({
+        success: true,
+        Tic_Cod: historial,
+        porcentaje: avances[0]?.Ava_Porcentaje ?? 0,
+        avances,
       });
     }
 
@@ -141,7 +179,8 @@ export async function POST(req: NextRequest) {
     const session = await getSessionFromRequest(req);
 
     if (!canAssignWork(session?.role)) {
-      if (session?.role !== "developer" || action !== "estado") {
+      const devOk = session?.role === "developer" && (action === "estado" || action === "avance");
+      if (!devOk) {
         return NextResponse.json(
           { success: false, message: "No tienes acceso a esa accion." },
           { status: 403 }
@@ -232,11 +271,71 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, ...res });
     }
 
+    if (action === "avance") {
+      const ticCod = Number(body.Tic_Cod || 0);
+      const porcentaje = Number(body.porcentaje ?? 0);
+      if (!ticCod) {
+        return NextResponse.json({ success: false, message: "Tic_Cod requerido" }, { status: 400 });
+      }
+      if (!Number.isFinite(porcentaje) || porcentaje < 0 || porcentaje > 100) {
+        return NextResponse.json(
+          { success: false, message: "Porcentaje debe estar entre 0 y 100." },
+          { status: 400 }
+        );
+      }
+      const scope = session ? await ticketScopeForSession(session) : { aseCodes: [] as number[], perCodes: [] as number[] };
+      const mio = await findTicketAsignado({
+        ticCod,
+        aseCodes: scope.aseCodes,
+        perCodes: scope.perCodes,
+        preferDb: body.Db_Origen || db,
+      });
+      if (!mio) {
+        return NextResponse.json(
+          { success: false, message: "Ese ticket no esta asignado a ti." },
+          { status: 403 }
+        );
+      }
+      const descripcion = descripcionTicketAvance(body, ticCod);
+      if (!descripcion.trim()) {
+        return NextResponse.json(
+          { success: false, message: "Describe lo que avanzaste para registrar el avance." },
+          { status: 400 }
+        );
+      }
+      const ticketDb = mio.Db_Origen || db;
+      const res = await registrarAvanceTicket(ticketDb, {
+        ticCod,
+        porcentaje,
+        descripcion,
+        usuCod: session?.usuCod || undefined,
+        perCod: scope.perCodes[0],
+      });
+      publishEvent({
+        type: "avance_registrado",
+        title: "Avance de ticket",
+        message: `${session?.name || "Usuario"} · ticket #${ticCod} · ${res.porcentaje}%`,
+        db: ticketDb,
+        ticCod,
+        porcentaje: res.porcentaje,
+        actor: session?.name,
+        estado: res.estado || mio.Tic_Estado,
+        kind: "ticket",
+      });
+      return NextResponse.json({ success: true, ...res, Tic_Cod: ticCod });
+    }
+
     if (action === "estado") {
       const ticCod = Number(body.Tic_Cod || 0);
       const estado = String(body.estado || "") as TicketEstado;
       if (!ticCod || !estado) {
         return NextResponse.json({ success: false, message: "Datos incompletos" }, { status: 400 });
+      }
+      if (estado === "Cerrado") {
+        return NextResponse.json(
+          { success: false, message: "El ticket se resuelve al registrar el avance en 100%." },
+          { status: 400 }
+        );
       }
       let ticketDb = db;
       if (session?.role === "developer") {

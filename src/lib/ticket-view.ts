@@ -15,14 +15,19 @@ export type Ticket = {
   Asignado_Nombre: string | null;
   Asignado_Usu_Cod: number | null;
   /** Desarrolladores asignados (Ase_Cod + asignación múltiple del panel). */
-  Asignados?: Array<{ Usu_Cod: number; Per_Cod: number | null; Nombre: string }>;
+  Asignados?: Array<{ Usu_Cod: number; Per_Cod: number | null; Nombre: string; Fecha?: string | null }>;
   Tar_Cod: number | null;
   Emp_Cod: number;
   Emp_Nom: string | null;
   Usu_Creador: number | null;
   Creador_Nombre: string | null;
   Tic_Fecha_Llegada: string;
+  /** Cierre (Tic_Fec_Ter). No es la fecha en que se asignó. */
   Tic_Fecha_Asignacion: string | null;
+  /** Primera Tia_Fecha de la asignación activa. */
+  Fecha_Asignacion?: string | null;
+  /** Último avance registrado. Null si todavía no hay. */
+  Ava_Porcentaje?: number | null;
   Tic_Tel: string | null;
   Tic_Obs: string | null;
   /** Campos del formato WhatsApp (parseados de Tic_Des). */
@@ -52,8 +57,14 @@ export function ticketAsTarea(t: Ticket) {
     Tar_Fecha_Inicio: t.Tic_Fecha_Llegada || null,
     Tar_Fecha_Fin: null,
     Tar_Fecha_Culminacion: t.Tic_Estado === "Cerrado" ? t.Tic_Fecha_Asignacion : null,
-    Ava_Porcentaje: t.Tic_Estado === "Cerrado" ? 100 : t.Tic_Estado === "En Proceso" ? 40 : 0,
-    Ava_Ultima_Fecha: t.Tic_Fecha_Asignacion || t.Tic_Fecha_Llegada || null,
+    Ava_Porcentaje:
+      t.Ava_Porcentaje != null
+        ? t.Ava_Porcentaje
+        : t.Tic_Estado === "Cerrado"
+          ? 100
+          : 0,
+    Ava_Ultima_Fecha: t.Fecha_Asignacion || t.Tic_Fecha_Llegada || null,
+    Fecha_Asignacion: t.Fecha_Asignacion || null,
     Ava_Total: 0,
     Asignados:
       t.Asignados && t.Asignados.length

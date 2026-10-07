@@ -217,12 +217,10 @@ function KanbanCardBody({
         )}
       </div>
 
-      {!esTicket && (
-        <div className="mb-2 flex items-center gap-2">
-          <Progress value={Math.min(100, t.Ava_Porcentaje || 0)} className="h-1.5 flex-1" />
-          <span className="text-[10px] font-bold tabular-nums">{t.Ava_Porcentaje || 0}%</span>
-        </div>
-      )}
+      <div className="mb-2 flex items-center gap-2">
+        <Progress value={Math.min(100, t.Ava_Porcentaje || 0)} className="h-1.5 flex-1" />
+        <span className="text-[10px] font-bold tabular-nums">{t.Ava_Porcentaje || 0}%</span>
+      </div>
 
       <div className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
         <span className="truncate">
@@ -245,7 +243,7 @@ function KanbanCardBody({
       </div>
 
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-        {!esTicket ? (
+        {estadoActual !== "Finalizada" ? (
           <button
             type="button"
             className="min-h-8 text-[11px] font-bold text-sky-700 hover:underline sm:min-h-0"
@@ -256,19 +254,10 @@ function KanbanCardBody({
           >
             Registrar avance
           </button>
-        ) : estadoActual !== "Finalizada" ? (
-          <button
-            type="button"
-            className="min-h-8 text-[11px] font-bold text-emerald-700 hover:underline sm:min-h-0"
-            onClick={(e) => {
-              e.stopPropagation();
-              void onMoveEstado(t, "Finalizada");
-            }}
-          >
-            Marcar resuelto
-          </button>
         ) : (
-          <span className="text-[11px] font-semibold text-emerald-700">Resuelto</span>
+          <span className="text-[11px] font-semibold text-emerald-700">
+            {esTicket ? "Resuelto" : "Finalizada"}
+          </span>
         )}
         {!esTicket && (
           <span
@@ -299,7 +288,7 @@ function KanbanCardBody({
             aria-label="Cambiar estado"
             onChange={(e) => onSelectEstado(t, e.target.value as KanbanEstado)}
           >
-            {KANBAN_COLUMNS.map((c) => (
+            {KANBAN_COLUMNS.filter((c) => !(esTicket && c.id === "Finalizada")).map((c) => (
               <option key={c.id} value={c.id}>
                 {c.label}
               </option>
@@ -466,6 +455,7 @@ export function KanbanBoard({ tareas, loading, onAvance, onMoveEstado, onOpen, c
 
   const applyMove = async (tarea: Tarea, estado: KanbanEstado) => {
     if (columnFor(tarea) === estado) return;
+    if (tarea.tipo === "ticket" && estado === "Finalizada" && (tarea.Ava_Porcentaje || 0) < 100) return;
     const key = workItemKey(tarea);
     setMoving(key);
     try {
@@ -499,6 +489,9 @@ export function KanbanBoard({ tareas, loading, onAvance, onMoveEstado, onOpen, c
 
     const destino = resolveColumnId(String(over.id), tareas);
     if (!destino) return;
+    if (tarea.tipo === "ticket" && destino === "Finalizada" && (tarea.Ava_Porcentaje || 0) < 100) {
+      return;
+    }
     void applyMove(tarea, destino);
   };
 

@@ -7,6 +7,8 @@ import { saveEvidencia, toPublicCaptureUrl } from "@/lib/captures";
 import { isImagePath } from "@/lib/avance-format";
 import { tasksDbDis } from "@/lib/empresa";
 import { listTareas } from "@/lib/tareas";
+import { findTicketAsignado } from "@/lib/tickets";
+import { ticketScopeForSession } from "@/lib/ticket-scope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,11 +34,20 @@ export async function POST(req: NextRequest) {
 
     const db = tasksDbDis();
     if (ticCod > 0) {
-      if (!canAssignWork(session.role)) {
-        return NextResponse.json(
-          { success: false, message: "Solo encargado o atencion al cliente pueden adjuntar evidencias a tickets." },
-          { status: 403 }
-        );
+      if (!canAssignWork(session.role) && !canSeeOversight(session.role)) {
+        const scope = await ticketScopeForSession(session);
+        const mio = await findTicketAsignado({
+          ticCod,
+          aseCodes: scope.aseCodes,
+          perCodes: scope.perCodes,
+          preferDb: String(form.get("Db_Origen") || ""),
+        });
+        if (!mio) {
+          return NextResponse.json(
+            { success: false, message: "No puedes adjuntar evidencias a ese ticket." },
+            { status: 403 }
+          );
+        }
       }
     } else if (!canSeeOversight(session.role) && !canAssignWork(session.role)) {
       const perCod = await resolvePerCod(db, {

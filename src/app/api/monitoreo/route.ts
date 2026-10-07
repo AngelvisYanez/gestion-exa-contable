@@ -17,10 +17,18 @@ import {
   upsertPresencia,
 } from "@/lib/monitoreo";
 import { ensureMonitoreoSchema } from "@/lib/monitoreo-global";
+import { parseAsignadosTicket, parsePerCodsTarea } from "@/lib/monitoreo-asignacion";
 import {
+  descripcionTicketAvance,
+  listAvancesTicket,
+  registrarAvanceTicket,
+} from "@/lib/ticket-avances";
+import {
+  AsignacionInvalidaError,
   descripcionAvanceDesdeBody,
   getTareaDetalle,
   registrarAvance,
+  setTareaAsignados,
 } from "@/lib/tareas";
 import { isImagePath } from "@/lib/avance-format";
 import {
@@ -61,7 +69,7 @@ async function bandejaAgente(
 ) {
   const usuCod =
     usuHint && usuHint > 0 ? usuHint : await resolveUsuCodFromPer(prisma, perCod);
-  const rol = rolHint || (await resolvePanelRol(prisma, perCod)) || "developer";
+  const rol = rolHint || (await resolvePanelRol(prisma, perCod, usuCod || undefined)) || "developer";
   const tareas = await tareasActivasDev(prisma, perCod, usuCod || undefined, rol);
   return { usuCod: usuCod || 0, rol, tareas };
 }
@@ -311,7 +319,7 @@ async function handle(req: NextRequest) {
       if (!row) return jsonRes("error", "Desarrollador no encontrado.");
 
       const usuCod = await resolveUsuCodFromPer(prisma, perCod);
-      const rol = (await resolvePanelRol(prisma, perCod)) || "developer";
+      const rol = (await resolvePanelRol(prisma, perCod, usuCod || undefined)) || "developer";
       const aseCodes = await resolveUsuCodesFromPer(prisma, perCod);
       if (usuCod && usuCod > 0 && !aseCodes.includes(usuCod)) aseCodes.unshift(usuCod);
 
@@ -334,10 +342,19 @@ async function handle(req: NextRequest) {
         }
         const sinAsignar = !ticket.Asignado_Usu_Cod;
         const mio = ticketPerteneceA(ticket, aseCodes, perCod);
-        if (mesa && !sinAsignar && !mio) {
-          return jsonRes("error", "Este ticket ya fue asignado.");
+        if (!mesa && !mio) {
+          return jsonRes("error", "Ticket no encontrado o no asignado a ti.");
         }
         const asignables = mesa ? await asignablesMonitor() : [];
+        const avances = ticket.Db_Origen
+          ? await listAvancesTicket(ticket.Db_Origen, ticket.Tic_Cod)
+          : [];
+        const pct =
+          ticket.Ava_Porcentaje != null
+            ? ticket.Ava_Porcentaje
+            : ticket.Tic_Estado === "Cerrado"
+              ? 100
+              : 0;
         return jsonRes("ok", "Detalle de ticket.", {
           tipo: "ticket",
           trabajo: {
@@ -348,17 +365,11 @@ async function handle(req: NextRequest) {
             Complejidad: null,
             Estado: mesa && sinAsignar ? "Por asignar" : ticketEstadoToKanban(ticket.Tic_Estado),
             Fecha_Fin: null,
-            Ava_Porcentaje:
-              ticket.Tic_Estado === "Cerrado"
-                ? 100
-                : ticket.Tic_Estado === "En Proceso"
-                  ? 40
-                  : ticket.Tic_Estado === "Asignado"
-                    ? 10
-                    : 0,
-            puede_registrar_avance: false,
-            puede_cambiar_estado: (mio || !mesa) && ticket.Tic_Estado !== "Cerrado",
-            puede_subir_evidencia: mio || !mesa,
+            Fecha_Asignacion: sinAsignar ? null : ticket.Fecha_Asignacion || null,
+            Ava_Porcentaje: pct,
+            puede_registrar_avance: mio && ticket.Tic_Estado !== "Cerrado",
+            puede_cambiar_estado: mio && ticket.Tic_Estado !== "Cerrado" && ticket.Tic_Estado !== "En Proceso",
+            puede_subir_evidencia: mio,
             puede_asignar: mesa && sinAsignar,
             Enviado_Por: ticket.Enviado_Por || ticket.Creador_Nombre || null,
             Empresa: ticket.Emp_Nom || null,
@@ -368,23 +379,33 @@ async function handle(req: NextRequest) {
             Db_Origen: ticket.Db_Origen || null,
           },
           evidencias: ticket.Evidencias || [],
+          avances: avances.slice(0, 8).map((a) => ({
+            Ava_Porcentaje: a.Ava_Porcentaje,
+            Ava_Fecha: a.Ava_Fecha,
+            realizado: a.realizado || "",
+            Autor: a.Autor || "",
+            adjuntos: a.adjuntos,
+          })),
           asignables,
         });
       }
 
-      const assigned = await prisma.$queryRawUnsafe<Array<{ n: number }>>(
-        `SELECT 1 AS n FROM aud_tareas_asignadas
-         WHERE Tar_Cod = ? AND Per_Cod = ? AND Tas_Est = 'A' LIMIT 1`,
-        cod,
-        perCod
+      const titulares = await prisma.$queryRawUnsafe<Array<{ Per_Cod: number | bigint }>>(
+        `SELECT Per_Cod FROM aud_tareas_asignadas
+         WHERE Tar_Cod = ? AND Tas_Est = 'A'`,
+        cod
       );
-      if (!assigned.length) {
+      const mia = titulares.some((a) => Number(a.Per_Cod) === perCod);
+      const sinAsignar = titulares.length === 0;
+      const mesa = canAssignWork(rol);
+      if (!mia && !mesa) {
         return jsonRes("error", "Tarea no encontrada o no asignada a ti.");
       }
 
       const detalle = await getTareaDetalle(dbDis, cod, { includeCapturas: false });
       if (!detalle) return jsonRes("error", "No se pudo cargar el detalle de la tarea.");
 
+      const asignablesTarea = mesa && sinAsignar ? await asignablesMonitor() : [];
       return jsonRes("ok", "Detalle de tarea.", {
         tipo: "tarea",
         trabajo: {
@@ -393,13 +414,15 @@ async function handle(req: NextRequest) {
           Descripcion: detalle.tarea.Tar_Descripcion || "",
           Prioridad: detalle.tarea.Tar_Prioridad || "Media",
           Complejidad: detalle.tarea.Tar_Complejidad || "Media",
-          Estado: detalle.tarea.Tar_Estado || "",
+          Estado: sinAsignar ? "Por asignar" : detalle.tarea.Tar_Estado || "",
           Fecha_Fin: detalle.tarea.Tar_Fecha_Fin,
           Ava_Porcentaje: detalle.tarea.Ava_Porcentaje ?? 0,
-          puede_registrar_avance: true,
+          puede_registrar_avance: mia,
           puede_cambiar_estado: false,
-          puede_subir_evidencia: true,
+          puede_subir_evidencia: mia,
+          puede_asignar: mesa && sinAsignar,
         },
+        asignables: asignablesTarea,
         evidencias: detalle.evidencias_iniciales || [],
         avances: (detalle.avances || []).slice(0, 8).map((a) => ({
           Ava_Porcentaje: a.Ava_Porcentaje,
@@ -483,6 +506,78 @@ async function handle(req: NextRequest) {
       });
     }
 
+    if (accion === "registrar_avance_ticket") {
+      const perCod = parseInt(pick(form, json, req, "Per_Cod"), 10) || 0;
+      if (perCod <= 0) return jsonRes("error", "Codigo de desarrollador invalido.");
+
+      const ticCod =
+        parseInt(pick(form, json, req, "Tic_Cod"), 10) ||
+        parseInt(pick(form, json, req, "Tar_Cod"), 10) ||
+        0;
+      if (ticCod <= 0) return jsonRes("error", "Tic_Cod invalido.");
+
+      const porcentaje = Number(pick(form, json, req, "porcentaje", "0"));
+      if (!Number.isFinite(porcentaje) || porcentaje < 0 || porcentaje > 100) {
+        return jsonRes("error", "Porcentaje debe estar entre 0 y 100.");
+      }
+
+      const realizado = pick(form, json, req, "realizado") || pick(form, json, req, "descripcion");
+      if (!realizado.trim()) {
+        return jsonRes("error", "Describe lo que avanzaste para registrar el avance.");
+      }
+
+      const usuCod = await resolveUsuCodFromPer(prisma, perCod);
+      const aseCodes = await resolveUsuCodesFromPer(prisma, perCod);
+      if (usuCod && usuCod > 0 && !aseCodes.includes(usuCod)) aseCodes.unshift(usuCod);
+      const mio = await findTicketAsignado({
+        ticCod,
+        aseCodes,
+        perCodes: perCod > 0 ? [perCod] : [],
+        preferDb: pick(form, json, req, "Db_Origen"),
+      });
+      if (!mio) return jsonRes("error", "Ese ticket no esta asignado a ti.");
+
+      let adjuntos: string[] = [];
+      const rawAdj = pick(form, json, req, "adjuntos");
+      if (rawAdj.trim()) {
+        try {
+          const parsed = JSON.parse(rawAdj);
+          if (Array.isArray(parsed)) adjuntos = parsed.map((x) => String(x));
+        } catch {
+          adjuntos = rawAdj.split(",").map((s) => s.trim()).filter(Boolean);
+        }
+      }
+      const descripcion = descripcionTicketAvance({ realizado, adjuntos }, ticCod);
+      const ticketDb = mio.Db_Origen || dbDis;
+      const res = await registrarAvanceTicket(ticketDb, {
+        ticCod,
+        porcentaje,
+        descripcion,
+        usuCod: usuCod || undefined,
+        perCod,
+      });
+      publishEvent({
+        type: "avance_registrado",
+        title: "Avance de ticket",
+        message: `ExaMonitor · ticket #${ticCod} · ${res.porcentaje}%`,
+        db: ticketDb,
+        ticCod,
+        porcentaje: res.porcentaje,
+        actor: "ExaMonitor",
+        estado: res.estado || mio.Tic_Estado,
+        kind: "ticket",
+      });
+      const rolAv = (await resolvePanelRol(prisma, perCod, usuCod || undefined)) || "developer";
+      const { tareas } = await bandejaAgente(prisma, perCod, usuCod || undefined, rolAv);
+      return jsonRes("ok", "Avance registrado.", {
+        porcentaje: res.porcentaje,
+        Tic_Cod: ticCod,
+        estado: res.estado,
+        mis_tareas: tareas,
+        tareas,
+      });
+    }
+
     if (accion === "cambiar_estado_ticket") {
       const perCod = parseInt(pick(form, json, req, "Per_Cod"), 10) || 0;
       if (perCod <= 0) return jsonRes("error", "Codigo de desarrollador invalido.");
@@ -512,6 +607,9 @@ async function handle(req: NextRequest) {
       }
 
       const estado = kanbanToTicketEstado(estadoRaw);
+      if (estado === "Cerrado") {
+        return jsonRes("error", "El ticket se resuelve al registrar el avance en 100%.");
+      }
       const ticketDb = mio.Db_Origen || dbDis;
       await updateTicketEstado(ticketDb, ticCod, estado);
       publishEvent({
@@ -544,11 +642,16 @@ async function handle(req: NextRequest) {
         parseInt(pick(form, json, req, "Tar_Cod"), 10) ||
         0;
       const usuCod = parseInt(pick(form, json, req, "Usu_Cod"), 10) || 0;
-      if (ticCod <= 0 || usuCod <= 0) {
+      const elegidos = parseAsignadosTicket(
+        pick(form, json, req, "asignados") || pick(form, json, req, "Usu_Cods"),
+        usuCod
+      );
+      if (ticCod <= 0 || !elegidos.length) {
         return jsonRes("error", "Tic_Cod y desarrollador son obligatorios.");
       }
 
-      const rol = (await resolvePanelRol(prisma, perCod)) || "developer";
+      const usuActor = await resolveUsuCodFromPer(prisma, perCod);
+      const rol = (await resolvePanelRol(prisma, perCod, usuActor || undefined)) || "developer";
       if (!canAssignWork(rol)) {
         return jsonRes("error", "Solo el encargado o atencion al cliente pueden asignar tickets desde ExaMonitor.");
       }
@@ -569,33 +672,131 @@ async function handle(req: NextRequest) {
       }
 
       const asignables = await asignablesMonitor();
-      const elegido = asignables.find((a) => a.Usu_Cod === usuCod);
-      if (!elegido) return jsonRes("error", "Ese desarrollador no esta en el equipo.");
+      const equipo = elegidos.map((e) => {
+        const row = asignables.find((a) => a.Usu_Cod === e.usuCod);
+        return row
+          ? { usuCod: e.usuCod, perCod: e.perCod || row.Per_Cod, nombre: row.Nombre }
+          : null;
+      });
+      if (equipo.some((e) => !e)) {
+        return jsonRes("error", "Ese desarrollador no esta en el equipo.");
+      }
+      const validos = equipo.filter((e): e is NonNullable<typeof e> => !!e);
 
       const ticketDb = ticket.Db_Origen || dbDis;
-      const res = await assignTicket(ticketDb, { ticCod, usuCod, perCod: elegido.Per_Cod });
+      const res = await assignTicket(ticketDb, {
+        ticCod,
+        asignados: validos.map((e) => ({ usuCod: e.usuCod, perCod: e.perCod })),
+      });
       const titulo = res.ticket?.Tic_Titulo || ticket.Tic_Titulo || `Ticket #${ticCod}`;
-      const nombre = res.ticket?.Asignado_Nombre || elegido.Nombre;
+      const nombre = validos.map((e) => e.nombre).join(", ");
       const actorRow = await findDesarrollador(prisma, String(perCod));
       const actor =
         `${actorRow?.persona?.Prs_Ape || ""} ${actorRow?.persona?.Prs_Nom || ""}`.trim() ||
         "Atencion al cliente";
-      publishAsignacion({
-        kind: "ticket",
-        title: "Ticket asignado",
-        message: `#${ticCod} · ${titulo} → ${nombre}`,
-        db: ticketDb,
-        ticCod,
-        perCod: elegido.Per_Cod,
-        usuCod,
-        estado: res.ticket?.Tic_Estado || "Asignado",
-        actor,
-      });
+      for (const elegido of validos) {
+        publishAsignacion({
+          kind: "ticket",
+          title: "Ticket asignado",
+          message: `#${ticCod} · ${titulo} → ${nombre}`,
+          db: ticketDb,
+          ticCod,
+          perCod: elegido.perCod,
+          usuCod: elegido.usuCod,
+          estado: res.ticket?.Tic_Estado || "Asignado",
+          actor,
+        });
+      }
 
       const { tareas } = await bandejaAgente(prisma, perCod, undefined, rol);
       return jsonRes("ok", `Ticket #${ticCod} asignado a ${nombre}.`, {
         Tic_Cod: ticCod,
         estado: res.ticket?.Tic_Estado || "Asignado",
+        Asignado_Nombre: nombre,
+        mis_tareas: tareas,
+        tareas,
+        asignables,
+      });
+    }
+
+    if (accion === "asignar_tarea") {
+      const perCod = parseInt(pick(form, json, req, "Per_Cod"), 10) || 0;
+      if (perCod <= 0) return jsonRes("error", "Codigo de desarrollador invalido.");
+
+      const tarCod = parseInt(pick(form, json, req, "Tar_Cod"), 10) || 0;
+      const perCods = parsePerCodsTarea(
+        pick(form, json, req, "Per_Cods") || pick(form, json, req, "asignados")
+      );
+      if (tarCod <= 0 || !perCods.length) {
+        return jsonRes("error", "Tar_Cod y al menos una persona son obligatorios.");
+      }
+
+      const usuActor = await resolveUsuCodFromPer(prisma, perCod);
+      const rol = (await resolvePanelRol(prisma, perCod, usuActor || undefined)) || "developer";
+      if (!canAssignWork(rol)) {
+        return jsonRes("error", "Solo el encargado o atencion al cliente pueden asignar tareas desde ExaMonitor.");
+      }
+
+      const [tareaRow] = await prisma.$queryRawUnsafe<
+        Array<{ Tar_Titulo: string | null; Tar_Estado: string | null; n: number | bigint }>
+      >(
+        `SELECT CONVERT(t.Tar_Titulo USING utf8mb4) AS Tar_Titulo,
+                CONVERT(t.Tar_Estado USING utf8mb4) AS Tar_Estado,
+                (SELECT COUNT(*) FROM aud_tareas_asignadas a
+                 WHERE a.Tar_Cod = t.Tar_Cod AND a.Tas_Est = 'A') AS n
+         FROM aud_tareas t
+         WHERE t.Tar_Cod = ? AND t.Tar_Est = 'A'
+         LIMIT 1`,
+        tarCod
+      );
+      if (!tareaRow) return jsonRes("error", "Tarea no encontrada.");
+      if (String(tareaRow.Tar_Estado || "") === "Finalizada") {
+        return jsonRes("error", "No se puede asignar una tarea finalizada.");
+      }
+      if (Number(tareaRow.n) > 0) {
+        return jsonRes("error", "Esta tarea ya fue asignada.");
+      }
+
+      let estado = "Asignado";
+      try {
+        const asig = await setTareaAsignados(dbDis, tarCod, perCods);
+        estado = asig.Tar_Estado;
+      } catch (e) {
+        if (e instanceof AsignacionInvalidaError) {
+          return jsonRes("error", e.message);
+        }
+        throw e;
+      }
+
+      const asignables = await asignablesMonitor();
+      const titulo = (tareaRow.Tar_Titulo || "").trim() || `Tarea #${tarCod}`;
+      const nombres = perCods.map(
+        (id) => asignables.find((a) => a.Per_Cod === id)?.Nombre || "el equipo"
+      );
+      const nombre = nombres.join(", ");
+      const actorRow = await findDesarrollador(prisma, String(perCod));
+      const actor =
+        `${actorRow?.persona?.Prs_Ape || ""} ${actorRow?.persona?.Prs_Nom || ""}`.trim() ||
+        "Atencion al cliente";
+      for (const id of perCods) {
+        const row = asignables.find((a) => a.Per_Cod === id);
+        publishAsignacion({
+          kind: "tarea",
+          title: "Tarea asignada",
+          message: `#${tarCod} · ${titulo} → ${nombre}`,
+          db: dbDis,
+          tarCod,
+          perCod: id,
+          usuCod: row?.Usu_Cod,
+          estado,
+          actor,
+        });
+      }
+
+      const { tareas } = await bandejaAgente(prisma, perCod, undefined, rol);
+      return jsonRes("ok", `Tarea #${tarCod} asignada a ${nombre}.`, {
+        Tar_Cod: tarCod,
+        estado,
         Asignado_Nombre: nombre,
         mis_tareas: tareas,
         tareas,
@@ -617,7 +818,7 @@ async function handle(req: NextRequest) {
 
       let ticketDb = dbDis;
       if (ticCod > 0) {
-        const rolEv = (await resolvePanelRol(prisma, perCod)) || "developer";
+        const rolEv = (await resolvePanelRol(prisma, perCod, usuCod || undefined)) || "developer";
         const preferDb = pick(form, json, req, "Db_Origen");
         const ticket = canAssignWork(rolEv)
           ? await (async () => {
@@ -670,8 +871,9 @@ async function handle(req: NextRequest) {
         });
       }
 
-      // En tickets se vinculan al cuerpo; en tareas las rutas se usan al registrar avance.
-      if (ticCod > 0) {
+      // En tickets se vinculan al cuerpo; en un avance las rutas viajan con la nota.
+      const vincular = pick(form, json, req, "vincular", "1") !== "0";
+      if (ticCod > 0 && vincular) {
         await attachTicketEvidencias(
           ticketDb,
           ticCod,

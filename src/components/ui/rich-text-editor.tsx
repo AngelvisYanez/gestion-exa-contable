@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect } from "react";
-import { EditorContent, useEditor } from "@tiptap/react";
+import { useEffect, useRef } from "react";
+import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import Underline from "@tiptap/extension-underline";
 import Link from "@tiptap/extension-link";
+import Image from "@tiptap/extension-image";
 import {
   Bold,
   Heading2,
@@ -18,6 +19,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+type PastedFile = { url: string; nombre: string; esImagen: boolean };
+
 type Props = {
   value: string;
   onChange: (html: string) => void;
@@ -25,6 +28,8 @@ type Props = {
   disabled?: boolean;
   className?: string;
   minHeight?: string;
+  /** Sube una imagen o documento pegado y devuelve la URL pública. */
+  uploadFile?: (file: File) => Promise<PastedFile | null>;
 };
 
 function ToolbarBtn({
@@ -63,13 +68,35 @@ export function RichTextEditor({
   disabled,
   className,
   minHeight = "140px",
+  uploadFile,
 }: Props) {
+  const uploadRef = useRef(uploadFile);
+  uploadRef.current = uploadFile;
+
+  const editorRef = useRef<Editor | null>(null);
+
+  const insertFiles = async (files: File[], ed: Editor) => {
+    const upload = uploadRef.current;
+    if (!upload || !files.length) return false;
+    for (const file of files) {
+      const saved = await upload(file);
+      if (!saved) continue;
+      const safeName = saved.nombre.replace(/[<>"']/g, "");
+      const html = saved.esImagen
+        ? `<img src="${saved.url}" alt="${safeName}">`
+        : `<a href="${saved.url}" target="_blank" rel="noreferrer">${safeName}</a>`;
+      ed.chain().focus().insertContent(html).run();
+    }
+    return true;
+  };
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
         heading: { levels: [2, 3] },
       }),
       Underline,
+      Image.configure({ inline: false, allowBase64: false }),
       Link.configure({
         openOnClick: false,
         HTMLAttributes: { class: "text-sky-700 underline font-semibold" },
@@ -80,6 +107,20 @@ export function RichTextEditor({
     editable: !disabled,
     immediatelyRender: false,
     editorProps: {
+      handlePaste: (_view, event) => {
+        const files = Array.from(event.clipboardData?.files || []);
+        if (!files.length || !uploadRef.current || !editorRef.current) return false;
+        event.preventDefault();
+        void insertFiles(files, editorRef.current);
+        return true;
+      },
+      handleDrop: (_view, event) => {
+        const files = Array.from(event.dataTransfer?.files || []);
+        if (!files.length || !uploadRef.current || !editorRef.current) return false;
+        event.preventDefault();
+        void insertFiles(files, editorRef.current);
+        return true;
+      },
       attributes: {
         class: cn(
           "tiptap prose prose-sm max-w-none px-3 py-2 focus:outline-none",
@@ -93,6 +134,10 @@ export function RichTextEditor({
       onChange(html);
     },
   });
+
+  useEffect(() => {
+    editorRef.current = editor;
+  }, [editor]);
 
   useEffect(() => {
     if (!editor) return;

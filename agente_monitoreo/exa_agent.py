@@ -19,7 +19,10 @@ import flet as ft
 import requests
 import screen_capture  # noqa: F401  (PyInstaller debe empaquetar la captura)
 
+from bandeja import trabajos_activos, visible_trabajos
+
 from win_shell import (
+    clipboard_files,
     consume_input_counts,
     ensure_windows_autostart,
     foreground_window,
@@ -27,7 +30,7 @@ from win_shell import (
     start_input_counter,
 )
 
-AGENT_VERSION = "2.8.3-flet"
+AGENT_VERSION = "2.10.0-flet"
 
 # Tokens alineados a globals.css / Badge del dashboard EXA
 LIGHT = {
@@ -324,6 +327,7 @@ class ExaMonitorApp:
         self._fg_title = "EXA Monitor"
         self._fg_process = "ExaMonitor.exe"
         self.tipo_filtro = "todos"
+        self.bandeja_filtro = "asignados"
         self.asignables: list = []
         self._pending_files: list[str] = []
         self.file_picker = ft.FilePicker()
@@ -774,6 +778,18 @@ class ExaMonitorApp:
             dense=True,
         )
 
+        self.seg_bandeja = ft.SegmentedButton(
+            selected=["asignados"],
+            allow_multiple_selection=False,
+            visible=False,
+            segments=[
+                ft.Segment(value="asignar", label=ft.Text("Asignar"), icon=ft.Icon(ft.Icons.PERSON_ADD_ALT)),
+                ft.Segment(value="asignados", label=ft.Text("Asignados"), icon=ft.Icon(ft.Icons.ASSIGNMENT_IND)),
+            ],
+            on_change=self._on_bandeja_change,
+            style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8)),
+        )
+
         # Filter chips via SegmentedButton
         self.seg_tipo = ft.SegmentedButton(
             selected=["todos"],
@@ -813,6 +829,7 @@ class ExaMonitorApp:
                         ],
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                     ),
+                    self.seg_bandeja,
                     self.seg_tipo,
                     ft.Container(content=self.tasks_list_view, height=340),
                     padding=14,
@@ -879,11 +896,19 @@ class ExaMonitorApp:
         self.page.run_thread(self.action_login)
 
     def _visible_tasks(self) -> list:
-        if self.tipo_filtro == "tarea":
-            return [t for t in self.tasks_list if t.get("tipo") != "ticket"]
-        if self.tipo_filtro == "ticket":
-            return [t for t in self.tasks_list if t.get("tipo") == "ticket"]
-        return list(self.tasks_list)
+        return visible_trabajos(
+            self.tasks_list,
+            es_mesa=self._es_mesa(),
+            bandeja=self.bandeja_filtro,
+            tipo_filtro=self.tipo_filtro,
+        )
+
+    def _on_bandeja_change(self, e: ft.ControlEvent):
+        selected = list(e.control.selected or [])
+        if selected:
+            self.bandeja_filtro = str(selected[0])
+            self._apply_rol_ui()
+            self._refresh_tasks_ui()
 
     def _on_tipo_change(self, e: ft.ControlEvent):
         selected = list(e.control.selected or [])
@@ -897,6 +922,13 @@ class ExaMonitorApp:
             self.selected_tar_cod = int(val) if val else 0
         except Exception:
             self.selected_tar_cod = 0
+        elegido = next(
+            (t for t in trabajos_activos(self.tasks_list) if str(t.get("Tar_Cod")) == str(val or "")),
+            None,
+        )
+        if elegido:
+            self.selected_tipo = "ticket" if elegido.get("tipo") == "ticket" else "tarea"
+            self.selected_db = str(elegido.get("Db_Origen") or "")
 
     def _task_row(self, t: dict) -> ft.Control:
         is_ticket = t.get("tipo") == "ticket"
@@ -939,6 +971,8 @@ class ExaMonitorApp:
                             p
                             for p in [
                                 (t.get("Empresa") or "").strip(),
+                                (t.get("Asignado") or "").strip(),
+                                (t.get("Fecha_Asignacion") or "").strip()[:16].replace("T", " "),
                                 (t.get("Llegada") or "").strip(),
                                 f"Fin {fin}" if (fin and not is_ticket) else "",
                             ]
@@ -953,7 +987,7 @@ class ExaMonitorApp:
             ),
         ]
 
-        if not is_ticket:
+        if True:
             mid.append(
                 ft.Row(
                     [
@@ -1005,7 +1039,18 @@ class ExaMonitorApp:
 
     def _open_item(self, cod: int, tipo: str, db: str = ""):
         try:
-            self._activate_task(cod, tipo, db)
+            item = next(
+                (
+                    t
+                    for t in self.tasks_list
+                    if int(t.get("Tar_Cod") or 0) == int(cod)
+                    and ("ticket" if t.get("tipo") == "ticket" else "tarea") == tipo
+                    and (tipo != "ticket" or not db or str(t.get("Db_Origen") or "") == db)
+                ),
+                None,
+            )
+            if item is None or not item.get("por_asignar"):
+                self._activate_task(cod, tipo, db)
         except Exception as err:
             print("abrir:", err)
         self._set_status("Cargando detalle...")
@@ -1269,7 +1314,7 @@ class ExaMonitorApp:
                 color=C["text"],
             ),
         ]
-        if tipo != "ticket":
+        if estado != "Por asignar":
             header_bits.append(
                 ft.Row(
                     [
@@ -1314,6 +1359,11 @@ class ExaMonitorApp:
                     meta_row(ft.Icons.PHONE_OUTLINED, "Teléfono", trabajo.get("Telefono")),
                     meta_row(ft.Icons.HANDYMAN_OUTLINED, "Proceso", trabajo.get("Proceso")),
                     meta_row(ft.Icons.PERSON_OUTLINE, "Asignado", trabajo.get("Asignado_Nombre")),
+                    meta_row(
+                        ft.Icons.CALENDAR_TODAY,
+                        "Asignado el",
+                        str(trabajo.get("Fecha_Asignacion") or "")[:16].replace("T", " ") or None,
+                    ),
                 ]
                 if x is not None
             ]
@@ -1354,6 +1404,17 @@ class ExaMonitorApp:
                                     size=12,
                                     color=C["text"],
                                 ),
+                                ft.Row(
+                                    [
+                                        self._evidencia_tile(ev)
+                                        for ev in (a.get("adjuntos") or [])[:4]
+                                        if isinstance(ev, dict) and ev.get("url")
+                                    ],
+                                    wrap=True,
+                                    spacing=8,
+                                )
+                                if a.get("adjuntos")
+                                else ft.Container(),
                             ],
                             spacing=6,
                             tight=True,
@@ -1460,6 +1521,51 @@ class ExaMonitorApp:
             padding=ft.Padding.only(left=12, right=12, top=10, bottom=8),
         )
 
+        self._pasted_rutas = []
+
+        def pegar_portapapeles(_e=None):
+            paths = []
+            rejected = []
+            for pth in clipboard_files():
+                ext = Path(pth).suffix.lower().lstrip(".")
+                if ext not in EVIDENCIA_EXTS:
+                    rejected.append(Path(pth).name)
+                    continue
+                paths.append(pth)
+            if not paths:
+                if rejected:
+                    lbl_avance_err.value = "Ese tipo de archivo no se puede pegar."
+                    lbl_avance_err.visible = True
+                    self.page.update()
+                return
+            lbl_avance_err.visible = False
+            self.page.update()
+
+            def job():
+                try:
+                    rutas = self._upload_evidencias(
+                        cod, tipo, paths, db_origen, vincular=tipo != "ticket"
+                    )
+                    self._pasted_rutas.extend(rutas)
+                    bits = []
+                    for ruta in rutas:
+                        nombre = Path(ruta).name
+                        rel = ruta[len("gestion/adjuntos/") :] if ruta.startswith("gestion/adjuntos/") else ruta
+                        url = self._media_url("/api/capturas/" + rel)
+                        if Path(nombre).suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+                            bits.append(f'<img src="{url}" alt="{nombre}">')
+                        else:
+                            bits.append(f'<a href="{url}">{nombre}</a>')
+                    actual = tf_realizado.value or ""
+                    tf_realizado.value = (actual + ("\n" if actual else "") + "\n".join(bits)).strip()
+                    refresh_files_label()
+                except Exception as err:
+                    lbl_avance_err.value = str(err)
+                    lbl_avance_err.visible = True
+                    self.page.update()
+
+            self.page.run_thread(job)
+
         sel_editor = {"start": 0, "end": 0}
 
         def on_sel(e):
@@ -1516,6 +1622,13 @@ class ExaMonitorApp:
                                 btn_fmt(ft.Icons.FORMAT_ITALIC, "Cursiva", "<em>", "</em>"),
                                 btn_fmt(ft.Icons.FORMAT_UNDERLINED, "Subrayado", "<u>", "</u>"),
                                 btn_fmt(ft.Icons.FORMAT_LIST_BULLETED, "Lista", "<ul><li>", "</li></ul>"),
+                                ft.IconButton(
+                                    icon=ft.Icons.CONTENT_PASTE,
+                                    tooltip="Pegar imagen o documento",
+                                    icon_size=16,
+                                    icon_color=C["text"],
+                                    on_click=pegar_portapapeles,
+                                ),
                             ],
                             spacing=0,
                         ),
@@ -1566,7 +1679,7 @@ class ExaMonitorApp:
         btn_resuelto = ft.FilledButton(
             "Marcar resuelto",
             icon=ft.Icons.CHECK,
-            visible=puede_estado and estado != "Finalizada",
+            visible=False,
             style=ft.ButtonStyle(
                 bgcolor="#059669",
                 color="#ffffff",
@@ -1675,27 +1788,39 @@ class ExaMonitorApp:
 
         btn_pick.on_click = pick_files
 
-        dd_ase = None
+        checks_ase: list[tuple] = []
         btn_asignar = None
+        lista_equipo = None
+        texto_asignar = "Asignar tarea" if tipo == "tarea" else "Asignar ticket"
         if puede_asignar:
             opciones = payload.get("asignables") or self.asignables or []
-            dd_ase = ft.Dropdown(
-                label="Desarrollador",
-                hint_text="Elige a quién asignar",
-                options=[
-                    ft.DropdownOption(
-                        key=str(a.get("Usu_Cod")),
-                        text=(a.get("Nombre") or f"Usuario {a.get('Usu_Cod')}")[:80],
-                    )
-                    for a in opciones
-                    if a.get("Usu_Cod")
-                ],
-                border_color=C["border"],
-                focused_border_color=C["primary"],
-                dense=True,
+            filas = []
+            for persona in opciones:
+                if tipo == "tarea":
+                    if not persona.get("Per_Cod"):
+                        continue
+                elif not persona.get("Usu_Cod"):
+                    continue
+                cb = ft.Checkbox(
+                    label=(persona.get("Nombre") or "Sin nombre")[:80],
+                    value=False,
+                )
+                checks_ase.append((cb, persona))
+                filas.append(cb)
+            lista_equipo = (
+                ft.Column(
+                    filas,
+                    spacing=2,
+                    scroll=ft.ScrollMode.AUTO,
+                    height=min(220, 36 * max(1, len(filas))),
+                )
+                if filas
+                else ft.Text(
+                    "No hay desarrolladores en el equipo.", size=12, color=C["text_muted"]
+                )
             )
             btn_asignar = ft.FilledButton(
-                "Asignar ticket",
+                texto_asignar,
                 icon=ft.Icons.PERSON_ADD_ALT,
                 style=ft.ButtonStyle(
                     bgcolor=C["primary"],
@@ -1733,13 +1858,16 @@ class ExaMonitorApp:
                     padding=14,
                 )
             )
-        elif puede_asignar and dd_ase is not None and btn_asignar is not None:
+        elif puede_asignar and btn_asignar is not None and lista_equipo is not None:
             body_cols.append(
                 info_card(
                     section_label("Asignar"),
-                    dd_ase if dd_ase.options else ft.Text(
-                        "No hay desarrolladores en el equipo.", size=12, color=C["text_muted"]
+                    ft.Text(
+                        "Puedes marcar varias personas del equipo.",
+                        size=12,
+                        color=C["text_muted"],
                     ),
+                    lista_equipo,
                     lbl_avance_err,
                     ft.Row([btn_asignar], alignment=ft.MainAxisAlignment.END),
                 )
@@ -1769,8 +1897,21 @@ class ExaMonitorApp:
             height=alto,
         )
 
+        prev_keys = self.page.on_keyboard_event
+
+        def on_key(e):
+            key = str(getattr(e, "key", "") or "").lower()
+            if bool(getattr(e, "ctrl", False)) and key in ("v", "keyv"):
+                pegar_portapapeles()
+            if prev_keys:
+                prev_keys(e)
+
+        self.page.on_keyboard_event = on_key
+
         def close_dlg(_e=None):
             self._pending_files = []
+            self._pasted_rutas = []
+            self.page.on_keyboard_event = prev_keys
             self.page.pop_dialog()
 
         close_btn.on_click = close_dlg
@@ -1788,7 +1929,9 @@ class ExaMonitorApp:
             lbl_avance_err.visible = False
             self.page.update()
             files = list(self._pending_files)
-            self.page.run_thread(lambda: self._registrar_avance(cod, pct, realizado, files, close_dlg))
+            self.page.run_thread(
+                lambda: self._registrar_avance(cod, pct, realizado, files, close_dlg, tipo, db_origen)
+            )
 
         def do_ticket_estado(nuevo: str):
             btn_en_proceso.disabled = True
@@ -1818,11 +1961,11 @@ class ExaMonitorApp:
         btn_solo_ev.on_click = do_solo_evidencias
 
         def do_asignar(_e):
-            if dd_ase is None or btn_asignar is None:
+            if btn_asignar is None:
                 return
-            usu = str(dd_ase.value or "").strip()
-            if not usu:
-                lbl_avance_err.value = "Elige un desarrollador."
+            personas = [persona for cb, persona in checks_ase if cb.value]
+            if not personas:
+                lbl_avance_err.value = "Elige al menos una persona."
                 lbl_avance_err.visible = True
                 self.page.update()
                 return
@@ -1830,7 +1973,11 @@ class ExaMonitorApp:
             btn_asignar.text = "Asignando..."
             lbl_avance_err.visible = False
             self.page.update()
-            self.page.run_thread(lambda: self._asignar_ticket(cod, int(usu), close_dlg, btn_asignar, db_origen))
+            self.page.run_thread(
+                lambda: self._asignar_personas(
+                    tipo, cod, personas, close_dlg, btn_asignar, db_origen, texto_asignar
+                )
+            )
 
         if btn_asignar is not None:
             btn_asignar.on_click = do_asignar
@@ -1864,7 +2011,7 @@ class ExaMonitorApp:
             btn_trabajar.on_click = do_trabajar
             footer.append(btn_trabajar)
         if puede_estado:
-            footer.extend([btn_en_proceso, btn_resuelto])
+            footer.append(btn_en_proceso)
         if trabajo.get("puede_subir_evidencia") and not puede_avance:
             footer.append(btn_solo_ev)
 
@@ -1881,7 +2028,9 @@ class ExaMonitorApp:
         dlg_ref["dlg"] = dlg
         self.page.show_dialog(dlg)
 
-    def _upload_evidencias(self, cod: int, tipo: str, file_paths: list[str], db: str = "") -> list[str]:
+    def _upload_evidencias(
+        self, cod: int, tipo: str, file_paths: list[str], db: str = "", vincular: bool = True
+    ) -> list[str]:
         if not file_paths:
             return []
         per = int((self.dev_data or {}).get("Per_Cod") or 0)
@@ -1896,6 +2045,8 @@ class ExaMonitorApp:
             data["Tic_Cod"] = str(cod)
             if db:
                 data["Db_Origen"] = db
+            if not vincular:
+                data["vincular"] = "0"
         else:
             data["Tar_Cod"] = str(cod)
         files_payload = []
@@ -1921,6 +2072,75 @@ class ExaMonitorApp:
         if payload.get("mis_tareas") is not None or payload.get("tareas") is not None:
             self.tasks_list = payload.get("mis_tareas") or payload.get("tareas") or []
             self._refresh_tasks_ui()
+
+    def _asignar_personas(self, tipo: str, cod: int, personas: list, on_ok, btn=None, db: str = "", texto_btn: str = "Asignar"):
+        def fallo(msg: str):
+            if btn is not None:
+                btn.disabled = False
+                btn.text = texto_btn
+            self._show_info("Asignar", msg)
+
+        try:
+            per = int((self.dev_data or {}).get("Per_Cod") or 0)
+            if tipo == "ticket":
+                asignados = [
+                    {
+                        "Usu_Cod": int(p.get("Usu_Cod") or 0),
+                        "Per_Cod": int(p.get("Per_Cod") or 0),
+                    }
+                    for p in personas
+                    if int(p.get("Usu_Cod") or 0) > 0
+                ]
+                if not asignados:
+                    fallo("Elige una persona con usuario EXA.")
+                    return
+                primero = asignados[0]
+                data = self._api_post(
+                    {
+                        "accion": "asignar_ticket",
+                        "Per_Cod": str(per),
+                        "Tic_Cod": str(cod),
+                        "Db_Origen": db,
+                        "Usu_Cod": str(primero["Usu_Cod"]),
+                        "Usu_Cods": ",".join(str(a["Usu_Cod"]) for a in asignados),
+                        "asignados": json.dumps(asignados, separators=(",", ":")),
+                        "mac_address": self.mac_address,
+                        "version_agente": AGENT_VERSION,
+                    }
+                )
+                titulo = "Ticket asignado"
+            else:
+                per_cods = [int(p.get("Per_Cod") or 0) for p in personas if int(p.get("Per_Cod") or 0) > 0]
+                if not per_cods:
+                    fallo("Elige al menos una persona del equipo.")
+                    return
+                data = self._api_post(
+                    {
+                        "accion": "asignar_tarea",
+                        "Per_Cod": str(per),
+                        "Tar_Cod": str(cod),
+                        "Per_Cods": ",".join(str(n) for n in per_cods),
+                        "mac_address": self.mac_address,
+                        "version_agente": AGENT_VERSION,
+                    }
+                )
+                titulo = "Tarea asignada"
+            if data.get("status") != "ok":
+                fallo(data.get("mensaje") or "No se pudo asignar.")
+                return
+            payload = data.get("data") or {}
+            if payload.get("asignables") is not None:
+                self.asignables = payload.get("asignables") or []
+            self._apply_task_list(payload)
+            try:
+                on_ok()
+            except Exception:
+                pass
+            nombre = payload.get("Asignado_Nombre") or "el equipo"
+            self._show_info(titulo, f"#{cod} → {nombre}.")
+            self._set_status(f"Asignado #{cod}", ok=True)
+        except Exception as e:
+            fallo(str(e))
 
     def _asignar_ticket(self, tic_cod: int, usu_cod: int, on_ok, btn=None, db: str = ""):
         def fallo(msg: str):
@@ -2017,22 +2237,44 @@ class ExaMonitorApp:
         except Exception as e:
             fallo(str(e))
 
-    def _registrar_avance(self, tar_cod: int, porcentaje: int, realizado: str, file_paths: list[str], on_ok):
+    def _registrar_avance(
+        self,
+        tar_cod: int,
+        porcentaje: int,
+        realizado: str,
+        file_paths: list[str],
+        on_ok,
+        tipo: str = "tarea",
+        db: str = "",
+    ):
         try:
-            rutas = self._upload_evidencias(tar_cod, "tarea", file_paths) if file_paths else []
-            per = int((self.dev_data or {}).get("Per_Cod") or 0)
-            data = self._api_post(
-                {
-                    "accion": "registrar_avance",
-                    "Per_Cod": str(per),
-                    "Tar_Cod": str(tar_cod),
-                    "porcentaje": str(max(0, min(100, porcentaje))),
-                    "realizado": realizado,
-                    "adjuntos": json.dumps(rutas),
-                    "mac_address": self.mac_address,
-                    "version_agente": AGENT_VERSION,
-                }
+            es_ticket = tipo == "ticket"
+            rutas = (
+                self._upload_evidencias(tar_cod, tipo, file_paths, db, vincular=not es_ticket)
+                if file_paths
+                else []
             )
+            for ruta in list(getattr(self, "_pasted_rutas", []) or []):
+                if ruta and ruta not in rutas:
+                    rutas.append(ruta)
+            self._pasted_rutas = []
+            per = int((self.dev_data or {}).get("Per_Cod") or 0)
+            body = {
+                "accion": "registrar_avance_ticket" if es_ticket else "registrar_avance",
+                "Per_Cod": str(per),
+                "porcentaje": str(max(0, min(100, porcentaje))),
+                "realizado": realizado,
+                "adjuntos": json.dumps(rutas),
+                "mac_address": self.mac_address,
+                "version_agente": AGENT_VERSION,
+            }
+            if es_ticket:
+                body["Tic_Cod"] = str(tar_cod)
+                if db:
+                    body["Db_Origen"] = db
+            else:
+                body["Tar_Cod"] = str(tar_cod)
+            data = self._api_post(body)
             if data.get("status") != "ok":
                 self._show_info("Avance", data.get("mensaje") or "No se pudo registrar.")
                 return
@@ -2092,32 +2334,39 @@ class ExaMonitorApp:
 
     def _refresh_tasks_ui(self):
         visible = self._visible_tasks()
+        activos = trabajos_activos(self.tasks_list)
         self.dd_active.options = [
             ft.DropdownOption(
                 key=str(t.get("Tar_Cod")),
                 text=(t.get("label") or t.get("Tar_Titulo") or f"#{t.get('Tar_Cod')}")[:100],
             )
-            for t in self.tasks_list
+            for t in activos
         ]
-        if self.tasks_list:
-            if not self.dd_active.value or self.dd_active.value not in {
-                str(t.get("Tar_Cod")) for t in self.tasks_list
-            }:
-                self.dd_active.value = str(self.tasks_list[0].get("Tar_Cod"))
-                self.selected_tar_cod = int(self.tasks_list[0].get("Tar_Cod") or 0)
+        if activos:
+            keys = {str(t.get("Tar_Cod")) for t in activos}
+            if not self.dd_active.value or str(self.dd_active.value) not in keys:
+                primero = activos[0]
+                self.dd_active.value = str(primero.get("Tar_Cod"))
+                self.selected_tar_cod = int(primero.get("Tar_Cod") or 0)
+                self.selected_tipo = "ticket" if primero.get("tipo") == "ticket" else "tarea"
+                self.selected_db = str(primero.get("Db_Origen") or "")
         else:
             self.dd_active.value = None
             self.selected_tar_cod = 0
+            self.selected_tipo = ""
 
         n_tar = sum(1 for t in self.tasks_list if t.get("tipo") != "ticket")
         n_tic = sum(1 for t in self.tasks_list if t.get("tipo") == "ticket")
         if self._es_mesa():
             n_libres = sum(1 for t in self.tasks_list if t.get("por_asignar"))
-            n_mios = sum(
-                1 for t in self.tasks_list if t.get("tipo") == "ticket" and not t.get("por_asignar")
-            )
-            self.lbl_kpis.value = f"{n_libres} por asignar | {n_mios} asignados a ti"
-            vacio = "No hay tickets por asignar ni asignados a ti."
+            n_mios = sum(1 for t in self.tasks_list if not t.get("por_asignar"))
+            self.lbl_kpis.value = f"{n_libres} por asignar | {n_mios} asignados al equipo"
+            if self.tipo_filtro != "todos":
+                vacio = "No hay tareas en este filtro."
+            elif self.bandeja_filtro == "asignar":
+                vacio = "No hay tareas ni tickets por asignar."
+            else:
+                vacio = "No hay tareas ni tickets asignados al equipo."
         else:
             self.lbl_kpis.value = f"{len(self.tasks_list)} Asignaciones | {n_tar} tareas | {n_tic} tickets"
             vacio = "No hay tareas en este filtro."
@@ -2144,18 +2393,22 @@ class ExaMonitorApp:
 
     def _apply_rol_ui(self):
         if self._es_mesa():
-            self.title_main.value = "Tickets"
-            self.lbl_lista_titulo.value = "Por asignar y los tuyos"
-            self.lbl_lista_hint.value = "Clic para asignar o continuar"
+            self.title_main.value = "Bandeja"
+            self.seg_bandeja.visible = True
+            self.seg_tipo.visible = True
             self.card_activa.visible = True
-            self.seg_tipo.visible = False
-            self.tipo_filtro = "ticket"
-            self.lbl_lista_hint.value = "Clic para abrir y marcar que estás trabajando"
+            if self.bandeja_filtro == "asignar":
+                self.lbl_lista_titulo.value = "Asignar"
+                self.lbl_lista_hint.value = "Clic para asignar"
+            else:
+                self.lbl_lista_titulo.value = "Asignados"
+                self.lbl_lista_hint.value = "Clic para abrir"
         else:
             self.title_main.value = "Mis tareas"
             self.lbl_lista_titulo.value = "Mis tareas"
             self.lbl_lista_hint.value = "Clic para marcar activa"
             self.card_activa.visible = True
+            self.seg_bandeja.visible = False
             self.seg_tipo.visible = True
 
     def _update_ui_after_login(self):

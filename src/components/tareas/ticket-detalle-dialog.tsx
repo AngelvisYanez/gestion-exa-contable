@@ -13,7 +13,6 @@ import {
   User,
   Wrench,
 } from "lucide-react";
-import type { KanbanEstado } from "@/components/dashboard/kanban-board";
 import type { Tarea } from "@/components/dashboard/types";
 import { EstadoBadge, PrioridadBadge, fmtDate } from "@/components/status-badges";
 import { Button } from "@/components/ui/button";
@@ -33,17 +32,26 @@ import { fmtFechaHoraZona } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
 import { evidenciaLabel } from "@/lib/evidencia-files";
 
+type AvanceTicket = {
+  Ava_Cod: number;
+  Ava_Porcentaje: number;
+  Ava_Fecha: string | null;
+  Autor: string | null;
+  realizado: string;
+  adjuntos: Array<{ ruta: string; url: string; nombre: string; esImagen: boolean }>;
+};
+
 type Props = {
   ticket: Tarea | null;
   onClose: () => void;
-  onMoveEstado?: (t: Tarea, estado: KanbanEstado) => Promise<void> | void;
+  onRegistrarAvance?: (t: Tarea) => void;
 };
 
 const CAPTURA_DIAS = [1, 3, 7, 15, 30, 90] as const;
 
 type CapItem = { Tel_Cod: number; Per_Cod: number; Fecha: string; Url: string };
 
-export function TicketDetalleDialog({ ticket, onClose, onMoveEstado }: Props) {
+export function TicketDetalleDialog({ ticket, onClose, onRegistrarAvance }: Props) {
   const { db, user } = useAuth();
   const isManager = user?.role === "manager";
   const open = !!ticket && ticket.tipo === "ticket";
@@ -64,6 +72,7 @@ export function TicketDetalleDialog({ ticket, onClose, onMoveEstado }: Props) {
   } | null>(null);
   const [loadingCap, setLoadingCap] = useState(false);
   const [zoom, setZoom] = useState<string | null>(null);
+  const [avances, setAvances] = useState<AvanceTicket[]>([]);
 
   const timeline = useMemo(() => {
     if (!ticket) return [];
@@ -81,7 +90,7 @@ export function TicketDetalleDialog({ ticket, onClose, onMoveEstado }: Props) {
         key: "asignacion",
         label: "Asignacion",
         detail: `Asignado a ${ticket.Asignados.map((a) => a.Nombre).join(", ")}`,
-        at: ticket.Ava_Ultima_Fecha || ticket.Tar_Fecha_Inicio,
+        at: ticket.Fecha_Asignacion || ticket.Ava_Ultima_Fecha || ticket.Tar_Fecha_Inicio,
       });
     }
     if (ticket.Tar_Estado === "En Proceso") {
@@ -102,6 +111,27 @@ export function TicketDetalleDialog({ ticket, onClose, onMoveEstado }: Props) {
     }
     return items;
   }, [ticket, cerrado]);
+
+  useEffect(() => {
+    if (!open || !ticCod) return;
+    let cancel = false;
+    const sp = new URLSearchParams({
+      historial: String(ticCod),
+      Ses_Dat_Dis: db,
+    });
+    if (ticket?.Db_Origen) sp.set("Db_Origen", ticket.Db_Origen);
+    fetch(`/api/tickets?${sp}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (!cancel && j.success) setAvances(j.avances || []);
+      })
+      .catch(() => {
+        if (!cancel) setAvances([]);
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [open, ticCod, db, ticket?.Db_Origen]);
 
   useEffect(() => {
     if (!open || !isManager || !ticCod || tab !== "capturas") return;
@@ -200,6 +230,17 @@ export function TicketDetalleDialog({ ticket, onClose, onMoveEstado }: Props) {
                   <span className="text-muted-foreground">Llegada:</span>
                   <strong>{fmtDate(ticket?.Tar_Fecha_Inicio)}</strong>
                 </div>
+                {ticket?.Fecha_Asignacion && (
+                  <div className="flex items-center gap-2">
+                    <CalendarClock className="size-4 text-sky-700" />
+                    <span className="text-muted-foreground">Asignado el:</span>
+                    <strong>{fmtFechaHoraZona(ticket.Fecha_Asignacion)}</strong>
+                  </div>
+                )}
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">Avance:</span>
+                  <strong className="tabular-nums">{ticket?.Ava_Porcentaje || 0}%</strong>
+                </div>
                 {ticket?.Tar_Fecha_Culminacion && (
                   <div className="flex items-center gap-2">
                     <CalendarClock className="size-4 text-emerald-600" />
@@ -266,6 +307,53 @@ export function TicketDetalleDialog({ ticket, onClose, onMoveEstado }: Props) {
                   <RichTextHtml html={ticket?.Tar_Descripcion} />
                 </div>
               </section>
+
+              {avances.length > 0 && (
+                <section className="space-y-2">
+                  <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                    Avances
+                  </h3>
+                  {avances.map((a) => (
+                    <article key={a.Ava_Cod} className="rounded-xl border border-border/70 p-3">
+                      <div className="flex flex-wrap items-baseline gap-2 text-xs">
+                        <strong className="tabular-nums">{a.Ava_Porcentaje}%</strong>
+                        <span className="font-semibold">{a.Autor || "Sin nombre"}</span>
+                        {a.Ava_Fecha && (
+                          <span className="text-muted-foreground">{fmtFechaHoraZona(a.Ava_Fecha)}</span>
+                        )}
+                      </div>
+                      {a.realizado && (
+                        <div className="mt-2">
+                          <RichTextHtml html={a.realizado} />
+                        </div>
+                      )}
+                      {a.adjuntos.length > 0 && (
+                        <div className="mt-2 grid grid-cols-2 gap-2">
+                          {a.adjuntos.map((f) =>
+                            f.esImagen ? (
+                              <a key={f.ruta} href={f.url} target="_blank" rel="noreferrer" className="overflow-hidden rounded-lg border">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={f.url} alt={f.nombre} className="aspect-video w-full object-cover" />
+                              </a>
+                            ) : (
+                              <a
+                                key={f.ruta}
+                                href={f.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="flex items-center gap-2 rounded-lg border px-2 py-2 text-[11px]"
+                              >
+                                <FileText className="size-4 shrink-0" />
+                                <span className="line-clamp-2">{f.nombre}</span>
+                              </a>
+                            )
+                          )}
+                        </div>
+                      )}
+                    </article>
+                  ))}
+                </section>
+              )}
 
               {(ticket?.Evidencias?.length ?? 0) > 0 && (
                 <section>
@@ -447,16 +535,9 @@ export function TicketDetalleDialog({ ticket, onClose, onMoveEstado }: Props) {
           <Button type="button" variant="ghost" onClick={onClose}>
             Cerrar
           </Button>
-          {ticket && onMoveEstado && !cerrado && (
-            <Button
-              type="button"
-              variant="success"
-              onClick={() => {
-                void onMoveEstado(ticket, "Finalizada");
-                onClose();
-              }}
-            >
-              Marcar resuelto
+          {ticket && onRegistrarAvance && !cerrado && (
+            <Button type="button" variant="success" onClick={() => onRegistrarAvance(ticket)}>
+              Registrar avance
             </Button>
           )}
         </DialogFooter>

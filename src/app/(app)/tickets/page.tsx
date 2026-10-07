@@ -42,6 +42,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { KanbanBoard, type KanbanEstado } from "@/components/dashboard/kanban-board";
 import type { Tarea } from "@/components/dashboard/types";
 import { TicketDetalleDialog } from "@/components/tareas/ticket-detalle-dialog";
+import { AvanceDialog } from "@/components/tareas/avance-dialog";
 import { ticketAsTarea, type Ticket } from "@/lib/ticket-view";
 import { fmtFechaHoraZona } from "@/lib/timezone";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
@@ -140,6 +141,7 @@ export default function TicketsPage() {
   const [vistaLista, setVistaLista] = useState(false);
   const [q, setQ] = useState("");
   const [viewMode, setViewMode] = useState<ListViewMode>("lista");
+  const [avanceTarea, setAvanceTarea] = useState<Tarea | null>(null);
   const [detalleCod, setDetalleCod] = useState<number | null>(null);
   const [detalleDb, setDetalleDb] = useState<string | null>(null);
   const pager = usePagination(tickets, {
@@ -419,7 +421,8 @@ export default function TicketsPage() {
       (x) => x.Tic_Cod === ticCod && (!t.Db_Origen || x.Db_Origen === t.Db_Origen)
     );
     if (!ticket) return;
-    const next = estado === "Finalizada" ? "Cerrado" : estado === "Pendiente" ? "Nuevo" : estado;
+    if (estado === "Finalizada") return;
+    const next = estado === "Pendiente" ? "Nuevo" : estado;
     await setEstado(ticket, next);
   };
 
@@ -607,7 +610,7 @@ export default function TicketsPage() {
               <KanbanBoard
                 tareas={kanbanItems}
                 loading={loading}
-                onAvance={() => undefined}
+                onAvance={(t) => setAvanceTarea(t)}
                 onMoveEstado={moverKanban}
                 onOpen={(t) => {
                   setDetalleCod(t.Tic_Cod || t.Tar_Cod);
@@ -697,17 +700,17 @@ export default function TicketsPage() {
                           En proceso
                         </Button>
                       )}
-                      {t.Tic_Estado !== "Cerrado" && (
+                      {t.Tic_Estado !== "Cerrado" && t.Asignado_Usu_Cod && (
                         <Button
                           type="button"
                           size="sm"
                           variant="success"
                           onClick={(e) => {
                             e.stopPropagation();
-                            void setEstado(t, "Cerrado");
+                            setAvanceTarea(ticketAsTarea(t));
                           }}
                         >
-                          Resuelto
+                          Avance
                         </Button>
                       )}
                     </div>
@@ -822,7 +825,7 @@ export default function TicketsPage() {
                                 En proceso
                               </Button>
                             )}
-                            {t.Tic_Estado !== "Cerrado" && (
+                            {t.Tic_Estado !== "Cerrado" && t.Asignado_Usu_Cod && (
                               <Button
                                 type="button"
                                 size="sm"
@@ -830,10 +833,10 @@ export default function TicketsPage() {
                                 className="shrink-0"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  void setEstado(t, "Cerrado");
+                                  setAvanceTarea(ticketAsTarea(t));
                                 }}
                               >
-                                Resuelto
+                                Avance
                               </Button>
                             )}
                           </div>
@@ -886,9 +889,16 @@ export default function TicketsPage() {
         <TicketDetalleDialog
           ticket={detalleTicket ? ticketAsTarea(detalleTicket) : null}
           onClose={() => setDetalleCod(null)}
-          onMoveEstado={async () => {
-            if (!detalleTicket) return;
-            await setEstado(detalleTicket, "Cerrado");
+          onRegistrarAvance={(t) => setAvanceTarea(t)}
+        />
+        <AvanceDialog
+          tarea={avanceTarea}
+          endpoint="/api/tickets"
+          extraBody={{ Ses_Dat_Dis: avanceTarea?.Db_Origen || db }}
+          onClose={() => setAvanceTarea(null)}
+          onSaved={async () => {
+            setAvanceTarea(null);
+            await load();
           }}
         />
 

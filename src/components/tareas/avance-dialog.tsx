@@ -42,7 +42,9 @@ type Props = {
 };
 
 export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, requireDescripcion = true }: Props) {
-  const tarCod = tarea?.Tar_Cod ?? null;
+  const esTicket = tarea?.tipo === "ticket";
+  const refCod = esTicket ? (tarea?.Tic_Cod ?? tarea?.Tar_Cod ?? null) : (tarea?.Tar_Cod ?? null);
+  const tarCod = refCod;
   const [base, setBase] = useState(tarea?.Ava_Porcentaje || 0);
   const [pct, setPct] = useState(base);
   const [realizado, setRealizado] = useState("");
@@ -52,6 +54,7 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
   const [enlace, setEnlace] = useState("");
   const [enlaces, setEnlaces] = useState<string[]>([]);
   const [files, setFiles] = useState<File[]>([]);
+  const [rutasPegadas, setRutasPegadas] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -67,6 +70,7 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
     setEnlace("");
     setEnlaces([]);
     setFiles([]);
+    setRutasPegadas([]);
     setError("");
     setSaving(false);
     // Solo reiniciar al abrir otra tarea; recargas de la lista no deben borrar lo escrito
@@ -134,13 +138,19 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
       let adjuntos: string[] = [];
       if (files.length) {
         const fd = new FormData();
-        fd.set("Tar_Cod", String(tarea.Tar_Cod));
+        if (esTicket) {
+          fd.set("Tic_Cod", String(refCod));
+          if (tarea.Db_Origen) fd.set("Db_Origen", tarea.Db_Origen);
+        } else {
+          fd.set("Tar_Cod", String(tarea.Tar_Cod));
+        }
         for (const f of files) fd.append("files", f);
         const up = await fetch("/api/evidencias", { method: "POST", body: fd });
         const uj = await up.json();
         if (!up.ok || !uj.success) throw new Error(uj.message || "No se pudieron subir las evidencias");
         adjuntos = (uj.adjuntos || []).map((a: { ruta: string }) => a.ruta);
       }
+      adjuntos = [...adjuntos, ...rutasPegadas.filter((r) => !adjuntos.includes(r))];
 
       const res = await fetch(endpoint, {
         method: "POST",
@@ -148,7 +158,10 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
         body: JSON.stringify({
           ...extraBody,
           action: "avance",
-          Tar_Cod: tarea.Tar_Cod,
+          tipo: esTicket ? "ticket" : "tarea",
+          Tic_Cod: esTicket ? refCod : undefined,
+          Db_Origen: esTicket ? tarea.Db_Origen : undefined,
+          Tar_Cod: esTicket ? undefined : tarea.Tar_Cod,
           porcentaje: pct,
           realizado,
           siguiente,
@@ -175,7 +188,8 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
         <DialogHeader>
           <DialogTitle>Registrar avance</DialogTitle>
           <DialogDescription>
-            #{tarea?.Tar_Cod} {tarea?.Tar_Titulo}
+            {esTicket ? "Ticket" : "Tarea"} #{refCod} {tarea?.Tar_Titulo}
+            {pct >= 100 ? " · al 100% queda resuelto" : ""}
           </DialogDescription>
         </DialogHeader>
 
@@ -236,8 +250,28 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
                 value={realizado}
                 onChange={setRealizado}
                 disabled={saving}
-                placeholder="Ej.: Implemente el endpoint de facturas, agregue validaciones y probe con 20 casos."
+                placeholder="Ej.: Implemente el endpoint de facturas, agregue validaciones y probe con 20 casos. Puedes pegar imagenes o documentos."
                 className="rounded-none border-0 shadow-none"
+                uploadFile={async (file) => {
+                  if (!refCod) return null;
+                  if (!isAllowedEvidenciaFile(file) || file.size > EVIDENCIA_MAX_BYTES) return null;
+                  const fd = new FormData();
+                  if (esTicket) {
+                    fd.set("Tic_Cod", String(refCod));
+                    if (tarea?.Db_Origen) fd.set("Db_Origen", tarea.Db_Origen);
+                  } else {
+                    fd.set("Tar_Cod", String(refCod));
+                  }
+                  fd.append("files", file);
+                  const up = await fetch("/api/evidencias", { method: "POST", body: fd });
+                  const uj = await up.json();
+                  const item = uj.adjuntos?.[0];
+                  if (!up.ok || !uj.success || !item?.url) return null;
+                  if (item.ruta) {
+                    setRutasPegadas((prev) => (prev.includes(item.ruta) ? prev : [...prev, item.ruta]));
+                  }
+                  return { url: item.url, nombre: item.nombre || file.name, esImagen: !!item.esImagen };
+                }}
               />
             </div>
           </div>

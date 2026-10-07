@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import ctypes
 import sys
+import tempfile
+import time
 from ctypes import wintypes
 from pathlib import Path
 
@@ -187,3 +189,31 @@ def foreground_window() -> tuple[str, str]:
         return (title, proceso)
     except Exception:
         return ("", "")
+
+
+def clipboard_files() -> list[str]:
+    """Archivos o imagen del portapapeles de Windows. Lista vacía si solo hay texto."""
+    if sys.platform != "win32":
+        return []
+    try:
+        from PIL import ImageGrab
+    except Exception:
+        return []
+    try:
+        data = ImageGrab.grabclipboard()
+    except Exception:
+        return []
+    if data is None:
+        return []
+    if isinstance(data, list):
+        return [str(p) for p in data if p]
+    try:
+        dest_dir = Path(tempfile.gettempdir()) / "examontor"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / f"paste_{int(time.time())}.png"
+        if getattr(data, "mode", "") not in ("RGB", "L"):
+            data = data.convert("RGB")
+        data.save(dest, "PNG")
+        return [str(dest)]
+    except Exception:
+        return []

@@ -23,6 +23,8 @@ export type Tarea = {
   Tar_Fecha_Culminacion?: string | null;
   Ava_Porcentaje: number;
   Ava_Ultima_Fecha?: string | null;
+  /** Fecha real de asignación del ticket (Tia_Fecha). */
+  Fecha_Asignacion?: string | null;
   Ava_Total?: number;
   Evidencias_Count?: number;
   Asignados: Array<{ Per_Cod: number; Nombre: string; Tas_Cod: number }>;

@@ -18,6 +18,7 @@ import {
   updateTicketEstado,
   type TicketEstado,
 } from "@/lib/tickets";
+import { descripcionTicketAvance, registrarAvanceTicket } from "@/lib/ticket-avances";
 import { hoyFecha } from "@/lib/timezone";
 
 export const dynamic = "force-dynamic";
@@ -222,6 +223,12 @@ export async function POST(req: NextRequest) {
         );
       }
       const estado: TicketEstado = kanbanToTicketEstado(estadoRaw);
+      if (estado === "Cerrado") {
+        return NextResponse.json(
+          { success: false, message: "El ticket se resuelve al registrar el avance en 100%." },
+          { status: 400 }
+        );
+      }
       await updateTicketEstado(mio.Db_Origen || db, ticCod, estado);
       publishEvent({
         type: "estado_cambiado",
@@ -234,6 +241,59 @@ export async function POST(req: NextRequest) {
         actor: session.name,
       });
       return NextResponse.json({ success: true, Tic_Cod: ticCod, estado });
+    }
+
+    if (action === "avance" && (body.tipo === "ticket" || body.Tic_Cod)) {
+      const ticCod = Number(body.Tic_Cod || 0);
+      const porcentaje = Number(body.porcentaje ?? 0);
+      if (!ticCod) {
+        return NextResponse.json({ success: false, message: "Tic_Cod requerido" }, { status: 400 });
+      }
+      if (!Number.isFinite(porcentaje) || porcentaje < 0 || porcentaje > 100) {
+        return NextResponse.json(
+          { success: false, message: "Porcentaje debe estar entre 0 y 100." },
+          { status: 400 }
+        );
+      }
+      const { aseCodes, perCodes, perCod } = await ticketScopeForSession(session);
+      const mio = await findTicketAsignado({
+        ticCod,
+        aseCodes,
+        perCodes,
+        preferDb: body.Db_Origen,
+      });
+      if (!mio) {
+        return NextResponse.json(
+          { success: false, message: "Ese ticket no esta asignado a ti." },
+          { status: 403 }
+        );
+      }
+      const descripcion = descripcionTicketAvance(body, ticCod);
+      if (!descripcion.trim()) {
+        return NextResponse.json(
+          { success: false, message: "Describe lo que avanzaste para registrar el avance." },
+          { status: 400 }
+        );
+      }
+      const res = await registrarAvanceTicket(mio.Db_Origen || db, {
+        ticCod,
+        porcentaje,
+        descripcion,
+        usuCod: session.usuCod || undefined,
+        perCod,
+      });
+      publishEvent({
+        type: "avance_registrado",
+        title: "Avance de ticket",
+        message: `${session.name || "Usuario"} · ticket #${ticCod} · ${res.porcentaje}%`,
+        db: mio.Db_Origen || db,
+        ticCod,
+        porcentaje: res.porcentaje,
+        actor: session.name,
+        estado: res.estado || mio.Tic_Estado,
+        kind: "ticket",
+      });
+      return NextResponse.json({ success: true, ...res, Tic_Cod: ticCod });
     }
 
     if (action === "avance") {

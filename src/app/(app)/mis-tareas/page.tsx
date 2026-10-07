@@ -113,12 +113,12 @@ export default function MisTareasPage() {
   const [tipoFiltro, setTipoFiltro] = useState<TipoFiltro>("todos");
   const [viewMode, setViewMode] = useState<ListViewMode>("kanban");
   const [q, setQ] = useState("");
-  const [avanceCod, setAvanceCod] = useState<number | null>(null);
+  const [avanceKey, setAvanceKey] = useState<string | null>(null);
   const [detalleKey, setDetalleKey] = useState<string | null>(null);
   const [detalleReload, setDetalleReload] = useState(0);
   const [reporteOpen, setReporteOpen] = useState(false);
 
-  const avanceTarea = tareas.find((t) => !esTicket(t) && t.Tar_Cod === avanceCod) ?? null;
+  const avanceTarea = avanceKey ? tareas.find((t) => workItemKey(t) === avanceKey) ?? null : null;
   const detalleItem = detalleKey ? tareas.find((t) => workItemKey(t) === detalleKey) ?? null : null;
   const detalleTarea = detalleItem && !esTicket(detalleItem) ? detalleItem : null;
   const detalleTicket = detalleItem && esTicket(detalleItem) ? detalleItem : null;
@@ -219,6 +219,10 @@ export default function MisTareasPage() {
   });
 
   const moveEstado = async (t: Tarea, estado: KanbanEstado | "Cerrado" | "Resuelto") => {
+    if (esTicket(t) && (estado === "Cerrado" || estado === "Resuelto" || estado === "Finalizada")) {
+      setAvanceKey(workItemKey(t));
+      return;
+    }
     const nextKanban =
       estado === "Cerrado" || estado === "Resuelto" || estado === "Finalizada"
         ? ("Finalizada" as KanbanEstado)
@@ -437,9 +441,7 @@ export default function MisTareasPage() {
             <KanbanBoard
               tareas={visibles}
               loading={loading}
-              onAvance={(t) => {
-                if (!esTicket(t)) setAvanceCod(t.Tar_Cod);
-              }}
+              onAvance={(t) => setAvanceKey(workItemKey(t))}
               onMoveEstado={moveEstado}
               onOpen={(t) => setDetalleKey(workItemKey(t))}
             />
@@ -509,7 +511,7 @@ export default function MisTareasPage() {
                             size="sm"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setAvanceCod(t.Tar_Cod);
+                              setAvanceKey(workItemKey(t));
                             }}
                           >
                             Avance
@@ -536,10 +538,10 @@ export default function MisTareasPage() {
                               size="sm"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                void moveEstado(t, "Resuelto");
+                                setAvanceKey(workItemKey(t));
                               }}
                             >
-                              Resuelto
+                              Avance
                             </Button>
                           </>
                         )}
@@ -670,7 +672,7 @@ export default function MisTareasPage() {
                                   className="shrink-0"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    setAvanceCod(t.Tar_Cod);
+                                    setAvanceKey(workItemKey(t));
                                   }}
                                 >
                                   Avance
@@ -699,10 +701,10 @@ export default function MisTareasPage() {
                                     className="shrink-0"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      void moveEstado(t, "Resuelto");
+                                      setAvanceKey(workItemKey(t));
                                     }}
                                   >
-                                    Resuelto
+                                    Avance
                                   </Button>
                                 </>
                               )}
@@ -749,7 +751,7 @@ export default function MisTareasPage() {
           tarea={detalleTarea}
           detailUrl={(cod) => `/api/mis-tareas?project=exa&detalle=${cod}`}
           onClose={() => setDetalleKey(null)}
-          onRegistrarAvance={(t) => setAvanceCod(t.Tar_Cod)}
+          onRegistrarAvance={(t) => setAvanceKey(workItemKey(t))}
           editExtraBody={{ Ses_Dat_Dis: "exa" }}
           onSaved={async () => {
             await loadTareas("exa");
@@ -761,14 +763,14 @@ export default function MisTareasPage() {
         <TicketDetalleDialog
           ticket={detalleTicket}
           onClose={() => setDetalleKey(null)}
-          onMoveEstado={moveEstado}
+          onRegistrarAvance={(t) => setAvanceKey(workItemKey(t))}
         />
 
         <AvanceDialog
           tarea={avanceTarea}
           endpoint="/api/mis-tareas"
           extraBody={{ project: "exa" }}
-          onClose={() => setAvanceCod(null)}
+          onClose={() => setAvanceKey(null)}
           onSaved={async () => {
             await loadTareas("exa");
             setDetalleReload((n) => n + 1);
