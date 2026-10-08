@@ -308,7 +308,7 @@ export function TareaDetalleDialog({
         }
       }}
     >
-      <DialogContent className="flex max-h-[92vh] max-w-3xl flex-col gap-0 overflow-hidden p-0">
+      <DialogContent className="flex max-h-[92dvh] max-w-3xl flex-col gap-0 overflow-hidden p-0">
         <div className="shrink-0 space-y-3 border-b border-border/60 px-6 pb-4 pt-6">
           <DialogHeader className="space-y-2 text-left">
             <div className="flex flex-wrap items-center gap-2 pr-8">
@@ -857,11 +857,11 @@ export function TareaDetalleDialog({
       </Dialog>
 
       <Dialog open={!!zoom} onOpenChange={(o) => !o && setZoom(null)}>
-        <DialogContent className="max-h-[94vh] max-w-5xl overflow-auto p-2 sm:p-4">
+        <DialogContent className="max-h-[94dvh] max-w-5xl overflow-auto p-2 sm:p-4">
           <DialogTitle className="sr-only">Imagen ampliada</DialogTitle>
           {zoom && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={zoom} alt="captura" className="max-h-[85vh] w-full rounded-lg object-contain" />
+            <img src={zoom} alt="captura" className="max-h-[80dvh] w-full rounded-lg object-contain" />
           )}
         </DialogContent>
       </Dialog>

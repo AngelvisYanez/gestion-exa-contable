@@ -585,7 +585,7 @@ export default function MonitoreoPage() {
         )}
 
         <Dialog open={histOpen} onOpenChange={setHistOpen}>
-          <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
+          <DialogContent className="max-h-[90dvh] max-w-5xl overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Historial: {histNombre}</DialogTitle>
               <DialogDescription>
@@ -654,7 +654,7 @@ export default function MonitoreoPage() {
             <DialogTitle className="sr-only">Captura ampliada</DialogTitle>
             {zoom ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={zoom} alt="zoom" className="max-h-[90vh] w-full rounded-lg object-contain" />
+              <img src={zoom} alt="zoom" className="max-h-[90dvh] w-full rounded-lg object-contain" />
             ) : null}
           </DialogContent>
         </Dialog>

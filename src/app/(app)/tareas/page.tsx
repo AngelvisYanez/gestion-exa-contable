@@ -509,7 +509,7 @@ export default function TareasPage() {
             }
           }}
         >
-          <DialogContent className="max-h-[92vh] max-w-lg overflow-y-auto">
+          <DialogContent className="max-h-[92dvh] max-w-lg overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Nueva tarea</DialogTitle>
               <DialogDescription>

@@ -184,7 +184,7 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
 
   return (
     <Dialog open={!!tarea} onOpenChange={(o) => !o && !saving && onClose()}>
-      <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto">
+      <DialogContent className="max-h-[92dvh] max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Registrar avance</DialogTitle>
           <DialogDescription>

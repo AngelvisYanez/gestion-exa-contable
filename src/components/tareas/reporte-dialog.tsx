@@ -524,7 +524,7 @@ export function ReporteDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="flex max-h-[94vh] max-w-3xl flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
+      <DialogContent className="flex max-h-[94dvh] max-w-3xl flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
         <div className="shrink-0 space-y-3 border-b border-border/70 px-5 pb-3 pt-5 sm:px-6">
           <DialogHeader className="pr-8">
             <DialogTitle className="flex items-center gap-2">

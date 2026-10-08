@@ -191,7 +191,7 @@ export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, on
         if (!o) onClose();
       }}
     >
-      <DialogContent className="max-h-[92vh] max-w-lg overflow-y-auto">
+      <DialogContent className="max-h-[92dvh] max-w-lg overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="inline-flex items-center gap-2">
             <Pencil className="size-4" />
