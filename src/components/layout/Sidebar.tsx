@@ -122,6 +122,31 @@ function isActive(pathname: string | null, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
+function SidebarWordmark({ className = "" }: { className?: string }) {
+  return (
+    <span className={`flex w-full items-center justify-center ${className}`}>
+      <Image
+        src="/logo-1.png"
+        alt="EXA Contable"
+        width={1024}
+        height={486}
+        quality={100}
+        priority
+        className="h-12 w-auto max-w-[11.5rem] object-contain object-center dark:hidden"
+      />
+      <Image
+        src="/logo-2.png"
+        alt="EXA Contable"
+        width={1024}
+        height={486}
+        quality={100}
+        priority
+        className="hidden h-12 w-auto max-w-[11.5rem] object-contain object-center dark:block"
+      />
+    </span>
+  );
+}
+
 export default function Sidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
@@ -151,17 +176,15 @@ export default function Sidebar() {
     <>
       <aside
         className={`
-          ${sidebarWidth} bg-sidebar border-r border-sidebar-border
+          ${sidebarWidth} overflow-x-hidden bg-sidebar border-r border-sidebar-border
           h-dvh max-h-dvh flex flex-col fixed top-0 left-0 z-[60]
           transition-all duration-200 ease-in-out select-none
           md:translate-x-0 ${mobileOpen ? "translate-x-0" : "-translate-x-full"}
         `}
       >
         <div
-          className={`h-16 shrink-0 relative flex items-center border-b border-sidebar-border bg-sidebar ${
-            collapsed
-              ? "justify-start px-4 md:justify-center md:px-2"
-              : "justify-start px-4"
+          className={`relative flex h-16 shrink-0 items-center justify-center border-b border-sidebar-border bg-sidebar ${
+            collapsed ? "px-2" : "px-3"
           }`}
         >
           {collapsed ? (
@@ -174,39 +197,11 @@ export default function Sidebar() {
                 priority
                 className="hidden h-9 w-9 rounded-full object-cover ring-1 ring-sidebar-border/80 md:block"
               />
-              <Image
-                src="/exa-logo-dark-transparent.png"
-                alt="EXA"
-                width={168}
-                height={52}
-                quality={100}
-                priority
-                className="h-11 w-auto max-w-[152px] object-contain object-left dark:invert md:hidden"
-              />
+              <SidebarWordmark className="md:hidden" />
             </>
           ) : (
-            <Image
-              src="/exa-logo-dark-transparent.png"
-              alt="EXA"
-              width={168}
-              height={52}
-              quality={100}
-              priority
-              className="h-11 w-auto max-w-[152px] object-contain object-left dark:invert"
-            />
+            <SidebarWordmark />
           )}
-          <button
-            type="button"
-            onClick={() => setCollapsed(!collapsed)}
-            className="hidden md:flex absolute -right-3 top-1/2 -translate-y-1/2 w-5 h-7 bg-sidebar border border-sidebar-border rounded-r-md text-muted-foreground hover:text-sidebar-foreground items-center justify-center transition-colors duration-150 cursor-pointer shadow-sm z-10"
-            title={collapsed ? "Expandir menu" : "Colapsar menu"}
-          >
-            {collapsed ? (
-              <ChevronRight className="w-2.5 h-2.5" strokeWidth={2.5} />
-            ) : (
-              <ChevronLeft className="w-2.5 h-2.5" strokeWidth={2.5} />
-            )}
-          </button>
         </div>
 
         <nav className="flex-1 py-2 flex flex-col overflow-y-auto overflow-x-hidden">
@@ -278,6 +273,21 @@ export default function Sidebar() {
           </button>
         </div>
       </aside>
+
+      <button
+        type="button"
+        onClick={() => setCollapsed(!collapsed)}
+        className={`fixed top-8 z-[70] hidden h-7 w-5 -translate-y-1/2 cursor-pointer items-center justify-center rounded-r-md border border-sidebar-border bg-sidebar text-muted-foreground shadow-sm transition-[left,color] duration-200 ease-in-out hover:text-sidebar-foreground md:flex ${
+          collapsed ? "left-12" : "left-[14.5rem]"
+        }`}
+        title={collapsed ? "Expandir menu" : "Colapsar menu"}
+      >
+        {collapsed ? (
+          <ChevronRight className="h-2.5 w-2.5" strokeWidth={2.5} />
+        ) : (
+          <ChevronLeft className="h-2.5 w-2.5" strokeWidth={2.5} />
+        )}
+      </button>
 
       {mobileOpen && (
         <div

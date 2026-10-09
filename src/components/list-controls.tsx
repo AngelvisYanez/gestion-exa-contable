@@ -8,7 +8,7 @@ import { Select } from "@/components/ui/select";
 import { PAGE_SIZE_OPTIONS, type PageSize } from "@/hooks/use-pagination";
 import { cn } from "@/lib/utils";
 
-/** Barra de filtros: en pantallas chicas baja de línea; en escritorio queda en una fila. */
+/** Barra de filtros: los controles bajan de línea en lugar de recortarse. */
 export function FilterBar({
   children,
   className,
@@ -20,8 +20,7 @@ export function FilterBar({
     <div
       className={cn(
         "flex w-full min-w-0 flex-wrap items-center gap-2",
-        "lg:flex-nowrap lg:overflow-x-auto lg:overscroll-x-contain filter-scroll",
-        "[&>*]:min-w-0 [&>*]:max-w-full lg:[&>*]:shrink-0",
+        "[&>*]:min-w-0 [&>*]:max-w-full",
         className
       )}
     >

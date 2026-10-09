@@ -822,9 +822,9 @@ export default function ExaMonitorConfigPage() {
 
         <Card className="overflow-hidden">
           <Table>
-            <TableHeader className="bg-slate-900 [&_th]:text-slate-200">
-              <TableRow className="border-0 hover:bg-slate-900">
-                <TableHead className="w-10 text-slate-200">
+            <TableHeader className="bg-muted [&_th]:text-muted-foreground">
+              <TableRow className="border-border hover:bg-muted">
+                <TableHead className="w-10">
                   <input
                     type="checkbox"
                     checked={rows.length > 0 && selected.size === rows.length}
@@ -832,16 +832,16 @@ export default function ExaMonitorConfigPage() {
                     aria-label="Seleccionar todos"
                   />
                 </TableHead>
-                <TableHead className="text-slate-200">Colaborador</TableHead>
-                <TableHead className="text-slate-200">Monitoreo</TableHead>
-                <TableHead className="min-w-[220px] text-slate-200">
+                <TableHead>Colaborador</TableHead>
+                <TableHead>Monitoreo</TableHead>
+                <TableHead className="min-w-[220px]">
                   Horario laboral (GYE {ahoraLabel})
                 </TableHead>
-                <TableHead className="text-slate-200">Intervalo</TableHead>
-                <TableHead className="text-slate-200">Captura</TableHead>
-                <TableHead className="text-slate-200">Forzar bandeja</TableHead>
-                <TableHead className="text-slate-200">Permitir salir</TableHead>
-                <TableHead className="text-slate-200" />
+                <TableHead>Intervalo</TableHead>
+                <TableHead>Captura</TableHead>
+                <TableHead>Forzar bandeja</TableHead>
+                <TableHead>Permitir salir</TableHead>
+                <TableHead />
               </TableRow>
             </TableHeader>
             <TableBody>

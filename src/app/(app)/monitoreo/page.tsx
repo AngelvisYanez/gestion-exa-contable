@@ -462,32 +462,32 @@ export default function MonitoreoPage() {
         ) : (
           <Card className="overflow-hidden">
             <Table>
-              <TableHeader className="bg-slate-900 [&_th]:text-slate-200">
-                <TableRow className="border-0 hover:bg-slate-900">
-                  <TableHead className="text-slate-200">Desarrollador</TableHead>
-                  <TableHead className="text-slate-200">Estado</TableHead>
-                  <TableHead className="text-slate-200">Ventana</TableHead>
-                  <TableHead className="text-slate-200">
+              <TableHeader className="bg-muted [&_th]:text-muted-foreground">
+                <TableRow className="border-border hover:bg-muted">
+                  <TableHead>Desarrollador</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead>Ventana</TableHead>
+                  <TableHead>
                     <span className="inline-flex items-center gap-1">
                       <Timer className="size-3.5" />
                       Minutos
                     </span>
                   </TableHead>
-                  <TableHead className="text-slate-200">
+                  <TableHead>
                     <span className="inline-flex items-center gap-1">
                       <MousePointerClick className="size-3.5" />
                       Clicks
                     </span>
                   </TableHead>
-                  <TableHead className="text-slate-200">
+                  <TableHead>
                     <span className="inline-flex items-center gap-1">
                       <Keyboard className="size-3.5" />
                       Teclas
                     </span>
                   </TableHead>
-                  <TableHead className="text-slate-200">Intervalo</TableHead>
-                  <TableHead className="text-slate-200">Activo</TableHead>
-                  <TableHead className="text-slate-200" />
+                  <TableHead>Intervalo</TableHead>
+                  <TableHead>Activo</TableHead>
+                  <TableHead />
                 </TableRow>
               </TableHeader>
               <TableBody>

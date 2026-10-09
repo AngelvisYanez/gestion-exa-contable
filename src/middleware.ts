@@ -23,6 +23,8 @@ export async function middleware(req: NextRequest) {
     pathname.startsWith("/_next") ||
     pathname === "/favicon.ico" ||
     pathname === "/favicon.png" ||
+    pathname === "/logo-1.png" ||
+    pathname === "/logo-2.png" ||
     pathname.startsWith("/exa-");
 
   if (isPublic) return NextResponse.next();

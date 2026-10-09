@@ -566,24 +566,32 @@ export default function MisTareasPage() {
                 onPageSizeChange={pager.setPageSize}
               />
             </>
+          ) : visibles.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border py-16 text-center text-sm text-muted-foreground">
+              {loading
+                ? "Cargando..."
+                : tareas.length
+                  ? "No hay elementos con este filtro."
+                  : "No tienes tareas ni tickets asignados."}
+            </div>
           ) : (
             <>
               <Card className="overflow-hidden border-0 shadow-none">
                 <div className="overflow-x-auto">
                   <Table className="min-w-[1200px]">
-                    <TableHeader className="bg-slate-900 [&_th]:text-slate-200">
-                      <TableRow className="border-0 hover:bg-slate-900">
-                        <TableHead className="w-[90px] whitespace-nowrap text-slate-200">Tipo</TableHead>
-                        <TableHead className="w-16 whitespace-nowrap text-slate-200">#</TableHead>
-                        <TableHead className="min-w-[240px] text-slate-200">Titulo</TableHead>
-                        <TableHead className="w-[100px] whitespace-nowrap text-slate-200">Prioridad</TableHead>
-                        <TableHead className="w-[120px] whitespace-nowrap text-slate-200">Estado</TableHead>
-                        <TableHead className="w-[110px] whitespace-nowrap text-slate-200">Fin</TableHead>
-                        <TableHead className="w-[140px] whitespace-nowrap text-slate-200">Avance</TableHead>
-                        <TableHead className="min-w-[140px] whitespace-nowrap text-slate-200">
+                    <TableHeader className="bg-muted [&_th]:text-muted-foreground">
+                      <TableRow className="border-border hover:bg-muted">
+                        <TableHead className="w-[90px] whitespace-nowrap">Tipo</TableHead>
+                        <TableHead className="w-16 whitespace-nowrap">#</TableHead>
+                        <TableHead className="min-w-[240px]">Titulo</TableHead>
+                        <TableHead className="w-[100px] whitespace-nowrap">Prioridad</TableHead>
+                        <TableHead className="w-[120px] whitespace-nowrap">Estado</TableHead>
+                        <TableHead className="w-[110px] whitespace-nowrap">Fin</TableHead>
+                        <TableHead className="w-[140px] whitespace-nowrap">Avance</TableHead>
+                        <TableHead className="min-w-[140px] whitespace-nowrap">
                           Ultimo avance
                         </TableHead>
-                        <TableHead className="w-[220px] whitespace-nowrap text-right text-slate-200">
+                        <TableHead className="w-[220px] whitespace-nowrap text-right">
                           Acciones
                         </TableHead>
                       </TableRow>
@@ -713,15 +721,6 @@ export default function MisTareasPage() {
                         </TableRow>
                       );
                     })}
-                    {!loading && visibles.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={9} className="py-12 text-center text-muted-foreground">
-                          {tareas.length
-                            ? "No hay elementos con este filtro."
-                            : "No tienes tareas ni tickets asignados."}
-                        </TableCell>
-                      </TableRow>
-                    )}
                   </TableBody>
                   </Table>
                 </div>

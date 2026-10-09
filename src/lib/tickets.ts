@@ -28,6 +28,7 @@ export type TicketAssignee = {
   Usu_Cod: number | null;
   Nombre: string;
   Cedula: string;
+  Rol: string;
 };
 
 function mapEstado(code: string | null | undefined): string {
@@ -723,11 +724,13 @@ export async function listTicketAssignees(): Promise<TicketAssignee[]> {
       Usu_Cod: number | bigint;
       Pan_Nombre: string | null;
       Pan_Cedula: string | null;
+      Pan_Rol: string | null;
     }>
   >(
     `SELECT Per_Cod, Usu_Cod,
             CONVERT(Pan_Nombre USING utf8mb4) AS Pan_Nombre,
-            CONVERT(IFNULL(Pan_Cedula, '') USING utf8mb4) AS Pan_Cedula
+            CONVERT(IFNULL(Pan_Cedula, '') USING utf8mb4) AS Pan_Cedula,
+            CONVERT(Pan_Rol USING utf8mb4) AS Pan_Rol
      FROM aud_panel_usuarios
      WHERE Pan_Est = 'A'
        AND Pan_Rol IN ('developer', 'manager', 'atencion')
@@ -740,6 +743,7 @@ export async function listTicketAssignees(): Promise<TicketAssignee[]> {
       Usu_Cod: Number(r.Usu_Cod),
       Nombre: (r.Pan_Nombre || "").trim(),
       Cedula: (r.Pan_Cedula || "").trim(),
+      Rol: (r.Pan_Rol || "").trim(),
     }))
     .filter((r) => r.Usu_Cod > 0 && r.Nombre);
 }

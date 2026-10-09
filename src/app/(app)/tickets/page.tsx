@@ -61,6 +61,7 @@ type Asignable = {
   Usu_Cod: number | null;
   Nombre: string;
   Cedula?: string;
+  Rol?: string;
 };
 
 type EmpresaOpt = {
@@ -109,6 +110,30 @@ function origenEsRelavera(db?: string | null) {
   return id === "relavera" || id.startsWith("relavera");
 }
 
+function usuDeTicket(t: Ticket) {
+  const ids = new Set<number>();
+  if (t.Asignado_Usu_Cod && t.Asignado_Usu_Cod > 0) ids.add(t.Asignado_Usu_Cod);
+  for (const a of t.Asignados || []) {
+    if (a.Usu_Cod > 0) ids.add(a.Usu_Cod);
+  }
+  return [...ids];
+}
+
+function normNombre(nombre: string) {
+  return nombre
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+type OpcionDev = {
+  id: string;
+  nombre: string;
+  usuCods: number[];
+};
+
 function fmtWhen(v: string) {
   if (!v) return "—";
   const formatted = fmtFechaHoraZona(v, {
@@ -140,12 +165,65 @@ export default function TicketsPage() {
   const [todasLasFechas, setTodasLasFechas] = useState(false);
   const [vistaLista, setVistaLista] = useState(false);
   const [q, setQ] = useState("");
+  const [filtroDev, setFiltroDev] = useState("");
   const [viewMode, setViewMode] = useState<ListViewMode>("lista");
   const [avanceTarea, setAvanceTarea] = useState<Tarea | null>(null);
   const [detalleCod, setDetalleCod] = useState<number | null>(null);
   const [detalleDb, setDetalleDb] = useState<string | null>(null);
-  const pager = usePagination(tickets, {
-    resetKey: `${bandeja}|${q}|${rango.desde}|${rango.hasta}`,
+  const opcionesDev = useMemo(() => {
+    const byName = new Map<string, { nombre: string; usuCods: Set<number> }>();
+    const add = (usu: number | null | undefined, nombre: string | null | undefined) => {
+      const id = Number(usu || 0);
+      const nom = (nombre || "").trim();
+      if (!id || !nom) return;
+      const key = normNombre(nom);
+      if (!key) return;
+      const row = byName.get(key) || { nombre: nom, usuCods: new Set<number>() };
+      row.usuCods.add(id);
+      byName.set(key, row);
+    };
+    for (const d of asignables) {
+      if (d.Usu_Cod) add(d.Usu_Cod, d.Nombre);
+    }
+    for (const t of tickets) {
+      for (const a of t.Asignados || []) add(a.Usu_Cod, a.Nombre);
+      if (!t.Asignados?.length) add(t.Asignado_Usu_Cod, t.Asignado_Nombre);
+    }
+    const opciones: OpcionDev[] = [...byName.values()].map((row) => {
+      const usuCods = [...row.usuCods].sort((a, b) => a - b);
+      return { id: usuCods.join(","), nombre: row.nombre, usuCods };
+    });
+    opciones.sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+    return opciones;
+  }, [asignables, tickets]);
+
+  const ticketsVisibles = useMemo(() => {
+    if (!puedeAsignar || !filtroDev) return tickets;
+    const ids = new Set(
+      filtroDev
+        .split(",")
+        .map((n) => Number(n))
+        .filter((n) => n > 0)
+    );
+    if (!ids.size) return tickets;
+    return tickets.filter((t) => usuDeTicket(t).some((id) => ids.has(id)));
+  }, [tickets, filtroDev, puedeAsignar]);
+
+  const conteoPorDev = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const op of opcionesDev) {
+      const ids = new Set(op.usuCods);
+      let n = 0;
+      for (const t of tickets) {
+        if (usuDeTicket(t).some((id) => ids.has(id))) n += 1;
+      }
+      map.set(op.id, n);
+    }
+    return map;
+  }, [opcionesDev, tickets]);
+
+  const pager = usePagination(ticketsVisibles, {
+    resetKey: `${bandeja}|${q}|${rango.desde}|${rango.hasta}|${filtroDev}`,
   });
   const detalleTicket =
     detalleCod != null
@@ -413,7 +491,15 @@ export default function TicketsPage() {
     }
   };
 
-  const kanbanItems = useMemo(() => tickets.map(ticketAsTarea), [tickets]);
+  const kanbanItems = useMemo(() => ticketsVisibles.map(ticketAsTarea), [ticketsVisibles]);
+
+  const vacioMsg = isDev
+    ? "No tienes tickets asignados en este filtro."
+    : filtroDev
+      ? "Ningún ticket de este periodo está asignado a esa persona."
+      : todasLasFechas
+        ? "No hay tickets en este filtro."
+        : `No hay tickets entre ${rango.desde} y ${rango.hasta}. Prueba otro periodo.`;
 
   const moverKanban = async (t: Tarea, estado: KanbanEstado) => {
     const ticCod = t.Tic_Cod || t.Tar_Cod;
@@ -486,7 +572,9 @@ export default function TicketsPage() {
               onClick={() => setBandeja(k.id)}
               className={cn(
                 "rounded-xl border bg-card p-3 text-left shadow-sm transition-colors",
-                bandeja === k.id ? "border-sky-400 ring-2 ring-sky-200" : "border-border/80 hover:border-sky-200"
+                bandeja === k.id
+                  ? "border-brand-red ring-2 ring-brand-red/25"
+                  : "border-border/80 hover:border-brand-red/40"
               )}
             >
               <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
@@ -572,6 +660,22 @@ export default function TicketsPage() {
                 placeholder="Buscar por #, tema, empresa..."
               />
             </div>
+            {puedeAsignar && (
+              <Select
+                className="h-9 min-h-0 text-sm"
+                wrapperClassName="w-full min-w-[220px] sm:w-[260px]"
+                value={filtroDev}
+                onChange={(e) => setFiltroDev(e.target.value)}
+                aria-label="Filtrar por asignado"
+              >
+                <option value="">Todos los asignados</option>
+                {opcionesDev.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.nombre} ({conteoPorDev.get(d.id) || 0})
+                  </option>
+                ))}
+              </Select>
+            )}
             <div className="flex max-w-full overflow-x-auto rounded-lg border border-border bg-muted/40 p-0.5">
               {bandejasVisibles.map((b) => (
                 <button
@@ -717,20 +821,24 @@ export default function TicketsPage() {
                   </article>
                 ))}
               </div>
+            ) : ticketsVisibles.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border py-16 text-center text-sm text-muted-foreground">
+                {loading ? "Cargando tickets..." : vacioMsg}
+              </div>
             ) : (
               <div className="overflow-x-auto rounded-xl border border-border/80 bg-card shadow-sm">
                 <Table className="min-w-[1180px]">
-                  <TableHeader className="bg-slate-900 [&_th]:text-slate-200">
-                    <TableRow className="border-0 hover:bg-slate-900">
-                      <TableHead className="w-16 whitespace-nowrap text-slate-200">#</TableHead>
-                      <TableHead className="min-w-[240px] text-slate-200">Ticket</TableHead>
-                      <TableHead className="w-[110px] whitespace-nowrap text-slate-200">Estado</TableHead>
-                      <TableHead className="w-[100px] whitespace-nowrap text-slate-200">Prioridad</TableHead>
-                      <TableHead className="min-w-[160px] text-slate-200">Empresa</TableHead>
-                      <TableHead className="min-w-[160px] text-slate-200">Contacto</TableHead>
-                      <TableHead className="min-w-[140px] text-slate-200">Desarrollador</TableHead>
-                      <TableHead className="min-w-[210px] whitespace-nowrap text-slate-200">Llegada</TableHead>
-                      <TableHead className="w-[280px] whitespace-nowrap text-right text-slate-200">
+                  <TableHeader className="bg-muted [&_th]:text-muted-foreground">
+                    <TableRow className="border-border hover:bg-muted">
+                      <TableHead className="w-16 whitespace-nowrap">#</TableHead>
+                      <TableHead className="min-w-[240px]">Ticket</TableHead>
+                      <TableHead className="w-[110px] whitespace-nowrap">Estado</TableHead>
+                      <TableHead className="w-[100px] whitespace-nowrap">Prioridad</TableHead>
+                      <TableHead className="min-w-[160px]">Empresa</TableHead>
+                      <TableHead className="min-w-[160px]">Contacto</TableHead>
+                      <TableHead className="min-w-[140px]">Desarrollador</TableHead>
+                      <TableHead className="min-w-[210px] whitespace-nowrap">Llegada</TableHead>
+                      <TableHead className="w-[280px] whitespace-nowrap text-right">
                         Acciones
                       </TableHead>
                     </TableRow>
@@ -843,25 +951,14 @@ export default function TicketsPage() {
                         </TableCell>
                       </TableRow>
                     ))}
-                    {!loading && tickets.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={9} className="py-12 text-center text-muted-foreground">
-                          {isDev
-                            ? "No tienes tickets asignados en este filtro."
-                            : `No hay tickets entre ${rango.desde} y ${rango.hasta}. Prueba otro periodo.`}
-                        </TableCell>
-                      </TableRow>
-                    )}
                   </TableBody>
                 </Table>
               </div>
             )}
 
-            {!loading && tickets.length === 0 && viewMode === "grid" && (
+            {!loading && ticketsVisibles.length === 0 && viewMode === "grid" && (
               <div className="rounded-xl border border-dashed border-border py-16 text-center text-sm text-muted-foreground">
-                {isDev
-                  ? "No tienes tickets asignados en este filtro."
-                  : `No hay tickets entre ${rango.desde} y ${rango.hasta}. Prueba otro periodo.`}
+                {vacioMsg}
               </div>
             )}
 
