@@ -102,6 +102,7 @@ type Props = {
   loading?: boolean;
   onAvance: (t: Tarea) => void;
   onMoveEstado: (t: Tarea, estado: KanbanEstado) => Promise<void> | void;
+  canMoveEstado?: (t: Tarea, estado: KanbanEstado) => boolean;
   onOpen?: (t: Tarea) => void;
   className?: string;
 };
@@ -116,6 +117,7 @@ type CardBodyProps = {
   onMoveEstado: (t: Tarea, estado: KanbanEstado) => Promise<void> | void;
   onOpen?: (t: Tarea) => void;
   onSelectEstado?: (t: Tarea, estado: KanbanEstado) => void;
+  canMoveEstado?: (t: Tarea, estado: KanbanEstado) => boolean;
 };
 
 function KanbanCardBody({
@@ -125,9 +127,9 @@ function KanbanCardBody({
   overlay,
   dragHandleProps,
   onAvance,
-  onMoveEstado,
   onOpen,
   onSelectEstado,
+  canMoveEstado,
 }: CardBodyProps) {
   const esTicket = t.tipo === "ticket";
   const estadoActual = columnFor(t);
@@ -288,7 +290,10 @@ function KanbanCardBody({
             aria-label="Cambiar estado"
             onChange={(e) => onSelectEstado(t, e.target.value as KanbanEstado)}
           >
-            {KANBAN_COLUMNS.filter((c) => !(esTicket && c.id === "Finalizada")).map((c) => (
+            {KANBAN_COLUMNS.filter((c) =>
+              !(esTicket && c.id === "Finalizada") &&
+              (c.id === estadoActual || !canMoveEstado || canMoveEstado(t, c.id))
+            ).map((c) => (
               <option key={c.id} value={c.id}>
                 {c.label}
               </option>
@@ -308,6 +313,7 @@ function KanbanCard({
   onMoveEstado,
   onOpen,
   onSelectEstado,
+  canMoveEstado,
 }: {
   tarea: Tarea;
   busy: boolean;
@@ -316,6 +322,7 @@ function KanbanCard({
   onMoveEstado: (t: Tarea, estado: KanbanEstado) => Promise<void> | void;
   onOpen?: (t: Tarea) => void;
   onSelectEstado: (t: Tarea, estado: KanbanEstado) => void;
+  canMoveEstado?: (t: Tarea, estado: KanbanEstado) => boolean;
 }) {
   const key = workItemKey(tarea);
   const estadoActual = columnFor(tarea);
@@ -336,6 +343,7 @@ function KanbanCard({
         onMoveEstado={onMoveEstado}
         onOpen={onOpen}
         onSelectEstado={onSelectEstado}
+        canMoveEstado={canMoveEstado}
       />
     </div>
   );
@@ -352,6 +360,7 @@ function KanbanColumn({
   onMoveEstado,
   onOpen,
   onSelectEstado,
+  canMoveEstado,
 }: {
   col: (typeof KANBAN_COLUMNS)[number];
   cards: Tarea[];
@@ -363,6 +372,7 @@ function KanbanColumn({
   onMoveEstado: (t: Tarea, estado: KanbanEstado) => Promise<void> | void;
   onOpen?: (t: Tarea) => void;
   onSelectEstado: (t: Tarea, estado: KanbanEstado) => void;
+  canMoveEstado?: (t: Tarea, estado: KanbanEstado) => boolean;
 }) {
   const { setNodeRef, isOver: isDropOver } = useDroppable({
     id: col.id,
@@ -407,6 +417,7 @@ function KanbanColumn({
               onMoveEstado={onMoveEstado}
               onOpen={onOpen}
               onSelectEstado={onSelectEstado}
+              canMoveEstado={canMoveEstado}
             />
           );
         })}
@@ -421,7 +432,7 @@ function KanbanColumn({
   );
 }
 
-export function KanbanBoard({ tareas, loading, onAvance, onMoveEstado, onOpen, className }: Props) {
+export function KanbanBoard({ tareas, loading, onAvance, onMoveEstado, canMoveEstado, onOpen, className }: Props) {
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [overCol, setOverCol] = useState<string | null>(null);
   const [moving, setMoving] = useState<string | null>(null);
@@ -455,6 +466,7 @@ export function KanbanBoard({ tareas, loading, onAvance, onMoveEstado, onOpen, c
 
   const applyMove = async (tarea: Tarea, estado: KanbanEstado) => {
     if (columnFor(tarea) === estado) return;
+    if (canMoveEstado && !canMoveEstado(tarea, estado)) return;
     if (tarea.tipo === "ticket" && estado === "Finalizada" && (tarea.Ava_Porcentaje || 0) < 100) return;
     const key = workItemKey(tarea);
     setMoving(key);
@@ -522,6 +534,7 @@ export function KanbanBoard({ tareas, loading, onAvance, onMoveEstado, onOpen, c
             onMoveEstado={onMoveEstado}
             onOpen={onOpen}
             onSelectEstado={(t, estado) => void applyMove(t, estado)}
+            canMoveEstado={canMoveEstado}
           />
         ))}
       </div>

@@ -21,6 +21,7 @@ export type Tarea = {
   Tar_Fecha_Inicio?: string | null;
   Tar_Fecha_Fin?: string | null;
   Tar_Fecha_Culminacion?: string | null;
+  Usu_Creador?: number | null;
   Ava_Porcentaje: number;
   Ava_Ultima_Fecha?: string | null;
   /** Fecha real de asignación del ticket (Tia_Fecha). */

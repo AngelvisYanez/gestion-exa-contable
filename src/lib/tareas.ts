@@ -1,4 +1,3 @@
-import { Prisma } from "@prisma/client";
 import { getPrisma, sanitizeDbDis } from "./db";
 import { toPublicCaptureUrl } from "./captures";
 import { tasksEmpCod } from "./empresa";
@@ -141,6 +140,7 @@ export async function getTareasDateBounds(dbDis: string, empCod?: number) {
 export async function listTareas(dbDis: string, opts: {
   empCod?: number;
   perCod?: number;
+  usuCreador?: number;
   estado?: string;
   q?: string;
   desde?: string;
@@ -156,6 +156,10 @@ export async function listTareas(dbDis: string, opts: {
   if (opts.empCod && opts.empCod > 0) {
     where.push("t.Emp_Cod = ?");
     params.push(opts.empCod);
+  }
+  if (opts.usuCreador && opts.usuCreador > 0) {
+    where.push("t.Usu_Creador = ?");
+    params.push(opts.usuCreador);
   }
   if (opts.estado && opts.estado !== "todos") {
     where.push("t.Tar_Estado = ?");
@@ -193,6 +197,7 @@ export async function listTareas(dbDis: string, opts: {
     Tar_Fecha_Inicio: Date | string | null;
     Tar_Fecha_Fin: Date | string | null;
     Tar_Fecha_Culminacion: Date | string | null;
+    Usu_Creador: number | null;
     Emp_Cod: number | null;
     Ava_Porcentaje: number | null;
     Tar_Descripcion: string | null;
@@ -215,6 +220,7 @@ export async function listTareas(dbDis: string, opts: {
       t.Tar_Fecha_Inicio,
       t.Tar_Fecha_Fin,
       t.Tar_Fecha_Culminacion,
+      t.Usu_Creador,
       t.Emp_Cod,
       (
         SELECT av.Ava_Porcentaje
@@ -279,6 +285,7 @@ export async function listTareas(dbDis: string, opts: {
       Tar_Fecha_Inicio: t.Tar_Fecha_Inicio,
       Tar_Fecha_Fin: t.Tar_Fecha_Fin,
       Tar_Fecha_Culminacion: t.Tar_Fecha_Culminacion,
+      Usu_Creador: t.Usu_Creador != null ? Number(t.Usu_Creador) : null,
       Emp_Cod: t.Emp_Cod ? Number(t.Emp_Cod) : 0,
       Ava_Porcentaje: t.Ava_Porcentaje != null ? Number(t.Ava_Porcentaje) : 0,
       Ava_Ultima_Fecha: t.Ava_Ultima_Fecha,
@@ -295,13 +302,14 @@ export async function listTareas(dbDis: string, opts: {
 export async function kpisTareas(
   dbDis: string,
   empCod?: number,
-  rango?: { desde?: string; hasta?: string; perCod?: number }
+  rango?: { desde?: string; hasta?: string; perCod?: number; usuCreador?: number }
 ) {
   const rows = await listTareas(dbDis, {
     empCod,
     desde: rango?.desde,
     hasta: rango?.hasta,
     perCod: rango?.perCod,
+    usuCreador: rango?.usuCreador,
   });
   const hoy = hoyFecha();
   let completadas = 0;
@@ -330,6 +338,33 @@ export async function kpisTareas(
     atrasadas,
     avance_promedio: total ? Math.round(sumaPct / total) : 0,
     tasa_cumplimiento: total ? Math.round((completadas / total) * 1000) / 10 : 0,
+  };
+}
+
+/** Permisos de una tarea activa, calculados sobre la base solicitada. */
+export async function getTareaAccess(dbDis: string, tarCod: number, usuCod: number, perCod = 0) {
+  const prisma = getPrisma(dbDis);
+  const [row] = await prisma.$queryRawUnsafe<Array<{
+    Usu_Creador: number | null;
+    assignedToUser: number | bigint;
+    assigneeCount: number | bigint;
+  }>>(
+    `SELECT t.Usu_Creador,
+            (SELECT COUNT(*) FROM aud_tareas_asignadas a
+             WHERE a.Tar_Cod = t.Tar_Cod AND a.Tas_Est = 'A' AND a.Per_Cod = ?) AS assignedToUser,
+            (SELECT COUNT(*) FROM aud_tareas_asignadas a
+             WHERE a.Tar_Cod = t.Tar_Cod AND a.Tas_Est = 'A') AS assigneeCount
+     FROM aud_tareas t
+     WHERE t.Tar_Cod = ? AND t.Emp_Cod = ? AND t.Tar_Est = 'A' LIMIT 1`,
+    perCod,
+    tarCod,
+    tasksEmpCod()
+  );
+  if (!row) return null;
+  return {
+    isCreator: usuCod > 0 && Number(row.Usu_Creador) === usuCod,
+    isAssigned: perCod > 0 && Number(row.assignedToUser) > 0,
+    hasAssignees: Number(row.assigneeCount) > 0,
   };
 }
 
@@ -963,6 +998,7 @@ export async function getTareaDetalle(
       Tar_Fecha_Inicio: toIso(t.Tar_Fecha_Inicio),
       Tar_Fecha_Fin: toIso(t.Tar_Fecha_Fin),
       Tar_Fecha_Culminacion: toIso(t.Tar_Fecha_Culminacion),
+      Usu_Creador: t.Usu_Creador != null ? Number(t.Usu_Creador) : null,
       Creador: (t.Creador || "").trim() || null,
       Ava_Porcentaje: avances[0]?.Ava_Porcentaje ?? 0,
       Tar_Proceso: t.Tar_Proceso || null,

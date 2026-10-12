@@ -67,9 +67,12 @@ export async function middleware(req: NextRequest) {
   const devTickets =
     session.role === "developer" &&
     (pathname === "/tickets" || pathname.startsWith("/api/tickets"));
+  const devTareas =
+    session.role === "developer" &&
+    (pathname === "/tareas" || pathname.startsWith("/api/tareas"));
 
   if ((desk || pathname.startsWith("/api/devs")) && !canAssignWork(session.role)) {
-    if (devTickets) return NextResponse.next();
+    if (devTickets || devTareas) return NextResponse.next();
     return deny(req, "No tienes acceso a esa seccion.");
   }
 

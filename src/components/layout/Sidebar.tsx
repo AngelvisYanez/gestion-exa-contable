@@ -47,7 +47,7 @@ const navGroups: NavGroup[] = [
       {
         href: "/tareas",
         label: "Tareas",
-        roles: ["manager", "atencion"],
+        roles: ["manager", "atencion", "developer"],
         icon: <ClipboardList className="w-[17px] h-[17px]" strokeWidth={1.8} />,
       },
       {

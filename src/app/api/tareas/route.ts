@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/auth/session";
-import { canAssignWork, canSeeOversight } from "@/lib/auth/users";
+import { resolvePerCod } from "@/lib/auth/resolvePer";
+import { canAssignWork, canSeeOversight, matchTeamMember } from "@/lib/auth/users";
 import { publishAsignacion, publishEvent } from "@/lib/events";
 import { listOfsercontCatalogo } from "@/lib/brief/catalog";
 import { generateTareaBrief } from "@/lib/brief/generate";
 import { tasksDbDis, tasksEmpCod } from "@/lib/empresa";
+import { developerUpdatePermission } from "@/lib/tarea-permissions";
 import {
   AsignacionInvalidaError,
   attachEvidenciasTarea,
@@ -12,6 +14,7 @@ import {
   deleteTarea,
   descripcionAvanceDesdeBody,
   getTareaDetalle,
+  getTareaAccess,
   kpisTareas,
   listTareas,
   registrarAvance,
@@ -21,23 +24,41 @@ import {
 
 export const dynamic = "force-dynamic";
 
+async function developerAccess(db: string, tarCod: number, session: NonNullable<Awaited<ReturnType<typeof getSessionFromRequest>>>) {
+  const ownAccess = await getTareaAccess(db, tarCod, session.usuCod);
+  if (!ownAccess || ownAccess.isCreator) return ownAccess;
+  const perCod = await resolvePerCod(db, {
+    perCod: session.perCod > 0 ? session.perCod : undefined,
+    prsCod: session.prsCod,
+    cedula: session.cedula,
+    nameMatch: matchTeamMember(session.name)?.nameMatch,
+  });
+  return getTareaAccess(db, tarCod, session.usuCod, perCod);
+}
+
 export async function GET(req: NextRequest) {
   try {
+    const session = await getSessionFromRequest(req);
+    if (!session) return NextResponse.json({ success: false, message: "No autenticado" }, { status: 401 });
+    if (session.role === "developer" && session.usuCod <= 0) {
+      return NextResponse.json({ success: false, message: "Usuario sin identificador" }, { status: 403 });
+    }
     const sp = req.nextUrl.searchParams;
     const db = tasksDbDis(sp.get("Ses_Dat_Dis"));
 
     if (sp.get("catalogo") === "ofsercont") {
-      const session = await getSessionFromRequest(req);
-      if (!session) {
-        return NextResponse.json({ success: false, message: "No autorizado" }, { status: 401 });
-      }
       const modulos = await listOfsercontCatalogo(db);
       return NextResponse.json({ success: true, db, modulos });
     }
 
     const detalleCod = parseInt(sp.get("detalle") || "0", 10);
     if (detalleCod > 0) {
-      const session = await getSessionFromRequest(req);
+      if (session.role === "developer") {
+        const access = await getTareaAccess(db, detalleCod, session.usuCod);
+        if (!access?.isCreator) {
+          return NextResponse.json({ success: false, message: "Tarea no encontrada" }, { status: 404 });
+        }
+      }
       const capturasDias = parseInt(sp.get("capturas_dias") || "7", 10);
       const capturasDesde = sp.get("capturas_desde") || sp.get("desde") || null;
       const capturasHasta = sp.get("capturas_hasta") || sp.get("hasta") || null;
@@ -65,14 +86,15 @@ export async function GET(req: NextRequest) {
     const q = sp.get("q") || "";
     const withKpis = sp.get("kpis") === "1";
 
-    const tareas = await listTareas(db, { empCod, perCod, estado, q });
+    const usuCreador = session.role === "developer" ? session.usuCod : undefined;
+    const tareas = await listTareas(db, { empCod, perCod, estado, q, usuCreador });
     const payload: Record<string, unknown> = {
       success: true,
       db,
       Emp_Cod: empCod,
       tareas,
     };
-    if (withKpis) payload.kpis = await kpisTareas(db, empCod);
+    if (withKpis) payload.kpis = await kpisTareas(db, empCod, { usuCreador });
     return NextResponse.json(payload);
   } catch (err) {
     const mensaje = err instanceof Error ? err.message : "Error";
@@ -87,8 +109,16 @@ export async function POST(req: NextRequest) {
     const action = String(body.action || "create");
     const empCod = tasksEmpCod(body.empCod ?? body.Emp_Cod);
     const session = await getSessionFromRequest(req);
+    if (!session) return NextResponse.json({ success: false, message: "No autenticado" }, { status: 401 });
+    if (session.role === "developer" && session.usuCod <= 0) {
+      return NextResponse.json({ success: false, message: "Usuario sin identificador" }, { status: 403 });
+    }
 
     if (action === "create") {
+      if (session.role === "developer" &&
+          (body.perCodAsignar !== undefined || body.asignados !== undefined || body.Per_Cod !== undefined)) {
+        return NextResponse.json({ success: false, message: "No puedes asignar tareas." }, { status: 403 });
+      }
       const titulo = String(body.titulo || "").trim();
       if (!titulo) {
         return NextResponse.json({ success: false, message: "Titulo requerido" }, { status: 400 });
@@ -101,11 +131,11 @@ export async function POST(req: NextRequest) {
         complejidad: body.complejidad,
         fechaInicio: body.fechaInicio,
         fechaFin: body.fechaFin,
-        estado: body.estado,
+        estado: session.role === "developer" ? "Pendiente" : body.estado,
         empCod,
-        usuCreador: body.usuCreador
+        usuCreador: session.role === "developer" ? session.usuCod : body.usuCreador
           ? Number(body.usuCreador)
-          : session?.usuCod || undefined,
+          : session.usuCod || undefined,
         perCodAsignar,
       });
 
@@ -138,6 +168,12 @@ export async function POST(req: NextRequest) {
       const tarCod = Number(body.Tar_Cod || 0);
       const rutas = Array.isArray(body.adjuntos) ? body.adjuntos.map(String) : [];
       if (!tarCod) return NextResponse.json({ success: false, message: "Tar_Cod requerido" }, { status: 400 });
+      if (session.role === "developer") {
+        const access = await getTareaAccess(db, tarCod, session.usuCod);
+        if (!access?.isCreator) {
+          return NextResponse.json({ success: false, message: "No puedes adjuntar evidencias a esa tarea." }, { status: 403 });
+        }
+      }
       const res = await attachEvidenciasTarea(db, tarCod, rutas);
       return NextResponse.json({ success: true, ...res });
     }
@@ -167,18 +203,11 @@ export async function POST(req: NextRequest) {
 
       const contentKeys = ["titulo", "descripcion", "prioridad", "complejidad", "fechaInicio", "fechaFin", "adjuntos"] as const;
       const touchesContent = contentKeys.some((k) => patch[k] !== undefined);
-      if (touchesContent && !canAssignWork(session?.role)) {
-        return NextResponse.json(
-          { success: false, message: "Solo encargado o atencion al cliente pueden editar la tarea." },
-          { status: 403 }
-        );
-      }
-
       const wantsAssign =
         body.perCodAsignar !== undefined ||
         body.asignados !== undefined ||
         body.Per_Cod !== undefined;
-      if (wantsAssign && !canAssignWork(session?.role)) {
+      if (wantsAssign && !canAssignWork(session.role)) {
         return NextResponse.json(
           { success: false, message: "Solo encargado o atencion al cliente pueden asignar la tarea." },
           { status: 403 }
@@ -187,6 +216,23 @@ export async function POST(req: NextRequest) {
 
       if (Object.keys(patch).length === 0 && !wantsAssign) {
         return NextResponse.json({ success: false, message: "Sin campos para actualizar" }, { status: 400 });
+      }
+
+      if (session.role === "developer") {
+        const access = await developerAccess(db, tarCod, session);
+        const permission = developerUpdatePermission(access, {
+          touchesContent,
+          changesState: patch.estado !== undefined,
+          nextState: patch.estado,
+        });
+        if (permission === "forbidden") {
+          return NextResponse.json({ success: false, message: "No puedes editar esa tarea." }, { status: 403 });
+        }
+        if (permission === "unassigned") {
+          return NextResponse.json({ success: false, message: "No puedes marcar una tarea sin asignar como asignada." }, { status: 400 });
+        }
+      } else if (touchesContent && !canAssignWork(session.role)) {
+        return NextResponse.json({ success: false, message: "No puedes editar esa tarea." }, { status: 403 });
       }
 
       let tarea = Object.keys(patch).length ? await updateTarea(db, tarCod, patch) : { Tar_Cod: tarCod };
@@ -275,6 +321,12 @@ export async function POST(req: NextRequest) {
       const tarCod = Number(body.Tar_Cod || 0);
       const porcentaje = Number(body.porcentaje ?? 0);
       if (!tarCod) return NextResponse.json({ success: false, message: "Tar_Cod requerido" }, { status: 400 });
+      if (session.role === "developer") {
+        const access = await developerAccess(db, tarCod, session);
+        if (!access?.isCreator && !access?.isAssigned) {
+          return NextResponse.json({ success: false, message: "No puedes registrar avances en esa tarea." }, { status: 403 });
+        }
+      }
       const descripcion = descripcionAvanceDesdeBody(body, tarCod);
       const resumen = String(body.realizado ?? body.descripcion ?? "").trim();
       const res = await registrarAvance(db, {

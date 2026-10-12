@@ -246,6 +246,9 @@ export function TareaDetalleDialog({
         ? tarea.Asignados
         : [];
   const estadoActual = t?.Tar_Estado ?? tarea?.Tar_Estado ?? "";
+  const canEdit = canDesk || (user?.role === "developer" &&
+    !!user.usuCod && user.usuCod > 0 &&
+    Number(t?.Usu_Creador ?? tarea?.Usu_Creador) === user.usuCod);
   const asignadoSinPersona =
     (estadoActual === "Asignado" || estadoActual === "En Proceso") && asignados.length === 0;
   const canViewCapturas = isManager || data?.can_view_capturas === true;
@@ -790,7 +793,7 @@ export function TareaDetalleDialog({
               Generar brief
             </Button>
           )}
-          {canDesk && tarea && (
+          {canEdit && tarea && (
             <Button type="button" variant="secondary" onClick={() => setEditOpen(true)}>
               <Pencil className="size-4" />
               Editar

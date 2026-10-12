@@ -44,7 +44,8 @@ type Props = {
 };
 
 export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, onSaved }: Props) {
-  const { db } = useAuth();
+  const { db, user } = useAuth();
+  const isDeveloper = user?.role === "developer";
   const tarCod = tarea?.Tar_Cod ?? null;
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -76,7 +77,7 @@ export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, on
     setNuevasFotos([]);
     Promise.all([
       fetch(detailUrl(tarCod)).then((r) => r.json()),
-      fetch(
+      isDeveloper ? Promise.resolve({ colaboradores: [] }) : fetch(
         `/api/devs?view=colaboradores&asignables=1&Ses_Dat_Dis=${encodeURIComponent(db || "")}`
       ).then((r) => r.json()),
     ])
@@ -107,7 +108,7 @@ export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, on
       cancel = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, tarCod, db]);
+  }, [open, tarCod, db, isDeveloper]);
 
   const addFotos = (list: FileList | null) => {
     if (!list) return;
@@ -170,7 +171,7 @@ export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, on
           fechaFin: fechaFin || null,
           estado,
           adjuntos,
-          perCodAsignar: perCod ? Number(perCod) : "",
+          ...(!isDeveloper ? { perCodAsignar: perCod ? Number(perCod) : "" } : {}),
         }),
       });
       const j = await res.json();
@@ -198,7 +199,7 @@ export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, on
             Editar tarea #{tarCod}
           </DialogTitle>
           <DialogDescription>
-            Solo el encargado puede modificar titulo, descripcion, fechas, complejidad y evidencias.
+            Edita el contenido, las fechas y las evidencias de esta tarea.
           </DialogDescription>
         </DialogHeader>
 
@@ -258,14 +259,14 @@ export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, on
                 <Label>Estado</Label>
                 <Select value={estado} onChange={(e) => setEstado(e.target.value)} disabled={saving}>
                   <option>Pendiente</option>
-                  <option>Asignado</option>
+                  {(!isDeveloper || perCod) && <option>Asignado</option>}
                   <option>En Proceso</option>
                   <option>Finalizada</option>
                 </Select>
               </div>
             </div>
 
-            <div className="space-y-2">
+            {!isDeveloper && <div className="space-y-2">
               <Label>Asignado a</Label>
               <Select value={perCod} onChange={(e) => setPerCod(e.target.value)} disabled={saving}>
                 <option value="">Sin asignar</option>
@@ -278,7 +279,7 @@ export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, on
               <p className="text-[11px] text-muted-foreground">
                 Si eliges una persona, el estado pasa a Asignado automaticamente.
               </p>
-            </div>
+            </div>}
 
             <div className="space-y-2">
               <Label>Adjuntos de descripcion</Label>

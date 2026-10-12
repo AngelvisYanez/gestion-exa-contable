@@ -6,7 +6,7 @@ import { canAssignWork, canSeeOversight, matchTeamMember } from "@/lib/auth/user
 import { saveEvidencia, toPublicCaptureUrl } from "@/lib/captures";
 import { isImagePath } from "@/lib/avance-format";
 import { tasksDbDis } from "@/lib/empresa";
-import { listTareas } from "@/lib/tareas";
+import { getTareaAccess } from "@/lib/tareas";
 import { findTicketAsignado } from "@/lib/tickets";
 import { ticketScopeForSession } from "@/lib/ticket-scope";
 
@@ -50,14 +50,17 @@ export async function POST(req: NextRequest) {
         }
       }
     } else if (!canSeeOversight(session.role) && !canAssignWork(session.role)) {
-      const perCod = await resolvePerCod(db, {
-        perCod: session.perCod > 0 ? session.perCod : undefined,
-        prsCod: session.prsCod,
-        cedula: session.cedula,
-        nameMatch: matchTeamMember(session.name)?.nameMatch,
-      });
-      const propias = perCod > 0 ? await listTareas(db, { perCod }) : [];
-      if (!propias.some((t) => t.Tar_Cod === tarCod)) {
+      let access = await getTareaAccess(db, tarCod, session.usuCod);
+      if (access && !access.isCreator) {
+        const perCod = await resolvePerCod(db, {
+          perCod: session.perCod > 0 ? session.perCod : undefined,
+          prsCod: session.prsCod,
+          cedula: session.cedula,
+          nameMatch: matchTeamMember(session.name)?.nameMatch,
+        });
+        access = await getTareaAccess(db, tarCod, session.usuCod, perCod);
+      }
+      if (!access?.isCreator && !access?.isAssigned) {
         return NextResponse.json(
           { success: false, message: "No puedes adjuntar evidencias a esa tarea." },
           { status: 403 }

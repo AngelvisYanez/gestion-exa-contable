@@ -45,6 +45,7 @@ export default function TareasPage() {
   const { db, user } = useAuth();
   const { lastTaskEventAt } = useNotifications();
   const empCod = 96;
+  const isDeveloper = user?.role === "developer";
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -165,8 +166,7 @@ export default function TareasPage() {
           prioridad: formPrio,
           complejidad: formComplejidad,
           fechaFin: formFin || null,
-          perCodAsignar: formPer ? Number(formPer) : undefined,
-          usuCreador: user?.usuCod || undefined,
+          ...(!isDeveloper ? { perCodAsignar: formPer ? Number(formPer) : undefined } : {}),
         }),
       });
       const j = await res.json();
@@ -248,7 +248,7 @@ export default function TareasPage() {
 
   return (
     <>
-      <Topbar title="Tareas" subtitle="Asignaciones y seguimiento" />
+      <Topbar title="Tareas" subtitle={isDeveloper ? "Creadas por ti" : "Asignaciones y seguimiento"} />
       <main className="flex h-[calc(100dvh-3.5rem)] min-h-0 w-full min-w-0 flex-col overflow-hidden">
         <div className="mx-auto flex min-h-0 w-full min-w-0 max-w-[1400px] flex-1 flex-col px-4 py-3 sm:px-6 sm:py-4">
         <FilterBar className="mb-3">
@@ -289,7 +289,7 @@ export default function TareasPage() {
             className="h-9"
             onClick={async () => {
               resetForm();
-              await loadCols();
+              if (!isDeveloper) await loadCols();
               setFormOpen(true);
             }}
           >
@@ -316,6 +316,7 @@ export default function TareasPage() {
               loading={loading}
               onAvance={openAvance}
               onMoveEstado={moveEstado}
+              canMoveEstado={(t, estado) => !isDeveloper || estado !== "Asignado" || t.Asignados.length > 0}
               onOpen={openDetalle}
               className="min-h-0 flex-1"
             />
@@ -513,7 +514,8 @@ export default function TareasPage() {
             <DialogHeader>
               <DialogTitle>Nueva tarea</DialogTitle>
               <DialogDescription>
-                Crea, indica complejidad y adjunta fotos de contexto. Opcionalmente asigna a un miembro del equipo.
+                Crea, indica complejidad y adjunta fotos de contexto.
+                {!isDeveloper && " Opcionalmente asigna a un miembro del equipo."}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
@@ -572,7 +574,7 @@ export default function TareasPage() {
                   placeholder="Sin fecha limite"
                 />
               </div>
-              <div className="space-y-2">
+              {!isDeveloper && <div className="space-y-2">
                 <Label>Asignar a (equipo)</Label>
                 <Select value={formPer} onChange={(e) => setFormPer(e.target.value)} disabled={formSaving}>
                   <option value="">Sin asignar</option>
@@ -582,7 +584,7 @@ export default function TareasPage() {
                     </option>
                   ))}
                 </Select>
-              </div>
+              </div>}
               <div className="space-y-2">
                 <Label>Archivos adjuntos (descripcion)</Label>
                 <input
