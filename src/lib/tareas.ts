@@ -1722,20 +1722,22 @@ export async function listColaboradores(dbDis: string, filtro = "") {
 }
 
 /**
- * Quienes pueden recibir tareas: encargados y desarrolladores habilitados en el panel.
+ * Quienes pueden recibir tareas: encargados, desarrolladores y atencion al cliente.
  */
 export async function listAsignables(dbDis: string) {
   const { listPerCodAsignables } = await import("./panel-usuarios");
   const prisma = getPrisma(sanitizeDbDis(dbDis));
-  const perCodes = await listPerCodAsignables(dbDis);
-  if (!perCodes.length) return [];
+  const members = await listPerCodAsignables(dbDis);
+  if (!members.length) return [];
+  const perCodes = members.map((m) => m.perCod);
+  const rolByPer = new Map(members.map((m) => [m.perCod, m.rol]));
   const rows = await prisma.personal.findMany({
     where: { Per_Cod: { in: perCodes }, Per_Est: "A" },
     include: { persona: true, config: true },
   });
   const order = new Map(perCodes.map((id, i) => [id, i]));
   return rows
-    .map((p) => mapColaborador(p))
+    .map((p) => ({ ...mapColaborador(p), Rol: rolByPer.get(p.Per_Cod) || "developer" }))
     .sort((a, b) => (order.get(a.Per_Cod) ?? 99) - (order.get(b.Per_Cod) ?? 99));
 }
 

@@ -9,6 +9,7 @@ import { PaginationBar, FilterBar, ViewModeToggle, type ListViewMode } from "@/c
 import { EstadoBadge, PrioridadBadge, fmtDate } from "@/components/status-badges";
 import { useAuth } from "@/contexts/AuthContext";
 import { hasRolePermission } from "@/lib/auth/role-permissions";
+import { roleLabel } from "@/lib/auth/users";
 import { useNotifications } from "@/contexts/NotificationsContext";
 import { usePagination } from "@/hooks/use-pagination";
 import { Alert } from "@/components/ui/alert";
@@ -70,7 +71,7 @@ export default function TareasPage() {
   const [formError, setFormError] = useState("");
   const [formSaving, setFormSaving] = useState(false);
   const [formFotos, setFormFotos] = useState<File[]>([]);
-  const [cols, setCols] = useState<Array<{ Per_Cod: number; Nombre: string }>>([]);
+  const [cols, setCols] = useState<Array<{ Per_Cod: number; Nombre: string; Rol?: string }>>([]);
   const fotoRef = useRef<HTMLInputElement>(null);
 
   const fotoPreviews = useMemo(
@@ -587,6 +588,7 @@ export default function TareasPage() {
                   {cols.map((c) => (
                     <option key={c.Per_Cod} value={c.Per_Cod}>
                       {c.Nombre}
+                      {c.Rol === "atencion" ? ` · ${roleLabel(c.Rol)}` : ""}
                     </option>
                   ))}
                 </Select>

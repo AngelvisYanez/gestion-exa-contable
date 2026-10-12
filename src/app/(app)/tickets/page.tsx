@@ -23,6 +23,7 @@ import {
 import { PrioridadBadge } from "@/components/status-badges";
 import { useAuth } from "@/contexts/AuthContext";
 import { hasRolePermission } from "@/lib/auth/role-permissions";
+import { roleLabel } from "@/lib/auth/users";
 import { useNotifications } from "@/contexts/NotificationsContext";
 import { usePagination } from "@/hooks/use-pagination";
 import { Alert } from "@/components/ui/alert";
@@ -1232,6 +1233,7 @@ export default function TicketsPage() {
                             />
                             <span>
                               {a.Nombre}
+                              {a.Rol === "atencion" ? ` · ${roleLabel(a.Rol)}` : ""}
                               {a.Cedula ? ` · ${a.Cedula}` : ""}
                             </span>
                           </label>

@@ -17,6 +17,7 @@ import { FilterBar } from "@/components/list-controls";
 import { PrioridadBadge } from "@/components/status-badges";
 import { useAuth } from "@/contexts/AuthContext";
 import { hasRolePermission } from "@/lib/auth/role-permissions";
+import { roleLabel } from "@/lib/auth/users";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -54,6 +55,7 @@ type Asignable = {
   Per_Cod: number;
   Nombre: string;
   Cedula?: string;
+  Rol?: string;
 };
 
 type Kpis = {
@@ -460,6 +462,7 @@ export default function IncidenciasPage() {
                   {asignables.map((a) => (
                     <option key={a.Per_Cod} value={String(a.Per_Cod)}>
                       {a.Nombre}
+                      {a.Rol === "atencion" ? ` · ${roleLabel(a.Rol)}` : ""}
                       {a.Cedula ? ` · ${a.Cedula}` : ""}
                     </option>
                   ))}

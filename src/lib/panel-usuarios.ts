@@ -272,15 +272,19 @@ export async function findPanelActivo(
   };
 }
 
-/** Per_Cod de quienes reciben tareas/tickets (encargado y desarrollador). */
-export async function listPerCodAsignables(dbDis: string): Promise<number[]> {
+/** Quienes reciben tareas: encargado, desarrollador y atencion al cliente. */
+export async function listPerCodAsignables(
+  dbDis: string
+): Promise<Array<{ perCod: number; rol: UserRole }>> {
   const prisma = getPrisma(sanitizeDbDis(dbDis));
   await ensurePanelUsuarios(prisma);
-  const rows = await prisma.$queryRawUnsafe<Array<{ Per_Cod: number | null; Prs_Cod: number | null }>>(
-    `SELECT Per_Cod, Prs_Cod FROM aud_panel_usuarios
-     WHERE Pan_Est = 'A' AND Pan_Rol IN ('developer', 'manager')`
+  const rows = await prisma.$queryRawUnsafe<
+    Array<{ Per_Cod: number | null; Prs_Cod: number | null; Pan_Rol: string | null }>
+  >(
+    `SELECT Per_Cod, Prs_Cod, Pan_Rol FROM aud_panel_usuarios
+     WHERE Pan_Est = 'A' AND Pan_Rol IN ('developer', 'manager', 'atencion')`
   );
-  const out: number[] = [];
+  const out: Array<{ perCod: number; rol: UserRole }> = [];
   for (const r of rows) {
     let per = Number(r.Per_Cod || 0);
     if (per <= 0 && r.Prs_Cod) {
@@ -289,7 +293,9 @@ export async function listPerCodAsignables(dbDis: string): Promise<number[]> {
         empCod: tasksEmpCod(),
       });
     }
-    if (per > 0 && !out.includes(per)) out.push(per);
+    if (per > 0 && !out.some((item) => item.perCod === per)) {
+      out.push({ perCod: per, rol: normalizePanelRole(r.Pan_Rol) });
+    }
   }
   return out;
 }

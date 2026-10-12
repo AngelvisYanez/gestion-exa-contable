@@ -20,6 +20,7 @@ import { Select } from "@/components/ui/select";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { useAuth } from "@/contexts/AuthContext";
 import { hasRolePermission } from "@/lib/auth/role-permissions";
+import { roleLabel } from "@/lib/auth/users";
 import type { TareaDetalle } from "@/lib/tareas";
 import {
   EVIDENCIA_ACCEPT,
@@ -32,7 +33,7 @@ import {
 const UPLOAD_BATCH = 20;
 
 type EvidenciaItem = { ruta: string; url: string; nombre: string; esImagen: boolean };
-type Asignable = { Per_Cod: number; Nombre: string };
+type Asignable = { Per_Cod: number; Nombre: string; Rol?: string };
 
 type Props = {
   open: boolean;
@@ -276,6 +277,7 @@ export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, on
                 {asignables.map((a) => (
                   <option key={a.Per_Cod} value={a.Per_Cod}>
                     {a.Nombre}
+                    {a.Rol === "atencion" ? ` · ${roleLabel(a.Rol)}` : ""}
                   </option>
                 ))}
               </Select>
