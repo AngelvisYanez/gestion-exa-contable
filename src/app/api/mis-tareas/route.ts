@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { hasRolePermission } from "@/lib/auth/role-permissions";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { publishEvent } from "@/lib/events";
 import { tasksDbDis, tasksEmpCod } from "@/lib/empresa";
@@ -199,6 +200,11 @@ export async function POST(req: NextRequest) {
     }
     const db = tasksDbDis();
     const action = String(body.action || "avance");
+
+    const isTicketAction = action === "ticket_estado" || body.tipo === "ticket" || Boolean(body.Tic_Cod);
+    if (!hasRolePermission(session, isTicketAction ? "tickets.avance" : "tareas.avance")) {
+      return NextResponse.json({ success: false, message: "Tu rol no puede registrar avances." }, { status: 403 });
+    }
 
     if (action === "ticket_estado") {
       const ticCod = Number(body.Tic_Cod || body.Tar_Cod || 0);

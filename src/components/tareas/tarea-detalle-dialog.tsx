@@ -37,6 +37,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DatePicker } from "@/components/ui/date-picker";
 import { RichTextHtml, isProbablyHtml } from "@/components/ui/rich-text";
 import { useAuth } from "@/contexts/AuthContext";
+import { hasRolePermission } from "@/lib/auth/role-permissions";
 import { GenerarBriefDialog } from "@/components/tareas/generar-brief-dialog";
 import { OfsercontAlcanceFields } from "@/components/tareas/ofsercont-alcance-fields";
 import { TareaEditDialog } from "@/components/tareas/tarea-edit-dialog";
@@ -246,9 +247,11 @@ export function TareaDetalleDialog({
         ? tarea.Asignados
         : [];
   const estadoActual = t?.Tar_Estado ?? tarea?.Tar_Estado ?? "";
-  const canEdit = canDesk || (user?.role === "developer" &&
+  const canEdit = hasRolePermission(user, "tareas.editar") && (canDesk || (user?.role === "developer" &&
     !!user.usuCod && user.usuCod > 0 &&
-    Number(t?.Usu_Creador ?? tarea?.Usu_Creador) === user.usuCod);
+    Number(t?.Usu_Creador ?? tarea?.Usu_Creador) === user.usuCod));
+  const canDelete = isManager && hasRolePermission(user, "tareas.eliminar");
+  const canAvance = hasRolePermission(user, "tareas.avance");
   const asignadoSinPersona =
     (estadoActual === "Asignado" || estadoActual === "En Proceso") && asignados.length === 0;
   const canViewCapturas = isManager || data?.can_view_capturas === true;
@@ -770,7 +773,7 @@ export function TareaDetalleDialog({
         </div>
 
         <DialogFooter className="shrink-0 gap-2 border-t border-border/60 px-6 py-4 sm:gap-2">
-          {tarea && isManager && (
+          {tarea && canDelete && (
             <Button
               type="button"
               variant="destructive"
@@ -787,7 +790,7 @@ export function TareaDetalleDialog({
           <Button type="button" variant="ghost" onClick={onClose}>
             Cerrar
           </Button>
-          {tarea && isManager && (
+          {tarea && isManager && canEdit && (
             <Button type="button" variant="outline" onClick={() => setBriefOpen(true)}>
               <Sparkles className="size-4" />
               Generar brief
@@ -799,7 +802,7 @@ export function TareaDetalleDialog({
               Editar
             </Button>
           )}
-          {onRegistrarAvance && tarea && abierta && (
+          {canAvance && onRegistrarAvance && tarea && abierta && (
             <Button type="button" variant="success" onClick={() => onRegistrarAvance(tarea)}>
               Registrar avance
             </Button>

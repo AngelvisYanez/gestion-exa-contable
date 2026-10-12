@@ -5,6 +5,11 @@ import { Loader2, RefreshCw, Search, UserMinus, UserPlus } from "lucide-react";
 import Topbar from "@/components/layout/Topbar";
 import { useAuth } from "@/contexts/AuthContext";
 import { roleLabel, type UserRole } from "@/lib/auth/users";
+import {
+  defaultRolePermissions,
+  type RolePermissionKey,
+  type RolePermissions,
+} from "@/lib/auth/role-permissions";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,6 +17,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { PaginationBar } from "@/components/list-controls";
 import { Select } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { usePagination } from "@/hooks/use-pagination";
 import {
   Table,
@@ -34,6 +40,22 @@ type Row = {
 
 const ROLES: UserRole[] = ["developer", "atencion", "manager"];
 
+const PERMISOS: Array<{ modulo: string; accion: string; key?: RolePermissionKey; porRol: Record<UserRole, string> }> = [
+  { modulo: "Tareas", accion: "Ver", key: "tareas.ver", porRol: { developer: "Creadas por mi", atencion: "Todas", manager: "Todas" } },
+  { modulo: "Tareas", accion: "Crear", key: "tareas.crear", porRol: { developer: "Sin asignar", atencion: "Si", manager: "Si" } },
+  { modulo: "Tareas", accion: "Editar contenido", key: "tareas.editar", porRol: { developer: "Solo propias", atencion: "Todas", manager: "Todas" } },
+  { modulo: "Tareas", accion: "Asignar", key: "tareas.asignar", porRol: { developer: "No", atencion: "Si", manager: "Si" } },
+  { modulo: "Tareas", accion: "Eliminar", key: "tareas.eliminar", porRol: { developer: "No", atencion: "No", manager: "Si" } },
+  { modulo: "Tareas", accion: "Estado y avance", key: "tareas.avance", porRol: { developer: "Propias y asignadas", atencion: "Si", manager: "Si" } },
+  { modulo: "Tickets", accion: "Ver", key: "tickets.ver", porRol: { developer: "Asignados", atencion: "Todos", manager: "Todos" } },
+  { modulo: "Tickets", accion: "Crear", key: "tickets.crear", porRol: { developer: "No", atencion: "Si", manager: "Si" } },
+  { modulo: "Tickets", accion: "Asignar", key: "tickets.asignar", porRol: { developer: "No", atencion: "Si", manager: "Si" } },
+  { modulo: "Tickets", accion: "Estado y avance", key: "tickets.avance", porRol: { developer: "Asignados", atencion: "Si", manager: "Si" } },
+  { modulo: "Mis tareas", accion: "Ver asignadas", porRol: { developer: "Si", atencion: "Si", manager: "Si" } },
+  { modulo: "Monitoreo", accion: "Ver", porRol: { developer: "No", atencion: "No", manager: "Si" } },
+  { modulo: "Configuracion", accion: "Administrar", porRol: { developer: "No", atencion: "No", manager: "Si" } },
+];
+
 function roleVariant(rol: string | null) {
   if (rol === "manager") return "info" as const;
   if (rol === "atencion") return "warning" as const;
@@ -44,8 +66,11 @@ export default function UsuariosConfigPage() {
   const { db } = useAuth();
   const [rows, setRows] = useState<Row[]>([]);
   const [q, setQ] = useState("");
+  const [roleFilter, setRoleFilter] = useState<UserRole | "todos">("todos");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<number | null>(null);
+  const [busyPermission, setBusyPermission] = useState("");
+  const [rolePermissions, setRolePermissions] = useState<Record<UserRole, RolePermissions> | null>(null);
   const [error, setError] = useState("");
   const [ok, setOk] = useState("");
   const [rolNuevo, setRolNuevo] = useState<Record<number, UserRole>>({});
@@ -53,11 +78,13 @@ export default function UsuariosConfigPage() {
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
+    setRolePermissions(null);
     try {
       const res = await fetch(`/api/config/usuarios?Ses_Dat_Dis=${encodeURIComponent(db)}`);
       const j = await res.json();
       if (!j.success) throw new Error(j.message || "No se pudo cargar");
       setRows(j.usuarios || []);
+      setRolePermissions(j.rolePermissions || null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error");
     } finally {
@@ -77,9 +104,9 @@ export default function UsuariosConfigPage() {
     );
   }, [rows, q]);
 
-  const enGestion = filtered.filter((r) => r.enPanel);
+  const enGestion = filtered.filter((r) => r.enPanel && (roleFilter === "todos" || r.Pan_Rol === roleFilter));
   const disponibles = filtered.filter((r) => !r.enPanel);
-  const gestionPager = usePagination(enGestion, { initialSize: 10, resetKey: q });
+  const gestionPager = usePagination(enGestion, { initialSize: 10, resetKey: `${q}|${roleFilter}` });
   const empresaPager = usePagination(disponibles, { initialSize: 10, resetKey: q });
 
   const act = async (usuCod: number, action: "add" | "remove" | "role", rol?: UserRole) => {
@@ -109,6 +136,28 @@ export default function UsuariosConfigPage() {
     }
   };
 
+  const changePermission = async (rol: UserRole, permiso: RolePermissionKey, habilitado: boolean) => {
+    const id = `${rol}:${permiso}`;
+    setBusyPermission(id);
+    setError("");
+    setOk("");
+    try {
+      const res = await fetch("/api/config/usuarios", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "permission", rol, permiso, habilitado }),
+      });
+      const j = await res.json();
+      if (!res.ok || !j.success) throw new Error(j.message || "No se pudo guardar el permiso");
+      setRolePermissions(j.rolePermissions);
+      setOk("Permiso actualizado. Los usuarios de ese rol deben volver a iniciar sesion.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error al actualizar el permiso");
+    } finally {
+      setBusyPermission("");
+    }
+  };
+
   return (
     <>
       <Topbar title="Usuarios" subtitle="Administracion" />
@@ -132,6 +181,17 @@ export default function UsuariosConfigPage() {
                 placeholder="Nombre o cedula..."
               />
             </div>
+            <Select
+              aria-label="Filtrar usuarios y permisos por rol"
+              className="w-full sm:w-[190px]"
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value as UserRole | "todos")}
+            >
+              <option value="todos">Todos los roles</option>
+              {ROLES.map((rol) => (
+                <option key={rol} value={rol}>{roleLabel(rol)}</option>
+              ))}
+            </Select>
             <Button type="button" variant="secondary" onClick={() => void load()} disabled={loading}>
               {loading ? <Loader2 className="animate-spin" /> : <RefreshCw />}
               Actualizar
@@ -143,6 +203,63 @@ export default function UsuariosConfigPage() {
 
         {error && <Alert variant="destructive">{error}</Alert>}
         {ok && <Alert variant="success">{ok}</Alert>}
+
+        <Card className="w-full min-w-0 overflow-hidden">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Permisos por rol</CardTitle>
+            <CardDescription>
+              El filtro muestra los usuarios y permisos de cada rol. Puedes restringir los permisos activos;
+              los limites propios de cada rol siguen vigentes. Los usuarios deben volver a iniciar sesion para aplicar cambios.
+            </CardDescription>
+          </CardHeader>
+          <Table className="min-w-[580px]">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Modulo</TableHead>
+                <TableHead>Accion</TableHead>
+                {(roleFilter === "todos" ? ROLES : [roleFilter]).map((rol) => (
+                  <TableHead key={rol}>{roleLabel(rol)}</TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {PERMISOS.map((permiso) => (
+                <TableRow key={`${permiso.modulo}-${permiso.accion}`}>
+                  <TableCell className="font-medium">{permiso.modulo}</TableCell>
+                  <TableCell>{permiso.accion}</TableCell>
+                  {(roleFilter === "todos" ? ROLES : [roleFilter]).map((rol) => {
+                    const available = permiso.key ? defaultRolePermissions(rol)[permiso.key] : false;
+                    const enabled = permiso.key
+                      ? (rolePermissions?.[rol]?.[permiso.key] ?? available)
+                      : permiso.porRol[rol] !== "No";
+                    const viewKey: RolePermissionKey | undefined = permiso.key?.startsWith("tareas.")
+                      ? "tareas.ver"
+                      : permiso.key?.startsWith("tickets.")
+                        ? "tickets.ver"
+                        : undefined;
+                    const requiresView = Boolean(viewKey && permiso.key !== viewKey &&
+                      !(rolePermissions?.[rol]?.[viewKey] ?? defaultRolePermissions(rol)[viewKey]));
+                    return (
+                      <TableCell key={rol}>
+                        <div className="flex items-center gap-2">
+                          {permiso.key && available && (
+                            <Switch
+                              aria-label={`${enabled ? "Desactivar" : "Activar"} ${permiso.accion.toLowerCase()} para ${roleLabel(rol)}`}
+                              checked={enabled && !requiresView}
+                              disabled={busyPermission !== "" || loading || !rolePermissions || requiresView}
+                              onCheckedChange={(checked) => void changePermission(rol, permiso.key!, checked)}
+                            />
+                          )}
+                          <span className="text-xs">{requiresView ? "Requiere Ver" : enabled ? permiso.porRol[rol] : "No"}</span>
+                        </div>
+                      </TableCell>
+                    );
+                  })}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Card>
 
         <Card className="w-full min-w-0 overflow-hidden">
           <CardHeader className="pb-2">

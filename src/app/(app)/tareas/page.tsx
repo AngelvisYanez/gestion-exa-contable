@@ -8,6 +8,7 @@ import type { Tarea } from "@/components/dashboard/types";
 import { PaginationBar, FilterBar, ViewModeToggle, type ListViewMode } from "@/components/list-controls";
 import { EstadoBadge, PrioridadBadge, fmtDate } from "@/components/status-badges";
 import { useAuth } from "@/contexts/AuthContext";
+import { hasRolePermission } from "@/lib/auth/role-permissions";
 import { useNotifications } from "@/contexts/NotificationsContext";
 import { usePagination } from "@/hooks/use-pagination";
 import { Alert } from "@/components/ui/alert";
@@ -46,6 +47,10 @@ export default function TareasPage() {
   const { lastTaskEventAt } = useNotifications();
   const empCod = 96;
   const isDeveloper = user?.role === "developer";
+  const canCreate = hasRolePermission(user, "tareas.crear");
+  const canAssign = hasRolePermission(user, "tareas.asignar");
+  const canEdit = hasRolePermission(user, "tareas.editar");
+  const canAvance = hasRolePermission(user, "tareas.avance");
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -166,7 +171,7 @@ export default function TareasPage() {
           prioridad: formPrio,
           complejidad: formComplejidad,
           fechaFin: formFin || null,
-          ...(!isDeveloper ? { perCodAsignar: formPer ? Number(formPer) : undefined } : {}),
+          ...(canAssign ? { perCodAsignar: formPer ? Number(formPer) : undefined } : {}),
         }),
       });
       const j = await res.json();
@@ -284,18 +289,18 @@ export default function TareasPage() {
             <RefreshCw className={loading ? "animate-spin" : ""} />
             Actualizar
           </Button>
-          <Button
+          {canCreate && <Button
             type="button"
             className="h-9"
             onClick={async () => {
               resetForm();
-              if (!isDeveloper) await loadCols();
+              if (canAssign) await loadCols();
               setFormOpen(true);
             }}
           >
             <Plus />
             Nueva tarea
-          </Button>
+          </Button>}
         </FilterBar>
 
         {error && (
@@ -314,9 +319,9 @@ export default function TareasPage() {
             <KanbanBoard
               tareas={tareas}
               loading={loading}
-              onAvance={openAvance}
+              onAvance={canAvance ? openAvance : undefined}
               onMoveEstado={moveEstado}
-              canMoveEstado={(t, estado) => !isDeveloper || estado !== "Asignado" || t.Asignados.length > 0}
+              canMoveEstado={(t, estado) => canAvance && (!isDeveloper || estado !== "Asignado" || t.Asignados.length > 0)}
               onOpen={openDetalle}
               className="min-h-0 flex-1"
             />
@@ -362,7 +367,7 @@ export default function TareasPage() {
                       <Progress value={Math.min(100, t.Ava_Porcentaje || 0)} className="h-2 flex-1" />
                       <span className="text-xs font-bold tabular-nums">{t.Ava_Porcentaje || 0}%</span>
                     </div>
-                    <div className="mt-3">
+                    {canAvance && <div className="mt-3">
                       <Button
                         type="button"
                         variant="outline"
@@ -375,7 +380,7 @@ export default function TareasPage() {
                       >
                         Registrar avance
                       </Button>
-                    </div>
+                    </div>}
                   </div>
                 ))}
               </div>
@@ -451,7 +456,7 @@ export default function TareasPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="inline-flex flex-nowrap items-center justify-end gap-1.5 whitespace-nowrap">
-                            <Button
+                            {canAvance && <Button
                               type="button"
                               variant="outline"
                               size="sm"
@@ -462,7 +467,7 @@ export default function TareasPage() {
                               }}
                             >
                               Avance
-                            </Button>
+                            </Button>}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -514,8 +519,9 @@ export default function TareasPage() {
             <DialogHeader>
               <DialogTitle>Nueva tarea</DialogTitle>
               <DialogDescription>
-                Crea, indica complejidad y adjunta fotos de contexto.
-                {!isDeveloper && " Opcionalmente asigna a un miembro del equipo."}
+                Crea e indica complejidad.
+                {canEdit && " Tambien puedes adjuntar archivos de contexto."}
+                {canAssign && " Opcionalmente asigna a un miembro del equipo."}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
@@ -574,7 +580,7 @@ export default function TareasPage() {
                   placeholder="Sin fecha limite"
                 />
               </div>
-              {!isDeveloper && <div className="space-y-2">
+              {canAssign && <div className="space-y-2">
                 <Label>Asignar a (equipo)</Label>
                 <Select value={formPer} onChange={(e) => setFormPer(e.target.value)} disabled={formSaving}>
                   <option value="">Sin asignar</option>
@@ -585,7 +591,7 @@ export default function TareasPage() {
                   ))}
                 </Select>
               </div>}
-              <div className="space-y-2">
+              {canEdit && <div className="space-y-2">
                 <Label>Archivos adjuntos (descripcion)</Label>
                 <input
                   ref={fotoRef}
@@ -641,7 +647,7 @@ export default function TareasPage() {
                 <p className="text-[11px] text-muted-foreground">
                   Sin limite de cantidad · {EVIDENCIA_HELP}
                 </p>
-              </div>
+              </div>}
             </div>
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={() => setFormOpen(false)} disabled={formSaving}>

@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSessionFromRequest } from "@/lib/auth/session";
+import { hasRolePermission } from "@/lib/auth/role-permissions";
 import { publishAsignacion, publishEvent } from "@/lib/events";
 import { tasksDbDis } from "@/lib/empresa";
 import {
@@ -44,6 +46,13 @@ export async function POST(req: NextRequest) {
     const action = String(body.action || "");
 
     if (action === "crear_tarea") {
+      const session = await getSessionFromRequest(req);
+      if (!hasRolePermission(session, "tareas.crear")) {
+        return NextResponse.json({ success: false, message: "Tu rol no puede crear tareas." }, { status: 403 });
+      }
+      if (body.perCodAsignar && !hasRolePermission(session, "tareas.asignar")) {
+        return NextResponse.json({ success: false, message: "Tu rol no puede asignar tareas." }, { status: 403 });
+      }
       const perCodAsignar = body.perCodAsignar ? Number(body.perCodAsignar) : undefined;
       const res = await crearTareaDesdeIncidencia(db, {
         incCod: body.Inc_Cod ? Number(body.Inc_Cod) : undefined,

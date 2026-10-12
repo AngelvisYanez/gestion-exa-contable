@@ -22,6 +22,7 @@ import {
 } from "@/components/date-range-filter";
 import { PrioridadBadge } from "@/components/status-badges";
 import { useAuth } from "@/contexts/AuthContext";
+import { hasRolePermission } from "@/lib/auth/role-permissions";
 import { useNotifications } from "@/contexts/NotificationsContext";
 import { usePagination } from "@/hooks/use-pagination";
 import { Alert } from "@/components/ui/alert";
@@ -150,7 +151,9 @@ function fmtWhen(v: string) {
 export default function TicketsPage() {
   const { db, user, loading: authLoading } = useAuth();
   const isDev = user?.role === "developer";
-  const puedeAsignar = user?.role === "manager" || user?.role === "atencion";
+  const puedeAsignar = hasRolePermission(user, "tickets.asignar");
+  const puedeCrear = hasRolePermission(user, "tickets.crear");
+  const puedeAvanzar = hasRolePermission(user, "tickets.avance");
   const { lastTaskEventAt } = useNotifications();
 
   const [loading, setLoading] = useState(true);
@@ -636,7 +639,7 @@ export default function TicketsPage() {
               <RefreshCw className={loading ? "animate-spin" : ""} />
               Actualizar
             </Button>
-            {puedeAsignar && (
+            {puedeCrear && (
               <Button
                 type="button"
                 className="h-9"
@@ -714,8 +717,9 @@ export default function TicketsPage() {
               <KanbanBoard
                 tareas={kanbanItems}
                 loading={loading}
-                onAvance={(t) => setAvanceTarea(t)}
+                onAvance={puedeAvanzar ? (t) => setAvanceTarea(t) : undefined}
                 onMoveEstado={moverKanban}
+                canMoveEstado={() => puedeAvanzar}
                 onOpen={(t) => {
                   setDetalleCod(t.Tic_Cod || t.Tar_Cod);
                   setDetalleDb(t.Db_Origen || null);
@@ -791,7 +795,7 @@ export default function TicketsPage() {
                           {t.Asignado_Usu_Cod ? "Reasignar" : "Asignar"}
                         </Button>
                       )}
-                      {t.Tic_Estado === "Asignado" && (
+                      {puedeAvanzar && t.Tic_Estado === "Asignado" && (
                         <Button
                           type="button"
                           size="sm"
@@ -804,7 +808,7 @@ export default function TicketsPage() {
                           En proceso
                         </Button>
                       )}
-                      {t.Tic_Estado !== "Cerrado" && t.Asignado_Usu_Cod && (
+                      {puedeAvanzar && t.Tic_Estado !== "Cerrado" && t.Asignado_Usu_Cod && (
                         <Button
                           type="button"
                           size="sm"
@@ -919,7 +923,7 @@ export default function TicketsPage() {
                                 {t.Asignado_Usu_Cod ? "Reasignar" : "Asignar"}
                               </Button>
                             )}
-                            {t.Tic_Estado === "Asignado" && (
+                            {puedeAvanzar && t.Tic_Estado === "Asignado" && (
                               <Button
                                 type="button"
                                 size="sm"
@@ -933,7 +937,7 @@ export default function TicketsPage() {
                                 En proceso
                               </Button>
                             )}
-                            {t.Tic_Estado !== "Cerrado" && t.Asignado_Usu_Cod && (
+                            {puedeAvanzar && t.Tic_Estado !== "Cerrado" && t.Asignado_Usu_Cod && (
                               <Button
                                 type="button"
                                 size="sm"
@@ -986,7 +990,7 @@ export default function TicketsPage() {
         <TicketDetalleDialog
           ticket={detalleTicket ? ticketAsTarea(detalleTicket) : null}
           onClose={() => setDetalleCod(null)}
-          onRegistrarAvance={(t) => setAvanceTarea(t)}
+          onRegistrarAvance={puedeAvanzar ? (t) => setAvanceTarea(t) : undefined}
         />
         <AvanceDialog
           tarea={avanceTarea}

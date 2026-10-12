@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isUploadedFile } from "@/lib/api";
 import { getSessionFromRequest } from "@/lib/auth/session";
+import { hasRolePermission } from "@/lib/auth/role-permissions";
 import { resolvePerCod } from "@/lib/auth/resolvePer";
 import { canAssignWork, canSeeOversight, matchTeamMember } from "@/lib/auth/users";
 import { saveEvidencia, toPublicCaptureUrl } from "@/lib/captures";
@@ -30,6 +31,14 @@ export async function POST(req: NextRequest) {
         { success: false, message: "Tar_Cod o Tic_Cod requerido" },
         { status: 400 }
       );
+    }
+    if (tarCod > 0 && !hasRolePermission(session, "tareas.editar") &&
+        !hasRolePermission(session, "tareas.avance")) {
+      return NextResponse.json({ success: false, message: "Tu rol no puede adjuntar archivos a tareas." }, { status: 403 });
+    }
+    if (ticCod > 0 && !hasRolePermission(session, "tickets.crear") &&
+        !hasRolePermission(session, "tickets.avance")) {
+      return NextResponse.json({ success: false, message: "Tu rol no puede adjuntar archivos a tickets." }, { status: 403 });
     }
 
     const db = tasksDbDis();

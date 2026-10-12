@@ -2,6 +2,7 @@
 
 import { createContext, use, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import type { RolePermissions } from "@/lib/auth/role-permissions";
 
 export type AppUser = {
   username: string;
@@ -11,6 +12,7 @@ export type AppUser = {
   projects: string[];
   perCod: number;
   usuCod?: number;
+  permissions?: RolePermissions;
 };
 
 export type ProjectInfo = {

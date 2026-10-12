@@ -2,6 +2,8 @@ import { NextRequest } from "next/server";
 import { assertApiKey, isUploadedFile, jsonRes, pick, readBody } from "@/lib/api";
 import { authenticateByCedula } from "@/lib/auth/exaLogin";
 import { canAssignWork } from "@/lib/auth/users";
+import { hasRolePermission, type RolePermissionKey } from "@/lib/auth/role-permissions";
+import { loadRolePermissions } from "@/lib/auth/role-permissions-db";
 import { saveEvidencia, saveScreenshot, toPublicCaptureUrl } from "@/lib/captures";
 import { altDatabase, getPrisma, telemetriaMirrorEnabled } from "@/lib/db";
 import { consumeDevNotifications, publishAsignacion, publishEvent } from "@/lib/events";
@@ -43,6 +45,17 @@ import {
   ticketPerteneceA,
   updateTicketEstado,
 } from "@/lib/tickets";
+
+async function monitorHasPermission(
+  prisma: Parameters<typeof resolvePanelRol>[0],
+  perCod: number,
+  key: RolePermissionKey
+) {
+  const usuCod = await resolveUsuCodFromPer(prisma, perCod);
+  const role = (await resolvePanelRol(prisma, perCod, usuCod || undefined)) || "developer";
+  const permissions = await loadRolePermissions(tasksDbDis(), role);
+  return hasRolePermission({ role, permissions }, key);
+}
 // Auto-purga NO en hot path: satura MySQL. Ejecutar desde Config → ExaMonitor.
 
 export const runtime = "nodejs";
@@ -436,6 +449,9 @@ async function handle(req: NextRequest) {
     if (accion === "registrar_avance") {
       const perCod = parseInt(pick(form, json, req, "Per_Cod"), 10) || 0;
       if (perCod <= 0) return jsonRes("error", "Codigo de desarrollador invalido.");
+      if (!(await monitorHasPermission(prisma, perCod, "tareas.avance"))) {
+        return jsonRes("error", "Tu rol no puede registrar avances en tareas.");
+      }
 
       const tarCod = parseInt(pick(form, json, req, "Tar_Cod"), 10) || 0;
       if (tarCod <= 0) return jsonRes("error", "Tar_Cod invalido.");
@@ -509,6 +525,9 @@ async function handle(req: NextRequest) {
     if (accion === "registrar_avance_ticket") {
       const perCod = parseInt(pick(form, json, req, "Per_Cod"), 10) || 0;
       if (perCod <= 0) return jsonRes("error", "Codigo de desarrollador invalido.");
+      if (!(await monitorHasPermission(prisma, perCod, "tickets.avance"))) {
+        return jsonRes("error", "Tu rol no puede registrar avances en tickets.");
+      }
 
       const ticCod =
         parseInt(pick(form, json, req, "Tic_Cod"), 10) ||
@@ -581,6 +600,9 @@ async function handle(req: NextRequest) {
     if (accion === "cambiar_estado_ticket") {
       const perCod = parseInt(pick(form, json, req, "Per_Cod"), 10) || 0;
       if (perCod <= 0) return jsonRes("error", "Codigo de desarrollador invalido.");
+      if (!(await monitorHasPermission(prisma, perCod, "tickets.avance"))) {
+        return jsonRes("error", "Tu rol no puede cambiar el estado de tickets.");
+      }
 
       const ticCod =
         parseInt(pick(form, json, req, "Tic_Cod"), 10) ||
@@ -652,7 +674,7 @@ async function handle(req: NextRequest) {
 
       const usuActor = await resolveUsuCodFromPer(prisma, perCod);
       const rol = (await resolvePanelRol(prisma, perCod, usuActor || undefined)) || "developer";
-      if (!canAssignWork(rol)) {
+      if (!canAssignWork(rol) || !(await monitorHasPermission(prisma, perCod, "tickets.asignar"))) {
         return jsonRes("error", "Solo el encargado o atencion al cliente pueden asignar tickets desde ExaMonitor.");
       }
 
@@ -733,7 +755,7 @@ async function handle(req: NextRequest) {
 
       const usuActor = await resolveUsuCodFromPer(prisma, perCod);
       const rol = (await resolvePanelRol(prisma, perCod, usuActor || undefined)) || "developer";
-      if (!canAssignWork(rol)) {
+      if (!canAssignWork(rol) || !(await monitorHasPermission(prisma, perCod, "tareas.asignar"))) {
         return jsonRes("error", "Solo el encargado o atencion al cliente pueden asignar tareas desde ExaMonitor.");
       }
 
@@ -811,6 +833,9 @@ async function handle(req: NextRequest) {
       const tarCod = parseInt(pick(form, json, req, "Tar_Cod"), 10) || 0;
       const ticCod = parseInt(pick(form, json, req, "Tic_Cod"), 10) || 0;
       if (!tarCod && !ticCod) return jsonRes("error", "Tar_Cod o Tic_Cod requerido.");
+      if (!(await monitorHasPermission(prisma, perCod, ticCod > 0 ? "tickets.avance" : "tareas.avance"))) {
+        return jsonRes("error", "Tu rol no puede adjuntar evidencias a ese trabajo.");
+      }
 
       const usuCod = await resolveUsuCodFromPer(prisma, perCod);
       const aseCodes = await resolveUsuCodesFromPer(prisma, perCod);

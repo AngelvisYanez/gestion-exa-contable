@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { useAuth } from "@/contexts/AuthContext";
+import { hasRolePermission } from "@/lib/auth/role-permissions";
 import type { TareaDetalle } from "@/lib/tareas";
 import {
   EVIDENCIA_ACCEPT,
@@ -46,6 +47,8 @@ type Props = {
 export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, onSaved }: Props) {
   const { db, user } = useAuth();
   const isDeveloper = user?.role === "developer";
+  const canAssign = hasRolePermission(user, "tareas.asignar");
+  const canAvance = hasRolePermission(user, "tareas.avance");
   const tarCod = tarea?.Tar_Cod ?? null;
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -77,7 +80,7 @@ export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, on
     setNuevasFotos([]);
     Promise.all([
       fetch(detailUrl(tarCod)).then((r) => r.json()),
-      isDeveloper ? Promise.resolve({ colaboradores: [] }) : fetch(
+      !canAssign ? Promise.resolve({ colaboradores: [] }) : fetch(
         `/api/devs?view=colaboradores&asignables=1&Ses_Dat_Dis=${encodeURIComponent(db || "")}`
       ).then((r) => r.json()),
     ])
@@ -108,7 +111,7 @@ export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, on
       cancel = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, tarCod, db, isDeveloper]);
+  }, [open, tarCod, db, canAssign]);
 
   const addFotos = (list: FileList | null) => {
     if (!list) return;
@@ -169,9 +172,9 @@ export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, on
           prioridad,
           complejidad,
           fechaFin: fechaFin || null,
-          estado,
+          ...(canAvance ? { estado } : {}),
           adjuntos,
-          ...(!isDeveloper ? { perCodAsignar: perCod ? Number(perCod) : "" } : {}),
+          ...(canAssign ? { perCodAsignar: perCod ? Number(perCod) : "" } : {}),
         }),
       });
       const j = await res.json();
@@ -255,7 +258,7 @@ export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, on
                   placeholder="Sin fecha limite"
                 />
               </div>
-              <div className="space-y-2">
+              {canAvance && <div className="space-y-2">
                 <Label>Estado</Label>
                 <Select value={estado} onChange={(e) => setEstado(e.target.value)} disabled={saving}>
                   <option>Pendiente</option>
@@ -263,10 +266,10 @@ export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, on
                   <option>En Proceso</option>
                   <option>Finalizada</option>
                 </Select>
-              </div>
+              </div>}
             </div>
 
-            {!isDeveloper && <div className="space-y-2">
+            {canAssign && <div className="space-y-2">
               <Label>Asignado a</Label>
               <Select value={perCod} onChange={(e) => setPerCod(e.target.value)} disabled={saving}>
                 <option value="">Sin asignar</option>

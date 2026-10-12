@@ -44,6 +44,7 @@ export async function GET() {
       empCod: session.empCod || tasksEmpCod(),
       dbDis: tasksDbDis(session.dbDis),
       teamName: matchTeamMember(session.name)?.name || session.name,
+      permissions: session.permissions,
     });
   }
 

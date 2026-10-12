@@ -26,6 +26,7 @@ import { ReporteDialog } from "@/components/tareas/reporte-dialog";
 import { TareaDetalleDialog } from "@/components/tareas/tarea-detalle-dialog";
 import { TicketDetalleDialog } from "@/components/tareas/ticket-detalle-dialog";
 import { useAuth } from "@/contexts/AuthContext";
+import { hasRolePermission } from "@/lib/auth/role-permissions";
 import { useNotifications } from "@/contexts/NotificationsContext";
 import { usePagination } from "@/hooks/use-pagination";
 import { Alert } from "@/components/ui/alert";
@@ -99,6 +100,9 @@ function esTicket(t: Tarea) {
 
 export default function MisTareasPage() {
   const { user } = useAuth();
+  const canAdvanceTask = hasRolePermission(user, "tareas.avance");
+  const canAdvanceTicket = hasRolePermission(user, "tickets.avance");
+  const canAdvanceItem = (t: Tarea) => esTicket(t) ? canAdvanceTicket : canAdvanceTask;
   const { lastTaskEventAt } = useNotifications();
   const [tareas, setTareas] = useState<Tarea[]>([]);
   const [kpis, setKpis] = useState<Kpis | null>(null);
@@ -442,7 +446,9 @@ export default function MisTareasPage() {
               tareas={visibles}
               loading={loading}
               onAvance={(t) => setAvanceKey(workItemKey(t))}
+              canRegisterAvance={canAdvanceItem}
               onMoveEstado={moveEstado}
+              canMoveEstado={(t) => canAdvanceItem(t)}
               onOpen={(t) => setDetalleKey(workItemKey(t))}
             />
           ) : viewMode === "grid" ? (
@@ -504,7 +510,7 @@ export default function MisTareasPage() {
                         </div>
                       )}
                       <div className="mt-3 flex flex-wrap gap-2">
-                        {!ticket && tareaAbierta(t) && (
+                        {!ticket && canAdvanceTask && tareaAbierta(t) && (
                           <Button
                             type="button"
                             variant="success"
@@ -517,7 +523,7 @@ export default function MisTareasPage() {
                             Avance
                           </Button>
                         )}
-                        {ticket && t.Tar_Estado !== "Finalizada" && (
+                        {ticket && canAdvanceTicket && t.Tar_Estado !== "Finalizada" && (
                           <>
                             {t.Tar_Estado !== "En Proceso" && (
                               <Button
@@ -672,7 +678,7 @@ export default function MisTareasPage() {
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="inline-flex flex-nowrap items-center justify-end gap-1.5 whitespace-nowrap">
-                              {!ticket && tareaAbierta(t) && (
+                              {!ticket && canAdvanceTask && tareaAbierta(t) && (
                                 <Button
                                   type="button"
                                   variant="success"
@@ -686,7 +692,7 @@ export default function MisTareasPage() {
                                   Avance
                                 </Button>
                               )}
-                              {ticket && t.Tar_Estado !== "Finalizada" && (
+                              {ticket && canAdvanceTicket && t.Tar_Estado !== "Finalizada" && (
                                 <>
                                   {t.Tar_Estado !== "En Proceso" && (
                                     <Button
@@ -750,7 +756,7 @@ export default function MisTareasPage() {
           tarea={detalleTarea}
           detailUrl={(cod) => `/api/mis-tareas?project=exa&detalle=${cod}`}
           onClose={() => setDetalleKey(null)}
-          onRegistrarAvance={(t) => setAvanceKey(workItemKey(t))}
+          onRegistrarAvance={canAdvanceTask ? (t) => setAvanceKey(workItemKey(t)) : undefined}
           editExtraBody={{ Ses_Dat_Dis: "exa" }}
           onSaved={async () => {
             await loadTareas("exa");
@@ -762,7 +768,7 @@ export default function MisTareasPage() {
         <TicketDetalleDialog
           ticket={detalleTicket}
           onClose={() => setDetalleKey(null)}
-          onRegistrarAvance={(t) => setAvanceKey(workItemKey(t))}
+          onRegistrarAvance={canAdvanceTicket ? (t) => setAvanceKey(workItemKey(t)) : undefined}
         />
 
         <AvanceDialog

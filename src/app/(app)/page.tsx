@@ -27,6 +27,7 @@ import { DateRangeFilter, diaDesdePreset, type DateRangeValue } from "@/componen
 import { hoyFecha } from "@/lib/timezone";
 import { DeveloperFilter } from "@/components/developer-filter";
 import { useAuth } from "@/contexts/AuthContext";
+import { hasRolePermission } from "@/lib/auth/role-permissions";
 import { useNotifications } from "@/contexts/NotificationsContext";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -184,26 +185,28 @@ export default function HomePage() {
         <Topbar title="Atencion al cliente" subtitle={user?.name || "Asignacion"} />
         <main className="mx-auto w-full min-w-0 max-w-3xl animate-fade-in space-y-4 px-4 py-6 sm:px-6">
           <p className="text-sm text-brand-gray-600">
-            Puedes crear y asignar tareas y tickets. El monitoreo, las capturas y la configuracion
+            Accede a los modulos habilitados para tu rol. El monitoreo, las capturas y la configuracion
             quedan reservados al encargado.
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
+            {hasRolePermission(user, "tareas.ver") &&
             <Link
               href="/tareas"
               className="rounded-xl border border-brand-gray-200 bg-white p-4 transition hover:border-brand-red/40"
             >
               <ClipboardList className="mb-2 size-5 text-brand-red" />
               <p className="font-bold text-brand-gray-900">Tareas</p>
-              <p className="text-xs text-brand-gray-500">Crear y asignar al equipo</p>
-            </Link>
+              <p className="text-xs text-brand-gray-500">Gestion de tareas</p>
+            </Link>}
+            {hasRolePermission(user, "tickets.ver") &&
             <Link
               href="/tickets"
               className="rounded-xl border border-brand-gray-200 bg-white p-4 transition hover:border-brand-red/40"
             >
               <Ticket className="mb-2 size-5 text-brand-red" />
               <p className="font-bold text-brand-gray-900">Tickets</p>
-              <p className="text-xs text-brand-gray-500">Bandeja y asignacion</p>
-            </Link>
+              <p className="text-xs text-brand-gray-500">Bandeja de tickets</p>
+            </Link>}
           </div>
         </main>
       </>

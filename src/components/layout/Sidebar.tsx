@@ -20,6 +20,7 @@ import {
   Users,
 } from "lucide-react";
 import { type UserRole } from "@/lib/auth/users";
+import { hasRolePermission, type RolePermissionKey, type RolePermissions } from "@/lib/auth/role-permissions";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSidebar } from "@/contexts/SidebarContext";
 
@@ -27,6 +28,7 @@ type NavLeaf = {
   href: string;
   label: string;
   roles?: UserRole[];
+  permission?: RolePermissionKey;
   icon: React.ReactNode;
 };
 
@@ -48,11 +50,13 @@ const navGroups: NavGroup[] = [
         href: "/tareas",
         label: "Tareas",
         roles: ["manager", "atencion", "developer"],
+        permission: "tareas.ver",
         icon: <ClipboardList className="w-[17px] h-[17px]" strokeWidth={1.8} />,
       },
       {
         href: "/tickets",
         label: "Tickets",
+        permission: "tickets.ver",
         icon: <Ticket className="w-[17px] h-[17px]" strokeWidth={1.8} />,
       },
       {
@@ -110,9 +114,10 @@ const navGroups: NavGroup[] = [
   },
 ];
 
-function isAllowed(role: string | undefined, item: NavLeaf) {
-  if (!item.roles) return true;
-  return !!role && item.roles.includes(role as UserRole);
+function isAllowed(user: { role: UserRole; permissions?: RolePermissions } | null, item: NavLeaf) {
+  if (!user) return false;
+  if (item.roles && !item.roles.includes(user.role)) return false;
+  return !item.permission || hasRolePermission(user, item.permission);
 }
 
 function isActive(pathname: string | null, href: string) {
@@ -155,7 +160,7 @@ export default function Sidebar() {
   const groups = navGroups
     .map((g) => ({
       ...g,
-      items: g.items.filter((item) => isAllowed(user?.role, item)),
+      items: g.items.filter((item) => isAllowed(user, item)),
     }))
     .filter((g) => g.items.length > 0);
 

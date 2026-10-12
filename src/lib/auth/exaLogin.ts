@@ -4,6 +4,8 @@ import { EMPRESA_TAREAS, tasksDbDis, tasksEmpCod } from "@/lib/empresa";
 import { findPanelActivo, setPanelUsuario } from "@/lib/panel-usuarios";
 import { ensurePersonalForEmp, resolvePerCod } from "./resolvePer";
 import { matchTeamMember, PROJECTS, type UserRole } from "./users";
+import { loadRolePermissions } from "./role-permissions-db";
+import type { RolePermissions } from "./role-permissions";
 
 export type ExaAuthUser = {
   username: string;
@@ -17,6 +19,7 @@ export type ExaAuthUser = {
   empCod: number;
   dbDis: string;
   teamName: string;
+  permissions?: RolePermissions;
 };
 
 function md5(text: string): string {
@@ -126,6 +129,7 @@ export async function authenticateByCedula(
       }
 
       const role: UserRole = forcedManager ? "manager" : panel.rol;
+      const permissions = await loadRolePermissions(tasksDbDis(), role);
       const team = matchTeamMember(fullName || panel.nombre);
       let perCod =
         panel.perCod > 0
@@ -174,6 +178,7 @@ export async function authenticateByCedula(
           empCod: empCodFixed,
           dbDis,
           teamName: panel.nombre || fullName,
+          permissions,
         },
       };
     } catch (err) {

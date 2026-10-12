@@ -100,7 +100,8 @@ function resolveColumnId(
 type Props = {
   tareas: Tarea[];
   loading?: boolean;
-  onAvance: (t: Tarea) => void;
+  onAvance?: (t: Tarea) => void;
+  canRegisterAvance?: (t: Tarea) => boolean;
   onMoveEstado: (t: Tarea, estado: KanbanEstado) => Promise<void> | void;
   canMoveEstado?: (t: Tarea, estado: KanbanEstado) => boolean;
   onOpen?: (t: Tarea) => void;
@@ -113,7 +114,8 @@ type CardBodyProps = {
   ghost?: boolean;
   overlay?: boolean;
   dragHandleProps?: ButtonHTMLAttributes<HTMLButtonElement>;
-  onAvance: (t: Tarea) => void;
+  onAvance?: (t: Tarea) => void;
+  canRegisterAvance?: (t: Tarea) => boolean;
   onMoveEstado: (t: Tarea, estado: KanbanEstado) => Promise<void> | void;
   onOpen?: (t: Tarea) => void;
   onSelectEstado?: (t: Tarea, estado: KanbanEstado) => void;
@@ -127,6 +129,7 @@ function KanbanCardBody({
   overlay,
   dragHandleProps,
   onAvance,
+  canRegisterAvance,
   onOpen,
   onSelectEstado,
   canMoveEstado,
@@ -245,7 +248,7 @@ function KanbanCardBody({
       </div>
 
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-        {estadoActual !== "Finalizada" ? (
+        {estadoActual !== "Finalizada" ? (onAvance && (!canRegisterAvance || canRegisterAvance(t)) &&
           <button
             type="button"
             className="min-h-8 text-[11px] font-bold text-sky-700 hover:underline sm:min-h-0"
@@ -310,6 +313,7 @@ function KanbanCard({
   busy,
   ghost,
   onAvance,
+  canRegisterAvance,
   onMoveEstado,
   onOpen,
   onSelectEstado,
@@ -318,7 +322,8 @@ function KanbanCard({
   tarea: Tarea;
   busy: boolean;
   ghost?: boolean;
-  onAvance: (t: Tarea) => void;
+  onAvance?: (t: Tarea) => void;
+  canRegisterAvance?: (t: Tarea) => boolean;
   onMoveEstado: (t: Tarea, estado: KanbanEstado) => Promise<void> | void;
   onOpen?: (t: Tarea) => void;
   onSelectEstado: (t: Tarea, estado: KanbanEstado) => void;
@@ -340,6 +345,7 @@ function KanbanCard({
         ghost={ghost || isDragging}
         dragHandleProps={{ ...listeners, ...attributes }}
         onAvance={onAvance}
+        canRegisterAvance={canRegisterAvance}
         onMoveEstado={onMoveEstado}
         onOpen={onOpen}
         onSelectEstado={onSelectEstado}
@@ -357,6 +363,7 @@ function KanbanColumn({
   moving,
   activeKey,
   onAvance,
+  canRegisterAvance,
   onMoveEstado,
   onOpen,
   onSelectEstado,
@@ -368,7 +375,8 @@ function KanbanColumn({
   isOver: boolean;
   moving: string | null;
   activeKey: string | null;
-  onAvance: (t: Tarea) => void;
+  onAvance?: (t: Tarea) => void;
+  canRegisterAvance?: (t: Tarea) => boolean;
   onMoveEstado: (t: Tarea, estado: KanbanEstado) => Promise<void> | void;
   onOpen?: (t: Tarea) => void;
   onSelectEstado: (t: Tarea, estado: KanbanEstado) => void;
@@ -414,6 +422,7 @@ function KanbanColumn({
               busy={moving === key}
               ghost={activeKey === key}
               onAvance={onAvance}
+              canRegisterAvance={canRegisterAvance}
               onMoveEstado={onMoveEstado}
               onOpen={onOpen}
               onSelectEstado={onSelectEstado}
@@ -432,7 +441,7 @@ function KanbanColumn({
   );
 }
 
-export function KanbanBoard({ tareas, loading, onAvance, onMoveEstado, canMoveEstado, onOpen, className }: Props) {
+export function KanbanBoard({ tareas, loading, onAvance, canRegisterAvance, onMoveEstado, canMoveEstado, onOpen, className }: Props) {
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [overCol, setOverCol] = useState<string | null>(null);
   const [moving, setMoving] = useState<string | null>(null);
@@ -531,6 +540,7 @@ export function KanbanBoard({ tareas, loading, onAvance, onMoveEstado, canMoveEs
             moving={moving}
             activeKey={activeKey}
             onAvance={onAvance}
+            canRegisterAvance={canRegisterAvance}
             onMoveEstado={onMoveEstado}
             onOpen={onOpen}
             onSelectEstado={(t, estado) => void applyMove(t, estado)}
@@ -546,6 +556,7 @@ export function KanbanBoard({ tareas, loading, onAvance, onMoveEstado, canMoveEs
               tarea={activeTarea}
               overlay
               onAvance={onAvance}
+              canRegisterAvance={canRegisterAvance}
               onMoveEstado={onMoveEstado}
             />
           </div>

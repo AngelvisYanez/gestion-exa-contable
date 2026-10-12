@@ -7,6 +7,7 @@ import { listOfsercontCatalogo } from "@/lib/brief/catalog";
 import { generateTareaBrief } from "@/lib/brief/generate";
 import { tasksDbDis, tasksEmpCod } from "@/lib/empresa";
 import { developerUpdatePermission } from "@/lib/tarea-permissions";
+import { hasRolePermission } from "@/lib/auth/role-permissions";
 import {
   AsignacionInvalidaError,
   attachEvidenciasTarea,
@@ -40,6 +41,9 @@ export async function GET(req: NextRequest) {
   try {
     const session = await getSessionFromRequest(req);
     if (!session) return NextResponse.json({ success: false, message: "No autenticado" }, { status: 401 });
+    if (!hasRolePermission(session, "tareas.ver")) {
+      return NextResponse.json({ success: false, message: "Tu rol no tiene acceso a tareas." }, { status: 403 });
+    }
     if (session.role === "developer" && session.usuCod <= 0) {
       return NextResponse.json({ success: false, message: "Usuario sin identificador" }, { status: 403 });
     }
@@ -110,11 +114,21 @@ export async function POST(req: NextRequest) {
     const empCod = tasksEmpCod(body.empCod ?? body.Emp_Cod);
     const session = await getSessionFromRequest(req);
     if (!session) return NextResponse.json({ success: false, message: "No autenticado" }, { status: 401 });
+    if (!hasRolePermission(session, "tareas.ver")) {
+      return NextResponse.json({ success: false, message: "Tu rol no tiene acceso a tareas." }, { status: 403 });
+    }
     if (session.role === "developer" && session.usuCod <= 0) {
       return NextResponse.json({ success: false, message: "Usuario sin identificador" }, { status: 403 });
     }
 
     if (action === "create") {
+      if (!hasRolePermission(session, "tareas.crear")) {
+        return NextResponse.json({ success: false, message: "Tu rol no puede crear tareas." }, { status: 403 });
+      }
+      if ((body.perCodAsignar !== undefined || body.asignados !== undefined || body.Per_Cod !== undefined) &&
+          !hasRolePermission(session, "tareas.asignar")) {
+        return NextResponse.json({ success: false, message: "Tu rol no puede asignar tareas." }, { status: 403 });
+      }
       if (session.role === "developer" &&
           (body.perCodAsignar !== undefined || body.asignados !== undefined || body.Per_Cod !== undefined)) {
         return NextResponse.json({ success: false, message: "No puedes asignar tareas." }, { status: 403 });
@@ -165,6 +179,9 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "attach_evidencias") {
+      if (!hasRolePermission(session, "tareas.editar")) {
+        return NextResponse.json({ success: false, message: "Tu rol no puede editar tareas." }, { status: 403 });
+      }
       const tarCod = Number(body.Tar_Cod || 0);
       const rutas = Array.isArray(body.adjuntos) ? body.adjuntos.map(String) : [];
       if (!tarCod) return NextResponse.json({ success: false, message: "Tar_Cod requerido" }, { status: 400 });
@@ -207,6 +224,15 @@ export async function POST(req: NextRequest) {
         body.perCodAsignar !== undefined ||
         body.asignados !== undefined ||
         body.Per_Cod !== undefined;
+      if (touchesContent && !hasRolePermission(session, "tareas.editar")) {
+        return NextResponse.json({ success: false, message: "Tu rol no puede editar tareas." }, { status: 403 });
+      }
+      if (patch.estado !== undefined && !hasRolePermission(session, "tareas.avance")) {
+        return NextResponse.json({ success: false, message: "Tu rol no puede cambiar el estado." }, { status: 403 });
+      }
+      if (wantsAssign && !hasRolePermission(session, "tareas.asignar")) {
+        return NextResponse.json({ success: false, message: "Tu rol no puede asignar tareas." }, { status: 403 });
+      }
       if (wantsAssign && !canAssignWork(session.role)) {
         return NextResponse.json(
           { success: false, message: "Solo encargado o atencion al cliente pueden asignar la tarea." },
@@ -287,6 +313,9 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "delete") {
+      if (!hasRolePermission(session, "tareas.eliminar")) {
+        return NextResponse.json({ success: false, message: "Tu rol no puede eliminar tareas." }, { status: 403 });
+      }
       if (!canSeeOversight(session?.role)) {
         return NextResponse.json(
           { success: false, message: "Solo el encargado puede borrar tareas." },
@@ -318,6 +347,9 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "avance") {
+      if (!hasRolePermission(session, "tareas.avance")) {
+        return NextResponse.json({ success: false, message: "Tu rol no puede registrar avances." }, { status: 403 });
+      }
       const tarCod = Number(body.Tar_Cod || 0);
       const porcentaje = Number(body.porcentaje ?? 0);
       if (!tarCod) return NextResponse.json({ success: false, message: "Tar_Cod requerido" }, { status: 400 });
@@ -349,6 +381,9 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "generate_brief") {
+      if (!hasRolePermission(session, "tareas.editar")) {
+        return NextResponse.json({ success: false, message: "Tu rol no puede editar tareas." }, { status: 403 });
+      }
       if (!canSeeOversight(session?.role)) {
         return NextResponse.json(
           { success: false, message: "Solo el encargado puede generar el brief." },

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { canAssignWork, canSeeOversight } from "@/lib/auth/users";
+import { hasRolePermission } from "@/lib/auth/role-permissions";
 import { publishAsignacion, publishEvent } from "@/lib/events";
 import { resolveTicketDatabaseIds, sanitizeDbDis } from "@/lib/db";
 import { ticketScopeForSession } from "@/lib/ticket-scope";
@@ -28,6 +29,11 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
+    const actor = await getSessionFromRequest(req);
+    if (!actor) return NextResponse.json({ success: false, message: "No autenticado" }, { status: 401 });
+    if (!hasRolePermission(actor, "tickets.ver")) {
+      return NextResponse.json({ success: false, message: "Tu rol no tiene acceso a tickets." }, { status: 403 });
+    }
     const sp = req.nextUrl.searchParams;
     const detalleCod = parseInt(sp.get("detalle") || "0", 10);
     if (detalleCod > 0) {
@@ -177,6 +183,16 @@ export async function POST(req: NextRequest) {
     const db = sanitizeDbDis(body.Ses_Dat_Dis);
     const action = String(body.action || "create");
     const session = await getSessionFromRequest(req);
+
+    if (!session) return NextResponse.json({ success: false, message: "No autenticado" }, { status: 401 });
+    const needed = action === "create" || action === "attach_evidencias"
+      ? "tickets.crear"
+      : action === "assign"
+        ? "tickets.asignar"
+        : "tickets.avance";
+    if (!hasRolePermission(session, needed)) {
+      return NextResponse.json({ success: false, message: "Tu rol no tiene permiso para esa accion." }, { status: 403 });
+    }
 
     if (!canAssignWork(session?.role)) {
       const devOk = session?.role === "developer" && (action === "estado" || action === "avance");

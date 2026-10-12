@@ -16,6 +16,7 @@ import Topbar from "@/components/layout/Topbar";
 import { FilterBar } from "@/components/list-controls";
 import { PrioridadBadge } from "@/components/status-badges";
 import { useAuth } from "@/contexts/AuthContext";
+import { hasRolePermission } from "@/lib/auth/role-permissions";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -93,6 +94,8 @@ function prioridadSugerida(nivel: string) {
 
 export default function IncidenciasPage() {
   const { db, user } = useAuth();
+  const canCreateTask = hasRolePermission(user, "tareas.crear");
+  const canAssignTask = hasRolePermission(user, "tareas.asignar");
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -166,7 +169,7 @@ export default function IncidenciasPage() {
           action: "crear_tarea",
           Ses_Dat_Dis: db,
           Inc_Cod: taskOpen.Inc_Cod,
-          perCodAsignar: perCod ? Number(perCod) : undefined,
+          perCodAsignar: canAssignTask && perCod ? Number(perCod) : undefined,
           usuCreador: user?.usuCod || undefined,
           prioridad: prio,
         }),
@@ -376,7 +379,7 @@ export default function IncidenciasPage() {
                     <Button type="button" size="sm" variant="outline" onClick={() => setDetail(inc)}>
                       Detalle
                     </Button>
-                    {!inc.Tar_Cod &&
+                    {canCreateTask && !inc.Tar_Cod &&
                       inc.Inc_Estado !== "Ignorada" &&
                       inc.Inc_Estado !== "Resuelta" && (
                         <Button type="button" size="sm" onClick={() => openTask(inc)}>
@@ -450,7 +453,7 @@ export default function IncidenciasPage() {
                   <option value="Baja">Baja</option>
                 </Select>
               </div>
-              <div className="space-y-2">
+              {canAssignTask && <div className="space-y-2">
                 <Label>Asignar a (opcional)</Label>
                 <Select value={perCod} onChange={(e) => setPerCod(e.target.value)}>
                   <option value="">Sin asignar — queda Pendiente</option>
@@ -461,7 +464,7 @@ export default function IncidenciasPage() {
                     </option>
                   ))}
                 </Select>
-              </div>
+              </div>}
               {taskError && <Alert variant="destructive">{taskError}</Alert>}
               {taskOk && <Alert>{taskOk}</Alert>}
             </div>

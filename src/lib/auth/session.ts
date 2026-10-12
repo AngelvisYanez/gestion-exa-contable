@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { signPayload, unsignPayload } from "./crypto";
 import { ExaAuthUser } from "./exaLogin";
 import { decodeRole, encodeRole, UserRole } from "./users";
+import { decodeRolePermissions, encodeRolePermissions, type RolePermissions } from "./role-permissions";
 
 export const SESSION_COOKIE = "exa_tar_sess";
 
@@ -17,6 +18,7 @@ export type SessionData = {
   prsCod: number;
   empCod: number;
   dbDis: string;
+  permissions: RolePermissions;
   exp: number;
 };
 
@@ -31,6 +33,7 @@ type CompactSession = {
   prs: number;
   emp: number;
   db: string;
+  pm?: string;
   e: number;
 };
 
@@ -49,6 +52,7 @@ function toCompact(user: ExaAuthUser): CompactSession {
     prs: user.prsCod || 0,
     emp: user.empCod || 0,
     db: String(user.dbDis || "exa").slice(0, 32),
+    pm: encodeRolePermissions(user.role, user.permissions),
     e: Date.now() + 1000 * 60 * 60 * 12,
   };
 }
@@ -70,6 +74,7 @@ function fromCompact(data: CompactSession | SessionData): SessionData | null {
       prsCod: c.prs || 0,
       empCod: c.emp || 0,
       dbDis: c.db || "exa",
+      permissions: decodeRolePermissions(decodeRole(c.r), c.pm),
       exp: c.e,
     };
   }
@@ -92,6 +97,9 @@ function fromCompact(data: CompactSession | SessionData): SessionData | null {
     prsCod: legacy.prsCod || 0,
     empCod: legacy.empCod || 0,
     dbDis: legacy.dbDis || "exa",
+    permissions: legacy.permissions
+      ? decodeRolePermissions(decodeRole(legacy.role), encodeRolePermissions(decodeRole(legacy.role), legacy.permissions))
+      : decodeRolePermissions(decodeRole(legacy.role)),
     exp: legacy.exp,
   };
 }
@@ -169,5 +177,6 @@ export function publicUser(user: ExaAuthUser | SessionData) {
     projects: user.projects,
     perCod: user.perCod,
     usuCod: "usuCod" in user ? user.usuCod : 0,
+    permissions: user.permissions || decodeRolePermissions(user.role),
   };
 }

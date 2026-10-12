@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { canAssignWork, canSeeOversight } from "@/lib/auth/users";
+import { hasRolePermission } from "@/lib/auth/role-permissions";
 
 function deny(req: NextRequest, message: string) {
   if (req.nextUrl.pathname.startsWith("/api/")) {
@@ -39,6 +40,15 @@ export async function middleware(req: NextRequest) {
     url.pathname = "/login";
     url.searchParams.set("next", pathname);
     return NextResponse.redirect(url);
+  }
+
+  if ((pathname === "/tareas" || pathname.startsWith("/api/tareas")) &&
+      !hasRolePermission(session, "tareas.ver")) {
+    return deny(req, "Tu rol no tiene acceso a tareas.");
+  }
+  if ((pathname === "/tickets" || pathname.startsWith("/api/tickets")) &&
+      !hasRolePermission(session, "tickets.ver")) {
+    return deny(req, "Tu rol no tiene acceso a tickets.");
   }
 
   const oversight =

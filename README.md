@@ -47,6 +47,13 @@ Los desarrolladores solo ven tareas asignadas a su ficha en `personal` (match po
 | `/configuracion/examonitor` | Encargado | Politicas ExaMonitor (capturas, horario, retencion) |
 | `/mis-tareas` | Todos | Tareas asignadas al usuario |
 
+En **Configuracion > Usuarios**, el encargado puede filtrar usuarios por rol y restringir
+permisos de Tareas y Tickets (ver, crear, editar, asignar, eliminar y registrar avances).
+Los permisos iniciales conservan el comportamiento actual; un rol no puede recibir
+acciones que antes no tenia. El acceso a Monitoreo y Configuracion sigue reservado al
+encargado. Los cambios de permisos del panel se aplican cuando el usuario vuelve a
+iniciar sesion.
+
 ## ExaMonitor.exe
 
 Login con **cédula + contraseña EXA** (mismo usuario del panel). Ya no usa Per_Cod fijo.
