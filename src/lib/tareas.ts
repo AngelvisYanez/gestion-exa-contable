@@ -413,66 +413,69 @@ export async function createTarea(
     if (!ok) throw new AsignacionInvalidaError();
   }
 
-  // Raw SQL: Prisma create falla con charset latin1 en columnas VarChar de EXA
-  if (hasComplejidad) {
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO aud_tareas
-        (Tar_Titulo, Tar_Descripcion, Tar_Prioridad, Tar_Complejidad, Tar_Fecha_Inicio, Tar_Fecha_Fin, Tar_Estado, Emp_Cod, Usu_Creador, Tar_Est)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'A')`,
-      titulo,
-      descripcion,
-      prioridad,
-      complejidad,
-      fechaInicio,
-      fechaFin,
-      estado,
-      empCod,
-      usuCreador
-    );
-  } else {
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO aud_tareas
-        (Tar_Titulo, Tar_Descripcion, Tar_Prioridad, Tar_Fecha_Inicio, Tar_Fecha_Fin, Tar_Estado, Emp_Cod, Usu_Creador, Tar_Est)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'A')`,
-      titulo,
-      descripcion,
-      prioridad,
-      fechaInicio,
-      fechaFin,
-      estado,
-      empCod,
-      usuCreador
-    );
-  }
+  // LAST_INSERT_ID() pertenece a la conexion MySQL: insertar y leerlo en la misma transaccion.
+  // Raw SQL evita fallos de Prisma create con el charset latin1 legado de EXA.
+  const { tarCod, estadoFinal } = await prisma.$transaction(async (tx) => {
+    if (hasComplejidad) {
+      await tx.$executeRawUnsafe(
+        `INSERT INTO aud_tareas
+          (Tar_Titulo, Tar_Descripcion, Tar_Prioridad, Tar_Complejidad, Tar_Fecha_Inicio, Tar_Fecha_Fin, Tar_Estado, Emp_Cod, Usu_Creador, Tar_Est)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'A')`,
+        titulo,
+        descripcion,
+        prioridad,
+        complejidad,
+        fechaInicio,
+        fechaFin,
+        estado,
+        empCod,
+        usuCreador
+      );
+    } else {
+      await tx.$executeRawUnsafe(
+        `INSERT INTO aud_tareas
+          (Tar_Titulo, Tar_Descripcion, Tar_Prioridad, Tar_Fecha_Inicio, Tar_Fecha_Fin, Tar_Estado, Emp_Cod, Usu_Creador, Tar_Est)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'A')`,
+        titulo,
+        descripcion,
+        prioridad,
+        fechaInicio,
+        fechaFin,
+        estado,
+        empCod,
+        usuCreador
+      );
+    }
 
-  const inserted = await prisma.$queryRawUnsafe<Array<{ id: bigint | number }>>(
-    `SELECT LAST_INSERT_ID() AS id`
-  );
-  const tarCod = Number(inserted?.[0]?.id || 0);
-  if (!tarCod) throw new Error("No se pudo obtener Tar_Cod de la tarea creada");
+    const inserted = await tx.$queryRawUnsafe<Array<{ id: bigint | number }>>(
+      `SELECT LAST_INSERT_ID() AS id`
+    );
+    const tarCod = Number(inserted?.[0]?.id || 0);
+    if (!tarCod) throw new Error("No se pudo obtener Tar_Cod de la tarea creada");
 
-  let estadoFinal = estado;
-  if (data.perCodAsignar && data.perCodAsignar > 0) {
-    // Raw SQL: evita fallos silenciosos de Prisma create con charset/FK legacy
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO aud_tareas_asignadas (Tar_Cod, Per_Cod, Tas_Fecha_Asignacion, Tas_Est)
-       VALUES (?, ?, NOW(), 'A')`,
-      tarCod,
-      data.perCodAsignar
-    );
-    await prisma.$executeRawUnsafe(
-      `UPDATE aud_tareas SET Tar_Estado = 'Asignado' WHERE Tar_Cod = ? AND Tar_Est = 'A'`,
-      tarCod
-    );
-    estadoFinal = "Asignado";
-  } else if (estado === "Asignado") {
-    // No dejar "Asignado" sin fila en aud_tareas_asignadas
-    await prisma.$executeRawUnsafe(
-      `UPDATE aud_tareas SET Tar_Estado = 'Pendiente' WHERE Tar_Cod = ? AND Tar_Est = 'A'`,
-      tarCod
-    );
-    estadoFinal = "Pendiente";
-  }
+    let estadoFinal = estado;
+    if (data.perCodAsignar && data.perCodAsignar > 0) {
+      await tx.$executeRawUnsafe(
+        `INSERT INTO aud_tareas_asignadas (Tar_Cod, Per_Cod, Tas_Fecha_Asignacion, Tas_Est)
+         VALUES (?, ?, NOW(), 'A')`,
+        tarCod,
+        data.perCodAsignar
+      );
+      await tx.$executeRawUnsafe(
+        `UPDATE aud_tareas SET Tar_Estado = 'Asignado' WHERE Tar_Cod = ? AND Tar_Est = 'A'`,
+        tarCod
+      );
+      estadoFinal = "Asignado";
+    } else if (estado === "Asignado") {
+      await tx.$executeRawUnsafe(
+        `UPDATE aud_tareas SET Tar_Estado = 'Pendiente' WHERE Tar_Cod = ? AND Tar_Est = 'A'`,
+        tarCod
+      );
+      estadoFinal = "Pendiente";
+    }
+
+    return { tarCod, estadoFinal };
+  });
 
   return {
     Tar_Cod: tarCod,
