@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, message: "Usuario sin identificador" }, { status: 403 });
     }
     const sp = req.nextUrl.searchParams;
-    const db = tasksDbDis(sp.get("Ses_Dat_Dis"));
+    const db = tasksDbDis();
 
     if (sp.get("catalogo") === "ofsercont") {
       const modulos = await listOfsercontCatalogo(db);
@@ -109,7 +109,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const db = tasksDbDis(body.Ses_Dat_Dis);
+    const db = tasksDbDis();
     const action = String(body.action || "create");
     const empCod = tasksEmpCod(body.empCod ?? body.Emp_Cod);
     const session = await getSessionFromRequest(req);

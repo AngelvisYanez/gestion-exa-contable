@@ -44,7 +44,8 @@ import {
 const UPLOAD_BATCH = 20;
 
 export default function TareasPage() {
-  const { db, user } = useAuth();
+  const { user } = useAuth();
+  const db = "exa";
   const { lastTaskEventAt } = useNotifications();
   const empCod = 96;
   const isDeveloper = user?.role === "developer";
@@ -254,7 +255,7 @@ export default function TareasPage() {
 
   return (
     <>
-      <Topbar title="Tareas" subtitle={isDeveloper ? "Creadas por ti" : "Asignaciones y seguimiento"} />
+      <Topbar title="Tareas" subtitle={isDeveloper ? "Creadas por ti" : "Asignaciones y seguimiento"} showDbSelector={false} />
       <main className="flex h-[calc(100dvh-3.5rem)] min-h-0 w-full min-w-0 flex-col overflow-hidden">
         <div className="mx-auto flex min-h-0 w-full min-w-0 max-w-[1400px] flex-1 flex-col px-4 py-3 sm:px-6 sm:py-4">
         <FilterBar className="mb-3">
