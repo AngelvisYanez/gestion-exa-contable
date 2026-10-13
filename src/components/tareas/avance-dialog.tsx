@@ -57,7 +57,10 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
   const [rutasPegadas, setRutasPegadas] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [pendingUploads, setPendingUploads] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
+  const pastedRoutesRef = useRef<Set<string>>(new Set());
+  const reservedUploadsRef = useRef(0);
 
   useEffect(() => {
     if (!tarea) return;
@@ -73,6 +76,9 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
     setRutasPegadas([]);
     setError("");
     setSaving(false);
+    setPendingUploads(0);
+    pastedRoutesRef.current.clear();
+    reservedUploadsRef.current = 0;
     // Solo reiniciar al abrir otra tarea; recargas de la lista no deben borrar lo escrito
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tarCod]);
@@ -109,7 +115,7 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
         setError(`"${f.name}": formato no permitido.`);
         continue;
       }
-      if (next.length >= MAX_FILES) {
+      if (next.length + pastedRoutesRef.current.size + reservedUploadsRef.current >= MAX_FILES) {
         setError(`Maximo ${MAX_FILES} archivos por avance.`);
         break;
       }
@@ -121,6 +127,10 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
 
   const guardar = async () => {
     if (!tarea) return;
+    if (pendingUploads > 0) {
+      setError("Espera a que terminen de adjuntarse los archivos pegados.");
+      return;
+    }
     if (requireDescripcion && !plainTextFromHtml(realizado).trim()) {
       setError("Describe que avanzaste: es la evidencia principal del avance.");
       return;
@@ -183,7 +193,7 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
   };
 
   return (
-    <Dialog open={!!tarea} onOpenChange={(o) => !o && !saving && onClose()}>
+    <Dialog open={!!tarea} onOpenChange={(o) => !o && !saving && pendingUploads === 0 && onClose()}>
       <DialogContent className="max-h-[92dvh] max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Registrar avance</DialogTitle>
@@ -254,24 +264,34 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
                 className="rounded-none border-0 shadow-none"
                 uploadFile={async (file) => {
                   if (!refCod) return null;
-                  if (!isAllowedEvidenciaFile(file) || file.size > EVIDENCIA_MAX_BYTES) return null;
-                  const fd = new FormData();
-                  if (esTicket) {
-                    fd.set("Tic_Cod", String(refCod));
-                    if (tarea?.Db_Origen) fd.set("Db_Origen", tarea.Db_Origen);
-                  } else {
-                    fd.set("Tar_Cod", String(refCod));
+                  if (!isAllowedEvidenciaFile(file)) throw new Error(`"${file.name}": formato no permitido.`);
+                  if (file.size > EVIDENCIA_MAX_BYTES) throw new Error(`"${file.name}" supera 12 MB.`);
+                  if (files.length + pastedRoutesRef.current.size + reservedUploadsRef.current >= MAX_FILES) {
+                    throw new Error(`Máximo ${MAX_FILES} archivos por avance.`);
                   }
-                  fd.append("files", file);
-                  const up = await fetch("/api/evidencias", { method: "POST", body: fd });
-                  const uj = await up.json();
-                  const item = uj.adjuntos?.[0];
-                  if (!up.ok || !uj.success || !item?.url) return null;
-                  if (item.ruta) {
+                  reservedUploadsRef.current += 1;
+                  try {
+                    const fd = new FormData();
+                    if (esTicket) {
+                      fd.set("Tic_Cod", String(refCod));
+                      if (tarea?.Db_Origen) fd.set("Db_Origen", tarea.Db_Origen);
+                    } else {
+                      fd.set("Tar_Cod", String(refCod));
+                    }
+                    fd.append("files", file);
+                    const up = await fetch("/api/evidencias", { method: "POST", body: fd });
+                    const uj = await up.json();
+                    const item = uj.adjuntos?.[0];
+                    if (!up.ok || !uj.success || !item?.url || !item?.ruta) throw new Error(uj.message || `No se pudo adjuntar ${file.name}.`);
+                    pastedRoutesRef.current.add(item.ruta);
                     setRutasPegadas((prev) => (prev.includes(item.ruta) ? prev : [...prev, item.ruta]));
+                    return { url: item.url, nombre: item.nombre || file.name, esImagen: !!item.esImagen };
+                  } finally {
+                    reservedUploadsRef.current -= 1;
                   }
-                  return { url: item.url, nombre: item.nombre || file.name, esImagen: !!item.esImagen };
                 }}
+                onUploadStateChange={setPendingUploads}
+                onUploadError={setError}
               />
             </div>
           </div>
@@ -406,17 +426,17 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
         </div>
 
         <DialogFooter>
-          <Button type="button" variant="ghost" onClick={onClose} disabled={saving}>
+          <Button type="button" variant="ghost" onClick={onClose} disabled={saving || pendingUploads > 0}>
             Cancelar
           </Button>
-          <Button type="button" variant="success" onClick={() => void guardar()} disabled={saving}>
+          <Button type="button" variant="success" onClick={() => void guardar()} disabled={saving || pendingUploads > 0}>
             {saving ? (
               <>
                 <Loader2 className="animate-spin" />
                 Guardando...
               </>
             ) : (
-              "Guardar avance"
+              pendingUploads > 0 ? `Adjuntando ${pendingUploads} archivo(s)...` : "Guardar avance"
             )}
           </Button>
         </DialogFooter>

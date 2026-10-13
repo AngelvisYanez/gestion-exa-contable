@@ -6,6 +6,8 @@ La versión vigente del código es `AGENT_VERSION` en `exa_agent.py`.
 
 | Versión | Ejecutable local | Qué cambió |
 | --- | --- | --- |
+| 2.11.1-flet | `dist/ExaMonitor.exe` | El encargado consulta todas las tareas del equipo y puede filtrar por estado; solo sus asignaciones reales aparecen como trabajo activo. |
+| 2.11.0-flet | `dist/ExaMonitor.exe` | Creación de tareas con asignación y adjuntos según permisos; tareas propias sin asignar visibles; pegado de imágenes y documentos en avances. |
 | 2.10.0-flet | `dist/ExaMonitor-2.10.0.exe` | Tickets: fecha de asignación, avance con nota y evidencia, quien lo registró, y resuelto solo al 100%. Atención al cliente asigna sin el error de Tic_Cod y ve las tareas del equipo. |
 | 2.9.0-flet | `dist/ExaMonitor-2.9.0.exe` | Encargado y atención: pestañas Asignar y Asignados, con tareas y tickets. Asignación a varias personas. El desarrollador sigue en Asignados con el filtro Todos / Tareas / Tickets. No reemplazó `dist/ExaMonitor.exe`. |
 | 2.8.3-flet | `dist/ExaMonitor-2.8.3.exe` | Abre el ticket y permite marcarlo como el trabajo en curso. Muestra el origen EXA, Servicios o Relavera. No reemplazó `dist/ExaMonitor.exe` porque ese archivo estaba en uso. |

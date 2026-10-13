@@ -30,6 +30,8 @@ type Props = {
   minHeight?: string;
   /** Sube una imagen o documento pegado y devuelve la URL pública. */
   uploadFile?: (file: File) => Promise<PastedFile | null>;
+  onUploadStateChange?: (pending: number) => void;
+  onUploadError?: (message: string) => void;
 };
 
 function ToolbarBtn({
@@ -69,23 +71,39 @@ export function RichTextEditor({
   className,
   minHeight = "140px",
   uploadFile,
+  onUploadStateChange,
+  onUploadError,
 }: Props) {
   const uploadRef = useRef(uploadFile);
   uploadRef.current = uploadFile;
+  const stateRef = useRef(onUploadStateChange);
+  stateRef.current = onUploadStateChange;
+  const errorRef = useRef(onUploadError);
+  errorRef.current = onUploadError;
+  const pendingRef = useRef(0);
 
   const editorRef = useRef<Editor | null>(null);
 
   const insertFiles = async (files: File[], ed: Editor) => {
     const upload = uploadRef.current;
     if (!upload || !files.length) return false;
+    pendingRef.current += files.length;
+    stateRef.current?.(pendingRef.current);
     for (const file of files) {
-      const saved = await upload(file);
-      if (!saved) continue;
-      const safeName = saved.nombre.replace(/[<>"']/g, "");
-      const html = saved.esImagen
-        ? `<img src="${saved.url}" alt="${safeName}">`
-        : `<a href="${saved.url}" target="_blank" rel="noreferrer">${safeName}</a>`;
-      ed.chain().focus().insertContent(html).run();
+      try {
+        const saved = await upload(file);
+        if (!saved) throw new Error(`No se pudo adjuntar ${file.name}.`);
+        const safeName = saved.nombre.replace(/[<>"']/g, "");
+        const html = saved.esImagen
+          ? `<img src="${saved.url}" alt="${safeName}">`
+          : `<a href="${saved.url}" target="_blank" rel="noreferrer">${safeName}</a>`;
+        ed.chain().focus().insertContent(html).run();
+      } catch (error) {
+        errorRef.current?.(error instanceof Error ? error.message : `No se pudo adjuntar ${file.name}.`);
+      } finally {
+        pendingRef.current -= 1;
+        stateRef.current?.(pendingRef.current);
+      }
     }
     return true;
   };
@@ -109,14 +127,14 @@ export function RichTextEditor({
     editorProps: {
       handlePaste: (_view, event) => {
         const files = Array.from(event.clipboardData?.files || []);
-        if (!files.length || !uploadRef.current || !editorRef.current) return false;
+        if (!files.length || !uploadRef.current || !editorRef.current || !editorRef.current.isEditable) return false;
         event.preventDefault();
         void insertFiles(files, editorRef.current);
         return true;
       },
       handleDrop: (_view, event) => {
         const files = Array.from(event.dataTransfer?.files || []);
-        if (!files.length || !uploadRef.current || !editorRef.current) return false;
+        if (!files.length || !uploadRef.current || !editorRef.current || !editorRef.current.isEditable) return false;
         event.preventDefault();
         void insertFiles(files, editorRef.current);
         return true;

@@ -30,6 +30,8 @@ export type TrabajoMonitorItem = {
   Fecha_Asignacion?: string | null;
   Asignado?: string | null;
   por_asignar?: boolean;
+  asignada_a_mi?: boolean;
+  creada_por_mi?: boolean;
 };
 
 /** Rol del panel. Primero el usuario EXA; la ficha sola a veces no está en el panel. */
@@ -363,10 +365,11 @@ export async function tareasActivasDev(
        AND a.Tas_Est = 'A'
        AND t.Emp_Cod = ?
        AND t.Tar_Est = 'A'
-       AND t.Tar_Estado <> 'Finalizada'
+       AND (? = 'manager' OR t.Tar_Estado <> 'Finalizada')
      ORDER BY t.Tar_Fecha_Fin IS NULL, t.Tar_Fecha_Fin ASC, a.Tas_Cod ASC`,
     perCod,
-    empCod
+    empCod,
+    rol || "developer"
   );
   const tareas = rows.map(mapTarea);
 
@@ -392,7 +395,24 @@ export async function tareasActivasDev(
   }
 
   if (!canAssignWork(rol)) {
-    return bandejaAsignadaDev([...tareas, ...tickets]);
+    const creadas = usuCod && usuCod > 0
+      ? await prisma.$queryRawUnsafe<Row[]>(
+          `SELECT ${tareaSelect}
+           FROM aud_tareas t
+           WHERE t.Emp_Cod = ? AND t.Usu_Creador = ? AND t.Tar_Est = 'A'
+             AND t.Tar_Estado <> 'Finalizada'
+             AND NOT EXISTS (
+               SELECT 1 FROM aud_tareas_asignadas a
+               WHERE a.Tar_Cod = t.Tar_Cod AND a.Tas_Est = 'A'
+             )
+           ORDER BY t.Tar_Cod DESC LIMIT 200`,
+          empCod, usuCod
+        )
+      : [];
+    return [
+      ...bandejaAsignadaDev([...tareas, ...tickets]),
+      ...creadas.map((row) => ({ ...mapTarea(row), por_asignar: true, creada_por_mi: true })),
+    ];
   }
 
   let tareasSinAsignar: TrabajoMonitorItem[] = [];
@@ -401,13 +421,14 @@ export async function tareasActivasDev(
      FROM aud_tareas t
      WHERE t.Emp_Cod = ?
        AND t.Tar_Est = 'A'
-       AND t.Tar_Estado <> 'Finalizada'
+       AND (? = 'manager' OR t.Tar_Estado <> 'Finalizada')
        AND NOT EXISTS (
          SELECT 1 FROM aud_tareas_asignadas a
          WHERE a.Tar_Cod = t.Tar_Cod AND a.Tas_Est = 'A'
        )
      ORDER BY t.Tar_Fecha_Fin IS NULL, t.Tar_Fecha_Fin ASC, t.Tar_Cod ASC`,
-    empCod
+    empCod,
+    rol || "developer"
   );
   tareasSinAsignar = libres.map(mapTarea);
 
@@ -417,14 +438,15 @@ export async function tareasActivasDev(
      FROM aud_tareas t
      WHERE t.Emp_Cod = ?
        AND t.Tar_Est = 'A'
-       AND t.Tar_Estado <> 'Finalizada'
+       AND (? = 'manager' OR t.Tar_Estado <> 'Finalizada')
        AND EXISTS (
          SELECT 1 FROM aud_tareas_asignadas a
          WHERE a.Tar_Cod = t.Tar_Cod AND a.Tas_Est = 'A'
        )
      ORDER BY t.Tar_Fecha_Fin IS NULL, t.Tar_Fecha_Fin ASC, t.Tar_Cod ASC
      LIMIT 400`,
-    empCod
+    empCod,
+    rol || "developer"
   );
   const nombresPorTarea = new Map<number, string>();
   const idsEquipo = delEquipo.map((r) => Number(r.Tar_Cod)).filter((n) => n > 0);
@@ -452,6 +474,7 @@ export async function tareasActivasDev(
   tareasEquipo = delEquipo.map((r) => ({
     ...mapTarea(r),
     Asignado: nombresPorTarea.get(Number(r.Tar_Cod)) || null,
+    asignada_a_mi: rows.some((propia) => Number(propia.Tar_Cod) === Number(r.Tar_Cod)),
   }));
 
   let ticketsSinAsignar: TrabajoMonitorItem[] = [];
@@ -465,7 +488,11 @@ export async function tareasActivasDev(
   let ticketsEquipo: TrabajoMonitorItem[] = [];
   try {
     const raw = await listTicketsAsignados({ bandeja: "asignados", limit: 500 });
-    ticketsEquipo = raw.map((t) => mapTicket(t, false));
+    const propios = new Set(tickets.map((t) => `${t.Db_Origen || ""}:${t.Tic_Cod ?? t.Tar_Cod}`));
+    ticketsEquipo = raw.map((t) => ({
+      ...mapTicket(t, false),
+      asignada_a_mi: propios.has(`${t.Db_Origen || ""}:${t.Tic_Cod}`),
+    }));
   } catch (err) {
     console.error("[monitoreo] tickets del equipo:", err instanceof Error ? err.message : err);
   }

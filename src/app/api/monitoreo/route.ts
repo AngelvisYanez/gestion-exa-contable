@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { assertApiKey, isUploadedFile, jsonRes, pick, readBody } from "@/lib/api";
 import { authenticateByCedula } from "@/lib/auth/exaLogin";
-import { canAssignWork } from "@/lib/auth/users";
+import { canAssignWork, normalizePanelRole } from "@/lib/auth/users";
 import { hasRolePermission, type RolePermissionKey } from "@/lib/auth/role-permissions";
 import { loadRolePermissions } from "@/lib/auth/role-permissions-db";
 import { saveEvidencia, saveScreenshot, toPublicCaptureUrl } from "@/lib/captures";
@@ -27,7 +27,10 @@ import {
 } from "@/lib/ticket-avances";
 import {
   AsignacionInvalidaError,
+  attachEvidenciasTarea,
+  createTarea,
   descripcionAvanceDesdeBody,
+  getTareaAccess,
   getTareaDetalle,
   registrarAvance,
   setTareaAsignados,
@@ -55,6 +58,20 @@ async function monitorHasPermission(
   const role = (await resolvePanelRol(prisma, perCod, usuCod || undefined)) || "developer";
   const permissions = await loadRolePermissions(tasksDbDis(), role);
   return hasRolePermission({ role, permissions }, key);
+}
+async function monitorTaskPermissions(
+  prisma: Parameters<typeof resolvePanelRol>[0],
+  perCod: number,
+  roleHint?: string | null
+) {
+  const usuCod = await resolveUsuCodFromPer(prisma, perCod);
+  const role = normalizePanelRole(roleHint || await resolvePanelRol(prisma, perCod, usuCod || undefined));
+  const permissions = await loadRolePermissions(tasksDbDis(), role);
+  return {
+    crear: hasRolePermission({ role, permissions }, "tareas.crear"),
+    editar: hasRolePermission({ role, permissions }, "tareas.editar"),
+    asignar: canAssignWork(role) && hasRolePermission({ role, permissions }, "tareas.asignar"),
+  };
 }
 // Auto-purga NO en hot path: satura MySQL. Ejecutar desde Config → ExaMonitor.
 
@@ -164,6 +181,7 @@ async function handle(req: NextRequest) {
       const mapped = await mapDevResponse(prismaUser, refreshed || row);
       const notificaciones = mapNotificaciones(row.Per_Cod, user.usuCod);
       const asignables = canAssignWork(rol) ? await asignablesMonitor() : [];
+      const permisos_tarea = await monitorTaskPermissions(prismaUser, row.Per_Cod, rol);
 
       return jsonRes("ok", "Desarrollador autenticado con exito.", {
         desarrollador: {
@@ -178,6 +196,7 @@ async function handle(req: NextRequest) {
         tareas,
         mis_tareas: tareas,
         asignables,
+        permisos_tarea,
         notificaciones,
       });
     }
@@ -204,6 +223,7 @@ async function handle(req: NextRequest) {
       const mapped = await mapDevResponse(prisma, row);
       const notificaciones = mapNotificaciones(perCod, usuCod || undefined);
       const asignables = canAssignWork(rol) ? await asignablesMonitor() : [];
+      const permisos_tarea = await monitorTaskPermissions(prisma, perCod, rol);
 
       return jsonRes("ok", "Presencia y estado sincronizados.", {
         Mon_Activo: mapped.Mon_Activo,
@@ -215,8 +235,63 @@ async function handle(req: NextRequest) {
         tareas,
         mis_tareas: tareas,
         asignables,
+        permisos_tarea,
         notificaciones,
       });
+    }
+
+    if (accion === "crear_tarea") {
+      if (req.method !== "POST") return jsonRes("error", "Usa POST para crear tareas.", null, 405);
+      const perCod = parseInt(pick(form, json, req, "Per_Cod"), 10) || 0;
+      if (perCod <= 0) return jsonRes("error", "Codigo de usuario invalido.");
+      const usuCod = await resolveUsuCodFromPer(prisma, perCod);
+      if (!usuCod) return jsonRes("error", "Usuario sin identificador.");
+      const permisos = await monitorTaskPermissions(prisma, perCod);
+      if (!permisos.crear) return jsonRes("error", "Tu rol no puede crear tareas.", null, 403);
+      const titulo = pick(form, json, req, "titulo").trim();
+      if (!titulo) return jsonRes("error", "Titulo requerido.");
+      const perCodAsignar = parseInt(pick(form, json, req, "perCodAsignar"), 10) || 0;
+      if (perCodAsignar && !permisos.asignar) {
+        return jsonRes("error", "Tu rol no puede asignar tareas.", null, 403);
+      }
+      const fechaFin = pick(form, json, req, "fechaFin").trim();
+      if (fechaFin && (!/^\d{4}-\d{2}-\d{2}$/.test(fechaFin) ||
+          Number.isNaN(Date.parse(fechaFin)) || new Date(fechaFin).toISOString().slice(0, 10) !== fechaFin)) {
+        return jsonRes("error", "Fecha limite invalida.");
+      }
+      let tarea;
+      try {
+        tarea = await createTarea(dbDis, {
+          titulo,
+          descripcion: pick(form, json, req, "descripcion"),
+          prioridad: pick(form, json, req, "prioridad") || "Media",
+          complejidad: pick(form, json, req, "complejidad") || "Media",
+          fechaFin: fechaFin || null,
+          empCod,
+          usuCreador: usuCod,
+          perCodAsignar: perCodAsignar || undefined,
+        });
+      } catch (err) {
+        if (err instanceof AsignacionInvalidaError) return jsonRes("error", err.message);
+        throw err;
+      }
+      if (perCodAsignar) {
+        publishAsignacion({
+          kind: "tarea", title: "Nueva tarea asignada",
+          message: `#${tarea.Tar_Cod} · ${tarea.Tar_Titulo}`,
+          db: dbDis, tarCod: tarea.Tar_Cod, perCod: perCodAsignar,
+          estado: tarea.Tar_Estado, actor: "ExaMonitor",
+        });
+      } else {
+        publishEvent({
+          type: "tarea_creada", title: "Nueva tarea",
+          message: `#${tarea.Tar_Cod} · ${tarea.Tar_Titulo}`,
+          db: dbDis, tarCod: tarea.Tar_Cod,
+          estado: tarea.Tar_Estado, actor: "ExaMonitor",
+        });
+      }
+      const { tareas } = await bandejaAgente(prisma, perCod, usuCod);
+      return jsonRes("ok", "Tarea creada.", { tarea, tareas, mis_tareas: tareas });
     }
 
     if (accion === "subir_telemetria") {
@@ -411,7 +486,9 @@ async function handle(req: NextRequest) {
       const mia = titulares.some((a) => Number(a.Per_Cod) === perCod);
       const sinAsignar = titulares.length === 0;
       const mesa = canAssignWork(rol);
-      if (!mia && !mesa) {
+      const acceso = await getTareaAccess(dbDis, cod, usuCod || 0, perCod);
+      const creador = !!acceso?.isCreator;
+      if (!mia && !mesa && !creador) {
         return jsonRes("error", "Tarea no encontrada o no asignada a ti.");
       }
 
@@ -432,7 +509,8 @@ async function handle(req: NextRequest) {
           Ava_Porcentaje: detalle.tarea.Ava_Porcentaje ?? 0,
           puede_registrar_avance: mia,
           puede_cambiar_estado: false,
-          puede_subir_evidencia: mia,
+          puede_subir_evidencia: mia || (creador && await monitorHasPermission(prisma, perCod, "tareas.editar")),
+          es_creador: creador,
           puede_asignar: mesa && sinAsignar,
         },
         asignables: asignablesTarea,
@@ -833,7 +911,8 @@ async function handle(req: NextRequest) {
       const tarCod = parseInt(pick(form, json, req, "Tar_Cod"), 10) || 0;
       const ticCod = parseInt(pick(form, json, req, "Tic_Cod"), 10) || 0;
       if (!tarCod && !ticCod) return jsonRes("error", "Tar_Cod o Tic_Cod requerido.");
-      if (!(await monitorHasPermission(prisma, perCod, ticCod > 0 ? "tickets.avance" : "tareas.avance"))) {
+      if (tarCod && ticCod) return jsonRes("error", "Indica solo una tarea o un ticket.");
+      if (ticCod > 0 && !(await monitorHasPermission(prisma, perCod, "tickets.avance"))) {
         return jsonRes("error", "Tu rol no puede adjuntar evidencias a ese trabajo.");
       }
 
@@ -867,8 +946,14 @@ async function handle(req: NextRequest) {
           tarCod,
           perCod
         );
-        if (!assigned.length) {
+        const acceso = await getTareaAccess(dbDis, tarCod, usuCod || 0, perCod);
+        const puedeEditar = await monitorHasPermission(prisma, perCod, "tareas.editar");
+        const puedeAvance = assigned.length > 0 && await monitorHasPermission(prisma, perCod, "tareas.avance");
+        if (!puedeAvance && !(acceso?.isCreator && puedeEditar)) {
           return jsonRes("error", "No puedes adjuntar evidencias a esa tarea.");
+        }
+        if (pick(form, json, req, "vincular_descripcion") === "1" && !(acceso?.isCreator && puedeEditar)) {
+          return jsonRes("error", "No puedes adjuntar archivos a la descripcion.", null, 403);
         }
       }
 
@@ -894,6 +979,10 @@ async function handle(req: NextRequest) {
           nombre: f.name,
           esImagen: isImagePath(ruta),
         });
+      }
+
+      if (tarCod > 0 && pick(form, json, req, "vincular_descripcion") === "1") {
+        await attachEvidenciasTarea(dbDis, tarCod, adjuntos.map((a) => a.ruta));
       }
 
       // En tickets se vinculan al cuerpo; en un avance las rutas viajan con la nota.

@@ -37,6 +37,36 @@ class TestBandeja(unittest.TestCase):
         out = trabajos_activos(ITEMS)
         self.assertEqual([t["Tar_Cod"] for t in out], [3, 4])
 
+    def test_encargado_lista_equipo_y_filtra_estado(self):
+        items = [
+            {"Tar_Cod": 1, "tipo": "tarea", "por_asignar": True, "Tar_Estado": "Pendiente"},
+            {"Tar_Cod": 2, "tipo": "tarea", "por_asignar": False, "Tar_Estado": "En Proceso"},
+            {"Tar_Cod": 3, "tipo": "tarea", "por_asignar": False, "Tar_Estado": "Finalizada"},
+        ]
+        visibles = visible_trabajos(items, es_mesa=True, es_encargado=True,
+                                    bandeja="todos", tipo_filtro="todos")
+        filtradas = visible_trabajos(items, es_mesa=True, es_encargado=True,
+                                     bandeja="todos", tipo_filtro="todos",
+                                     estado_filtro="Finalizada")
+        self.assertEqual([t["Tar_Cod"] for t in visibles], [1, 2, 3])
+        self.assertEqual([t["Tar_Cod"] for t in filtradas], [3])
+
+    def test_trabajo_del_equipo_no_es_asignacion_personal(self):
+        items = [
+            {"Tar_Cod": 1, "por_asignar": False, "asignada_a_mi": False},
+            {"Tar_Cod": 2, "por_asignar": False, "asignada_a_mi": True},
+            {"Tar_Cod": 3, "por_asignar": True, "asignada_a_mi": False},
+        ]
+        self.assertEqual([t["Tar_Cod"] for t in trabajos_activos(items, es_mesa=True)], [2])
+
+    def test_tareas_creadas_sin_asignar_solo_en_su_pestana(self):
+        items = ITEMS + [{"Tar_Cod": 5, "tipo": "tarea", "por_asignar": True, "creada_por_mi": True}]
+        asignados = visible_trabajos(items, es_mesa=False, bandeja="asignados", tipo_filtro="todos")
+        creadas = visible_trabajos(items, es_mesa=False, bandeja="creadas", tipo_filtro="todos")
+        self.assertEqual([t["Tar_Cod"] for t in asignados], [1, 2, 3, 4])
+        self.assertEqual([t["Tar_Cod"] for t in creadas], [5])
+        self.assertNotIn(5, [t["Tar_Cod"] for t in trabajos_activos(items)])
+
 
 if __name__ == "__main__":
     unittest.main()
