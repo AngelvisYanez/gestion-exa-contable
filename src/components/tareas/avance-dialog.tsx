@@ -205,6 +205,11 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
 
         <div className="space-y-4">
           {error && <Alert variant="destructive">{error}</Alert>}
+          {esTicket && pct === 100 && (
+            <Alert variant="warning">
+              Al guardar este avance al 100%, el ticket quedará resuelto y se podrá notificar al cliente.
+            </Alert>
+          )}
 
           <div className="overflow-hidden rounded-xl border border-border/80">
             <div className="bg-muted/30 p-3">

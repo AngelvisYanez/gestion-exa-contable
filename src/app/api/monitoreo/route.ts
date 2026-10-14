@@ -21,6 +21,7 @@ import {
 import { ensureMonitoreoSchema } from "@/lib/monitoreo-global";
 import { parseAsignadosTicket, parsePerCodsTarea } from "@/lib/monitoreo-asignacion";
 import {
+  TicketAvanceError,
   descripcionTicketAvance,
   listAvancesTicket,
   registrarAvanceTicket,
@@ -670,6 +671,7 @@ async function handle(req: NextRequest) {
         porcentaje: res.porcentaje,
         Tic_Cod: ticCod,
         estado: res.estado,
+        resueltoAhora: res.resueltoAhora,
         mis_tareas: tareas,
         tareas,
       });
@@ -1005,8 +1007,8 @@ async function handle(req: NextRequest) {
     return jsonRes("error", "Accion no especificada o desconocida.");
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Error interno";
-    console.error("[monitoreo]", msg);
-    return jsonRes("error", msg, null, 500);
+    if (!(err instanceof TicketAvanceError)) console.error("[monitoreo]", msg);
+    return jsonRes("error", msg, null, err instanceof TicketAvanceError ? err.status : 500);
   }
 }
 

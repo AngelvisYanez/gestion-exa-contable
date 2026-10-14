@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { estadoTrasAvance } from "./ticket-avances";
+import type { PrismaClient } from "@prisma/client";
+import { TicketAvanceError, estadoTrasAvance, registrarAvanceTicketConPrisma } from "./ticket-avances";
 import { ticketAsTarea, type Ticket } from "./ticket-view";
 import { parseAsignadosTicket } from "./monitoreo-asignacion";
 
@@ -57,5 +58,64 @@ describe("cierre del ticket por avance", () => {
     assert.deepEqual(varias, [{ usuCod: 4 }, { usuCod: 7 }]);
     const compacto = parseAsignadosTicket('[{"Usu_Cod":9,"Per_Cod":3}]', 0);
     assert.deepEqual(compacto, [{ usuCod: 9, perCod: 3 }]);
+  });
+
+  it("registra avances parciales y cierra una sola vez al 100%", async () => {
+    const ticket = { estado: "2", cierres: 0, avances: [] as number[] };
+    const tx = {
+      $queryRawUnsafe: async () => [{ Tic_Est: ticket.estado }],
+      $executeRawUnsafe: async (sql: string, ...params: unknown[]) => {
+        if (sql.includes("INSERT INTO aud_ticket_avances")) {
+          ticket.avances.push(Number(params[4]));
+          return 1;
+        }
+        if (sql.includes("Tic_Fec_Ter = NOW()")) {
+          ticket.estado = "3";
+          ticket.cierres++;
+          return 1;
+        }
+        if (sql.includes("Tic_Est = '1'")) {
+          ticket.estado = "1";
+          return 1;
+        }
+        throw new Error(`SQL inesperado: ${sql}`);
+      },
+    };
+    const prisma = { $transaction: async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx) } as unknown as PrismaClient;
+    const input = { ticCod: 7, porcentaje: 40, descripcion: "Avance parcial" };
+
+    const parcial = await registrarAvanceTicketConPrisma(prisma, input);
+    assert.equal(parcial.estado, "En Proceso");
+    assert.equal(parcial.resueltoAhora, false);
+    assert.equal(ticket.estado, "1");
+    assert.equal(ticket.cierres, 0);
+
+    const completo = await registrarAvanceTicketConPrisma(prisma, { ...input, porcentaje: 100 });
+    assert.equal(completo.estado, "Cerrado");
+    assert.equal(completo.resueltoAhora, true);
+    assert.equal(ticket.estado, "3");
+    assert.equal(ticket.cierres, 1);
+    assert.deepEqual(ticket.avances, [40, 100]);
+
+    await assert.rejects(
+      registrarAvanceTicketConPrisma(prisma, { ...input, porcentaje: 100 }),
+      (error: unknown) => error instanceof TicketAvanceError && error.status === 409
+    );
+    await assert.rejects(
+      registrarAvanceTicketConPrisma(prisma, input),
+      (error: unknown) => error instanceof TicketAvanceError && error.status === 409
+    );
+    assert.equal(ticket.cierres, 1);
+    assert.deepEqual(ticket.avances, [40, 100]);
+  });
+
+  it("rechaza porcentajes decimales antes de iniciar una transacción", async () => {
+    let transactions = 0;
+    const prisma = { $transaction: async () => { transactions++; } } as unknown as PrismaClient;
+    await assert.rejects(
+      registrarAvanceTicketConPrisma(prisma, { ticCod: 7, porcentaje: 99.5, descripcion: "Casi terminado" }),
+      (error: unknown) => error instanceof TicketAvanceError && error.status === 400
+    );
+    assert.equal(transactions, 0);
   });
 });

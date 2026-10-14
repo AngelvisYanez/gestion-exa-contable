@@ -20,6 +20,7 @@ import {
   type TicketEstado,
 } from "@/lib/tickets";
 import {
+  TicketAvanceError,
   descripcionTicketAvance,
   listAvancesTicket,
   registrarAvanceTicket,
@@ -387,6 +388,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, message: "Accion desconocida" }, { status: 400 });
   } catch (err) {
     const mensaje = err instanceof Error ? err.message : "Error";
-    return NextResponse.json({ success: false, message: mensaje }, { status: 500 });
+    return NextResponse.json({ success: false, message: mensaje }, { status: err instanceof TicketAvanceError ? err.status : 500 });
   }
 }

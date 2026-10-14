@@ -19,7 +19,7 @@ import {
   updateTicketEstado,
   type TicketEstado,
 } from "@/lib/tickets";
-import { descripcionTicketAvance, registrarAvanceTicket } from "@/lib/ticket-avances";
+import { TicketAvanceError, descripcionTicketAvance, registrarAvanceTicket } from "@/lib/ticket-avances";
 import { hoyFecha } from "@/lib/timezone";
 
 export const dynamic = "force-dynamic";
@@ -347,6 +347,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, message: "Accion no permitida" }, { status: 400 });
   } catch (err) {
     const mensaje = err instanceof Error ? err.message : "Error";
-    return NextResponse.json({ success: false, message: mensaje }, { status: 500 });
+    return NextResponse.json({ success: false, message: mensaje }, { status: err instanceof TicketAvanceError ? err.status : 500 });
   }
 }

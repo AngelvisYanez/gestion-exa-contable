@@ -1621,6 +1621,12 @@ class ExaMonitorApp:
             color=C["text"],
         )
         lbl_delta = ft.Text(f"igual que {pct_actual}%", size=11, color=C["text_muted"])
+        lbl_resolucion = ft.Text(
+            "Al registrar 100%, el ticket quedará resuelto y se podrá notificar al cliente.",
+            size=11,
+            color="#92400e",
+            visible=tipo == "ticket" and pct_actual == 100,
+        )
         slider_pct = ft.Slider(
             min=0,
             max=100,
@@ -1644,6 +1650,7 @@ class ExaMonitorApp:
             v = pct_actual_slider()
             d = v - pct_actual
             lbl_pct.value = f"{v}%"
+            lbl_resolucion.visible = tipo == "ticket" and v == 100
             if d > 0:
                 lbl_delta.value = f"+{d} vs {pct_actual}%"
                 lbl_delta.color = C["success_fg"]
@@ -1701,6 +1708,7 @@ class ExaMonitorApp:
                         spacing=6,
                         wrap=True,
                     ),
+                    lbl_resolucion,
                 ],
                 spacing=4,
                 tight=True,
