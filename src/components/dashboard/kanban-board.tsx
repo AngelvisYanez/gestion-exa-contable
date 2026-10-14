@@ -173,7 +173,7 @@ function KanbanCardBody({
           <button
             type="button"
             className={cn(
-              "mt-0.5 shrink-0 cursor-grab touch-none rounded p-0.5 text-muted-foreground/60",
+              "mt-0.5 flex size-11 shrink-0 cursor-grab touch-none items-center justify-center rounded text-muted-foreground/60 sm:size-auto sm:p-0.5",
               "hover:bg-muted hover:text-muted-foreground active:cursor-grabbing",
               "sm:opacity-70 sm:group-hover:opacity-100"
             )}
@@ -251,7 +251,7 @@ function KanbanCardBody({
         {estadoActual !== "Finalizada" ? (onAvance && (!canRegisterAvance || canRegisterAvance(t)) &&
           <button
             type="button"
-            className="min-h-8 text-[11px] font-bold text-sky-700 hover:underline sm:min-h-0"
+            className="min-h-11 text-[11px] font-bold text-sky-700 hover:underline sm:min-h-0"
             onClick={(e) => {
               e.stopPropagation();
               onAvance(t);
@@ -287,7 +287,7 @@ function KanbanCardBody({
         >
           <span className="sr-only">Mover a columna</span>
           <select
-            className="h-8 w-full rounded-md border border-border bg-background px-2 text-[11px] font-semibold text-foreground"
+            className="h-11 w-full rounded-md border border-border bg-background px-2 text-[11px] font-semibold text-foreground sm:h-8"
             value={estadoActual}
             disabled={busy}
             aria-label="Cambiar estado"
@@ -410,7 +410,7 @@ function KanbanColumn({
         ref={setNodeRef}
         className={cn(
           "min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-y-contain px-2 py-2",
-          "touch-pan-y [scrollbar-width:thin] scroll-smooth"
+          "touch-auto [scrollbar-width:thin] scroll-smooth"
         )}
       >
         {cards.map((t) => {

@@ -212,6 +212,7 @@ export default function UsuariosConfigPage() {
               los limites propios de cada rol siguen vigentes. Los usuarios deben volver a iniciar sesion para aplicar cambios.
             </CardDescription>
           </CardHeader>
+          <p className="px-4 pb-2 text-xs text-muted-foreground sm:hidden">Desliza la tabla para ver todos los roles.</p>
           <Table className="min-w-[580px]">
             <TableHeader>
               <TableRow>
@@ -265,7 +266,7 @@ export default function UsuariosConfigPage() {
           <CardHeader className="pb-2">
             <CardTitle className="text-base">En la gestion</CardTitle>
           </CardHeader>
-          <Table className="min-w-[640px] lg:min-w-0">
+          <Table className="responsive-card-table min-w-[640px] lg:min-w-0">
             <TableHeader>
               <TableRow>
                 <TableHead className="min-w-[180px]">Usuario</TableHead>
@@ -276,7 +277,7 @@ export default function UsuariosConfigPage() {
             <TableBody>
               {gestionPager.slice.map((r) => (
                 <TableRow key={r.Usu_Cod}>
-                  <TableCell>
+                  <TableCell data-label="Usuario">
                     <div className="font-semibold">{r.Nombre}</div>
                     <div className="text-xs text-muted-foreground">
                       {[r.Cedula && `Cedula ${r.Cedula}`, r.Sucursal, r.Per_Cod ? `Per ${r.Per_Cod}` : "Sin ficha"]
@@ -284,7 +285,7 @@ export default function UsuariosConfigPage() {
                         .join(" · ")}
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell data-label="Rol">
                     <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                       <Badge variant={roleVariant(r.Pan_Rol)} className="w-fit">
                         {roleLabel(r.Pan_Rol)}
@@ -305,7 +306,7 @@ export default function UsuariosConfigPage() {
                       </Select>
                     </div>
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell data-label="Acción" className="text-right">
                     <Button
                       type="button"
                       size="sm"
@@ -348,7 +349,7 @@ export default function UsuariosConfigPage() {
             <CardTitle className="text-base">Usuarios de la empresa</CardTitle>
             <CardDescription>Activos en EXA que todavia no entran al panel.</CardDescription>
           </CardHeader>
-          <Table className="min-w-[560px] lg:min-w-0">
+          <Table className="responsive-card-table min-w-[560px] lg:min-w-0">
             <TableHeader>
               <TableRow>
                 <TableHead className="min-w-[180px]">Usuario</TableHead>
@@ -359,13 +360,13 @@ export default function UsuariosConfigPage() {
             <TableBody>
               {empresaPager.slice.map((r) => (
                 <TableRow key={r.Usu_Cod}>
-                  <TableCell>
+                  <TableCell data-label="Usuario">
                     <div className="font-semibold">{r.Nombre}</div>
                     <div className="text-xs text-muted-foreground">
                       {[r.Cedula && `Cedula ${r.Cedula}`, r.Sucursal].filter(Boolean).join(" · ")}
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell data-label="Rol al agregar">
                     <Select
                       className="h-8 w-full min-w-0 text-xs sm:w-[180px]"
                       value={rolNuevo[r.Usu_Cod] || "developer"}
@@ -383,7 +384,7 @@ export default function UsuariosConfigPage() {
                       ))}
                     </Select>
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell data-label="Acción" className="text-right">
                     <Button
                       type="button"
                       size="sm"

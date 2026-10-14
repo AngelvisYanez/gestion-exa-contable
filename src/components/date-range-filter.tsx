@@ -195,7 +195,7 @@ export function DateRangeFilter({
   const diaActivo = value.desde === value.hasta ? value.desde : value.hasta || value.desde;
 
   const chip =
-    "inline-flex h-8 items-center rounded-md px-2.5 text-xs font-bold transition-colors whitespace-nowrap";
+    "inline-flex min-h-11 items-center rounded-md px-2.5 text-xs font-bold transition-colors whitespace-nowrap sm:min-h-0 sm:h-8";
 
   const dayPresetsBar = showDayBar ? (
     <div className="flex h-auto max-w-full flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-card px-2 py-1.5 shadow-sm sm:h-10 sm:flex-nowrap sm:py-0">

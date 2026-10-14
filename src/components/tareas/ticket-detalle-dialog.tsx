@@ -9,6 +9,7 @@ import {
   History,
   Loader2,
   Phone,
+  Share2,
   Ticket,
   User,
   Wrench,
@@ -26,7 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DatePicker } from "@/components/ui/date-picker";
-import { RichTextHtml } from "@/components/ui/rich-text";
+import { plainTextFromHtml, RichTextHtml } from "@/components/ui/rich-text";
 import { useAuth } from "@/contexts/AuthContext";
 import { fmtFechaHoraZona } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
@@ -51,6 +52,53 @@ const CAPTURA_DIAS = [1, 3, 7, 15, 30, 90] as const;
 
 type CapItem = { Tel_Cod: number; Per_Cod: number; Fecha: string; Url: string };
 
+function textoParaCompartir(ticket: Tarea, avances: AvanceTicket[]) {
+  const lineas = [
+    `Ticket #${ticket.Tic_Cod ?? ticket.Tar_Cod}: ${ticket.Tar_Titulo}`,
+    `Estado: ${ticket.Tar_Estado}`,
+    `Prioridad: ${ticket.Tar_Prioridad}`,
+    `Llegada: ${fmtDate(ticket.Tar_Fecha_Inicio)}`,
+    `Avance: ${ticket.Ava_Porcentaje || 0}%`,
+    `Asignado: ${ticket.Asignados?.map((a) => a.Nombre).join(", ") || "Sin asignar"}`,
+  ];
+  if (ticket.Fecha_Asignacion) lineas.push(`Asignado el: ${fmtFechaHoraZona(ticket.Fecha_Asignacion)}`);
+  if (ticket.Tar_Fecha_Culminacion) lineas.push(`Cierre: ${fmtDate(ticket.Tar_Fecha_Culminacion)}`);
+  if (ticket.Enviado_Por) lineas.push(`Enviado por: ${ticket.Enviado_Por}`);
+  if (ticket.Creador_Nombre && ticket.Creador_Nombre !== ticket.Enviado_Por) {
+    lineas.push(`Creado por: ${ticket.Creador_Nombre}`);
+  }
+  if (ticket.Emp_Nom) lineas.push(`Empresa: ${ticket.Emp_Nom}`);
+  if (ticket.Tic_Tel) lineas.push(`Teléfono: ${ticket.Tic_Tel}`);
+  if (ticket.Proceso) lineas.push(`Proceso: ${ticket.Proceso}`);
+
+  const descripcion = plainTextFromHtml(ticket.Tar_Descripcion);
+  if (descripcion) lineas.push(`\nDescripción:\n${descripcion}`);
+  if (avances.length) {
+    lineas.push("\nAvances:");
+    for (const avance of avances) {
+      const encabezado = [`${avance.Ava_Porcentaje}%`, avance.Autor, avance.Ava_Fecha && fmtFechaHoraZona(avance.Ava_Fecha)]
+        .filter(Boolean)
+        .join(" · ");
+      lineas.push(`- ${encabezado}`);
+      const realizado = plainTextFromHtml(avance.realizado);
+      if (realizado) lineas.push(`  ${realizado}`);
+      for (const archivo of avance.adjuntos) {
+        lineas.push(`  Adjunto: ${archivo.nombre} (${new URL(archivo.url, window.location.origin).href})`);
+      }
+    }
+  }
+  if (ticket.Evidencias?.length) {
+    lineas.push("\nEvidencias:");
+    for (const archivo of ticket.Evidencias) {
+      lineas.push(`- ${archivo.nombre}: ${new URL(archivo.url, window.location.origin).href}`);
+    }
+  }
+  if (ticket.Tic_Obs && ticket.Tic_Obs !== "N/A" && ticket.Tic_Obs !== ticket.Proceso) {
+    lineas.push(`\nObservaciones:\n${ticket.Tic_Obs}`);
+  }
+  return lineas.join("\n");
+}
+
 export function TicketDetalleDialog({ ticket, onClose, onRegistrarAvance }: Props) {
   const { db, user } = useAuth();
   const isManager = user?.role === "manager";
@@ -73,6 +121,30 @@ export function TicketDetalleDialog({ ticket, onClose, onRegistrarAvance }: Prop
   const [loadingCap, setLoadingCap] = useState(false);
   const [zoom, setZoom] = useState<string | null>(null);
   const [avances, setAvances] = useState<AvanceTicket[]>([]);
+  const [avancesKey, setAvancesKey] = useState("");
+  const [compartirEstado, setCompartirEstado] = useState<"copiado" | "error" | null>(null);
+  const ticketKey = `${ticket?.Db_Origen || db}:${ticCod}`;
+  const avancesActuales = avancesKey === ticketKey ? avances : [];
+
+  const compartir = async () => {
+    if (!ticket) return;
+    setCompartirEstado(null);
+    const text = textoParaCompartir(ticket, avancesActuales);
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: `Ticket #${ticCod}`, text });
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      setCompartirEstado("copiado");
+    } catch {
+      setCompartirEstado("error");
+    }
+  };
 
   const timeline = useMemo(() => {
     if (!ticket) return [];
@@ -115,6 +187,7 @@ export function TicketDetalleDialog({ ticket, onClose, onRegistrarAvance }: Prop
   useEffect(() => {
     if (!open || !ticCod) return;
     let cancel = false;
+    setAvancesKey("");
     const sp = new URLSearchParams({
       historial: String(ticCod),
       Ses_Dat_Dis: db,
@@ -123,15 +196,21 @@ export function TicketDetalleDialog({ ticket, onClose, onRegistrarAvance }: Prop
     fetch(`/api/tickets?${sp}`)
       .then((r) => r.json())
       .then((j) => {
-        if (!cancel && j.success) setAvances(j.avances || []);
+        if (!cancel && j.success) {
+          setAvances(j.avances || []);
+          setAvancesKey(ticketKey);
+        }
       })
       .catch(() => {
-        if (!cancel) setAvances([]);
+        if (!cancel) {
+          setAvances([]);
+          setAvancesKey("");
+        }
       });
     return () => {
       cancel = true;
     };
-  }, [open, ticCod, db, ticket?.Db_Origen]);
+  }, [open, ticCod, db, ticket?.Db_Origen, ticketKey]);
 
   useEffect(() => {
     if (!open || !isManager || !ticCod || tab !== "capturas") return;
@@ -181,7 +260,7 @@ export function TicketDetalleDialog({ ticket, onClose, onRegistrarAvance }: Prop
       }}
     >
       <DialogContent className="flex max-h-[92dvh] max-w-lg flex-col gap-0 overflow-hidden p-0">
-        <div className="shrink-0 space-y-2 border-b border-border/60 px-6 pb-4 pt-6">
+        <div className="shrink-0 space-y-2 border-b border-border/60 px-4 pb-4 pt-6 sm:px-6">
           <DialogHeader className="space-y-2 text-left">
             <div className="flex flex-wrap items-center gap-2 pr-8">
               <span className="inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
@@ -199,11 +278,11 @@ export function TicketDetalleDialog({ ticket, onClose, onRegistrarAvance }: Prop
           </DialogHeader>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
           <Tabs value={tab} onValueChange={setTab}>
             <TabsList
               className={cn(
-                "grid h-auto gap-1",
+                "grid h-auto gap-1 max-sm:flex",
                 isManager ? "grid-cols-3" : "grid-cols-2"
               )}
             >
@@ -308,12 +387,12 @@ export function TicketDetalleDialog({ ticket, onClose, onRegistrarAvance }: Prop
                 </div>
               </section>
 
-              {avances.length > 0 && (
+              {avancesActuales.length > 0 && (
                 <section className="space-y-2">
                   <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
                     Avances
                   </h3>
-                  {avances.map((a) => (
+                  {avancesActuales.map((a) => (
                     <article key={a.Ava_Cod} className="rounded-xl border border-border/70 p-3">
                       <div className="flex flex-wrap items-baseline gap-2 text-xs">
                         <strong className="tabular-nums">{a.Ava_Porcentaje}%</strong>
@@ -531,7 +610,14 @@ export function TicketDetalleDialog({ ticket, onClose, onRegistrarAvance }: Prop
           </Tabs>
         </div>
 
-        <DialogFooter className="shrink-0 gap-2 border-t border-border/60 px-6 py-4 sm:gap-0">
+        <DialogFooter className="shrink-0 gap-2 border-t border-border/60 px-4 py-4 sm:gap-0 sm:px-6">
+          <span aria-live="polite" className="mr-auto self-center text-xs text-muted-foreground">
+            {compartirEstado === "error" ? "No se pudo copiar el detalle." : compartirEstado === "copiado" ? "Detalle copiado." : ""}
+          </span>
+          <Button type="button" variant="outline" onClick={() => void compartir()} disabled={!ticket}>
+            <Share2 className="size-4" />
+            Compartir
+          </Button>
           <Button type="button" variant="ghost" onClick={onClose}>
             Cerrar
           </Button>

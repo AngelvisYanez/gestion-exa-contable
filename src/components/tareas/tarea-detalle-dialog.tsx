@@ -13,6 +13,7 @@ import {
   Loader2,
   Paperclip,
   Pencil,
+  Share2,
   Sparkles,
   Trash2,
   TrendingUp,
@@ -35,7 +36,7 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DatePicker } from "@/components/ui/date-picker";
-import { RichTextHtml, isProbablyHtml } from "@/components/ui/rich-text";
+import { RichTextHtml, isProbablyHtml, plainTextFromHtml } from "@/components/ui/rich-text";
 import { useAuth } from "@/contexts/AuthContext";
 import { hasRolePermission } from "@/lib/auth/role-permissions";
 import { GenerarBriefDialog } from "@/components/tareas/generar-brief-dialog";
@@ -162,6 +163,58 @@ function withCapturasQuery(
   return `${u.pathname}${u.search}`;
 }
 
+function textoParaCompartir(tarea: Tarea, detalle: TareaDetalle | null) {
+  const actual = detalle?.tarea;
+  const asignados = detalle?.asignados?.length ? detalle.asignados : tarea.Asignados;
+  const lineas = [
+    `Tarea #${tarea.Tar_Cod}: ${actual?.Tar_Titulo || tarea.Tar_Titulo}`,
+    `Estado: ${actual?.Tar_Estado || tarea.Tar_Estado}`,
+    `Prioridad: ${actual?.Tar_Prioridad || tarea.Tar_Prioridad}`,
+    `Avance: ${actual?.Ava_Porcentaje ?? tarea.Ava_Porcentaje ?? 0}%`,
+    `Asignados: ${asignados?.map((a) => a.Nombre).join(", ") || "Sin asignar"}`,
+  ];
+  const complejidad = actual?.Tar_Complejidad || tarea.Tar_Complejidad;
+  if (complejidad) lineas.push(`Complejidad: ${complejidad}`);
+  const inicio = actual?.Tar_Fecha_Inicio || tarea.Tar_Fecha_Inicio;
+  const fin = actual?.Tar_Fecha_Fin || tarea.Tar_Fecha_Fin;
+  const culminacion = actual?.Tar_Fecha_Culminacion || tarea.Tar_Fecha_Culminacion;
+  if (inicio) lineas.push(`Inicio: ${fmtDate(inicio)}`);
+  if (fin) lineas.push(`Fin: ${fmtDate(fin)}`);
+  if (culminacion) lineas.push(`Culminada: ${fmtDate(culminacion)}`);
+  if (actual?.Creador) lineas.push(`Creada por: ${actual.Creador}`);
+
+  const descripcion = plainTextFromHtml(actual?.Tar_Descripcion || tarea.Tar_Descripcion);
+  if (descripcion) lineas.push(`\nDescripción:\n${descripcion}`);
+  if (actual?.Tar_Modulo) lineas.push(`Módulo: ${actual.Tar_Modulo}`);
+  if (actual?.Tar_Proceso) lineas.push(`Proceso: ${actual.Tar_Proceso}`);
+  if (actual?.Tar_Directorio) lineas.push(`Directorio: ${actual.Tar_Directorio}`);
+
+  if (detalle?.evidencias_iniciales.length) {
+    lineas.push("\nEvidencias iniciales:");
+    for (const archivo of detalle.evidencias_iniciales) {
+      lineas.push(`- ${archivo.nombre}: ${new URL(archivo.url, window.location.origin).href}`);
+    }
+  }
+  if (detalle?.avances.length) {
+    lineas.push("\nAvances:");
+    for (const avance of detalle.avances) {
+      const encabezado = [`${avance.Ava_Porcentaje}%`, avance.Autor, avance.Ava_Fecha && fmtFechaHoraZona(avance.Ava_Fecha)]
+        .filter(Boolean)
+        .join(" · ");
+      lineas.push(`- ${encabezado}`);
+      const realizado = plainTextFromHtml(avance.realizado);
+      if (realizado) lineas.push(`  ${realizado}`);
+      if (avance.siguiente) lineas.push(`  Siguiente: ${avance.siguiente}`);
+      if (avance.bloqueos) lineas.push(`  Bloqueos: ${avance.bloqueos}`);
+      for (const enlace of avance.enlaces) lineas.push(`  Enlace: ${enlace}`);
+      for (const archivo of avance.adjuntos) {
+        lineas.push(`  Adjunto: ${archivo.nombre} (${new URL(archivo.url, window.location.origin).href})`);
+      }
+    }
+  }
+  return lineas.join("\n");
+}
+
 export function TareaDetalleDialog({
   tarea,
   detailUrl,
@@ -188,6 +241,7 @@ export function TareaDetalleDialog({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [compartirEstado, setCompartirEstado] = useState<"copiado" | "error" | null>(null);
   const [localReload, setLocalReload] = useState(0);
   const tarCod = tarea?.Tar_Cod ?? null;
   const fetchReloadKey = (reloadKey || 0) + localReload;
@@ -278,6 +332,27 @@ export function TareaDetalleDialog({
   const sesDb = String(editExtraBody?.Ses_Dat_Dis || db || "exa");
   const tituloTarea = t?.Tar_Titulo || tarea?.Tar_Titulo || "esta tarea";
 
+  const compartir = async () => {
+    if (!tarea) return;
+    setCompartirEstado(null);
+    const detalleActual = data?.tarea.Tar_Cod === tarea.Tar_Cod ? data : null;
+    const text = textoParaCompartir(tarea, detalleActual);
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: `Tarea #${tarea.Tar_Cod}`, text });
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      setCompartirEstado("copiado");
+    } catch {
+      setCompartirEstado("error");
+    }
+  };
+
   const borrarTarea = async () => {
     if (!tarCod || deleting) return;
     setDeleting(true);
@@ -309,13 +384,14 @@ export function TareaDetalleDialog({
       open={!!tarea}
       onOpenChange={(o) => {
         if (!o) {
+          setCompartirEstado(null);
           onClose();
           setZoom(null);
         }
       }}
     >
       <DialogContent className="flex max-h-[92dvh] max-w-3xl flex-col gap-0 overflow-hidden p-0">
-        <div className="shrink-0 space-y-3 border-b border-border/60 px-6 pb-4 pt-6">
+        <div className="shrink-0 space-y-3 border-b border-border/60 px-4 pb-4 pt-6 sm:px-6">
           <DialogHeader className="space-y-2 text-left">
             <div className="flex flex-wrap items-center gap-2 pr-8">
               <span className="font-mono text-xs text-muted-foreground">#{tarea?.Tar_Cod}</span>
@@ -336,11 +412,11 @@ export function TareaDetalleDialog({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
           {error && <Alert variant="destructive" className="mb-4">{error}</Alert>}
 
           <Tabs value={tab} onValueChange={setTab}>
-            <TabsList className={cn("grid h-auto gap-1", canViewCapturas ? "grid-cols-3" : "grid-cols-2")}>
+            <TabsList className={cn("grid h-auto gap-1 max-sm:flex", canViewCapturas ? "grid-cols-3" : "grid-cols-2")}>
               <TabsTrigger value="detalle" className="gap-1.5 text-xs sm:text-sm">
                 <FileText className="size-3.5 shrink-0" />
                 Detalle
@@ -772,7 +848,7 @@ export function TareaDetalleDialog({
           </Tabs>
         </div>
 
-        <DialogFooter className="shrink-0 gap-2 border-t border-border/60 px-6 py-4 sm:gap-2">
+        <DialogFooter className="shrink-0 gap-2 border-t border-border/60 px-4 py-4 max-sm:flex-row max-sm:flex-wrap max-sm:justify-end sm:gap-2 sm:px-6">
           {tarea && canDelete && (
             <Button
               type="button"
@@ -787,7 +863,14 @@ export function TareaDetalleDialog({
               Borrar
             </Button>
           )}
-          <Button type="button" variant="ghost" onClick={onClose}>
+          <span aria-live="polite" className="self-center text-xs text-muted-foreground">
+            {compartirEstado === "error" ? "No se pudo copiar el detalle." : compartirEstado === "copiado" ? "Detalle copiado." : ""}
+          </span>
+          <Button type="button" variant="outline" onClick={() => void compartir()} disabled={!tarea}>
+            <Share2 className="size-4" />
+            Compartir
+          </Button>
+          <Button type="button" variant="ghost" onClick={() => { setCompartirEstado(null); onClose(); }}>
             Cerrar
           </Button>
           {tarea && isManager && canEdit && (

@@ -12,7 +12,7 @@ import {
   X,
 } from "lucide-react";
 import Topbar from "@/components/layout/Topbar";
-import { PaginationBar, FilterBar, ViewModeToggle, type ListViewMode } from "@/components/list-controls";
+import { PaginationBar, FilterBar, ViewModeToggle, useResponsiveListView, type ListViewMode } from "@/components/list-controls";
 import {
   DateRangeFilter,
   TICKET_FECHA_PRESETS,
@@ -171,6 +171,7 @@ export default function TicketsPage() {
   const [q, setQ] = useState("");
   const [filtroDev, setFiltroDev] = useState("");
   const [viewMode, setViewMode] = useState<ListViewMode>("lista");
+  const displayMode = useResponsiveListView(viewMode);
   const [avanceTarea, setAvanceTarea] = useState<Tarea | null>(null);
   const [detalleCod, setDetalleCod] = useState<number | null>(null);
   const [detalleDb, setDetalleDb] = useState<string | null>(null);
@@ -597,7 +598,7 @@ export default function TicketsPage() {
                   type="button"
                   onClick={() => setTodasLasFechas(true)}
                   className={cn(
-                    "whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-bold transition-colors",
+                    "min-h-11 whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-bold transition-colors sm:min-h-0",
                     todasLasFechas
                       ? "bg-background text-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
@@ -617,7 +618,7 @@ export default function TicketsPage() {
                       setRango(rangoTicketsPreset(p.id));
                     }}
                     className={cn(
-                      "whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-bold transition-colors",
+                      "min-h-11 whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-bold transition-colors sm:min-h-0",
                       activo
                         ? "bg-background text-foreground shadow-sm"
                         : "text-muted-foreground hover:text-foreground"
@@ -687,7 +688,7 @@ export default function TicketsPage() {
                   type="button"
                   onClick={() => setBandeja(b.id)}
                   className={cn(
-                    "whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-bold transition-colors",
+                    "min-h-11 whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-bold transition-colors sm:min-h-0",
                     bandeja === b.id
                       ? "bg-background text-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
@@ -710,11 +711,11 @@ export default function TicketsPage() {
         <div
           className={cn(
             "mb-6 w-full min-w-0",
-            viewMode === "kanban" &&
+            displayMode === "kanban" &&
               "flex h-[min(70dvh,calc(100dvh-18rem))] min-h-[320px] flex-col overflow-hidden rounded-xl border border-border/80 bg-card p-2 shadow-sm sm:p-3"
           )}
         >
-            {viewMode === "kanban" ? (
+            {displayMode === "kanban" ? (
               <KanbanBoard
                 tareas={kanbanItems}
                 loading={loading}
@@ -727,7 +728,7 @@ export default function TicketsPage() {
                 }}
                 className="min-h-0 flex-1"
               />
-            ) : viewMode === "grid" ? (
+            ) : displayMode === "grid" ? (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {pager.slice.map((t) => (
                   <article
@@ -961,13 +962,13 @@ export default function TicketsPage() {
               </div>
             )}
 
-            {!loading && ticketsVisibles.length === 0 && viewMode === "grid" && (
+            {!loading && ticketsVisibles.length === 0 && displayMode === "grid" && (
               <div className="rounded-xl border border-dashed border-border py-16 text-center text-sm text-muted-foreground">
                 {vacioMsg}
               </div>
             )}
 
-            {viewMode !== "kanban" && (
+            {displayMode !== "kanban" && (
             <PaginationBar
               page={pager.page}
               totalPages={pager.totalPages}

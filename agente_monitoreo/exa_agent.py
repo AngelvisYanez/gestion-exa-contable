@@ -31,7 +31,7 @@ from win_shell import (
     start_input_counter,
 )
 
-AGENT_VERSION = "2.11.1-flet"
+AGENT_VERSION = "2.11.2-flet"
 
 # Tokens alineados a globals.css / Badge del dashboard EXA
 LIGHT = {
@@ -433,7 +433,7 @@ class ExaMonitorApp:
 
     def _setup_page(self):
         p = self.page
-        p.title = "EXA Monitor"
+        p.title = f"EXA Monitor · v{AGENT_VERSION}"
         self._apply_page_theme()
         p.padding = 0
         p.window.width = 760
@@ -636,6 +636,7 @@ class ExaMonitorApp:
                     ft.Row(
                         [
                             self._theme_button(),
+                            ft.Text(f"v{AGENT_VERSION}", size=11, color=C["text_muted"]),
                             self.status_chip,
                         ],
                         spacing=4,
@@ -713,6 +714,7 @@ class ExaMonitorApp:
                                     font_family="Segoe UI Black",
                                 ),
                                 ft.Text("Tareas y monitoreo", size=12, color=C["on_primary_soft"]),
+                                ft.Text(f"Versión {AGENT_VERSION}", size=11, color=C["on_primary_soft"]),
                                 ft.Text("Iniciar sesión", size=24, weight=ft.FontWeight.BOLD, color=C["on_primary"]),
                                 ft.Text(
                                     "Usa tu cédula y contraseña de EXA.",

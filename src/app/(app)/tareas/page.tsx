@@ -5,7 +5,7 @@ import { ImagePlus, Loader2, Plus, RefreshCw, Search, X } from "lucide-react";
 import Topbar from "@/components/layout/Topbar";
 import { KanbanBoard, type KanbanEstado } from "@/components/dashboard/kanban-board";
 import type { Tarea } from "@/components/dashboard/types";
-import { PaginationBar, FilterBar, ViewModeToggle, type ListViewMode } from "@/components/list-controls";
+import { PaginationBar, FilterBar, ViewModeToggle, useResponsiveListView, type ListViewMode } from "@/components/list-controls";
 import { EstadoBadge, PrioridadBadge, fmtDate } from "@/components/status-badges";
 import { useAuth } from "@/contexts/AuthContext";
 import { hasRolePermission } from "@/lib/auth/role-permissions";
@@ -58,9 +58,11 @@ export default function TareasPage() {
   const [error, setError] = useState("");
   const [tareas, setTareas] = useState<Tarea[]>([]);
   const [filtroEstado, setFiltroEstado] = useState("todos");
+  const [filtroUsuario, setFiltroUsuario] = useState("");
   const [q, setQ] = useState("");
   const [viewMode, setViewMode] = useState<ListViewMode>("kanban");
-  const pager = usePagination(tareas, { resetKey: `${filtroEstado}|${q}` });
+  const displayMode = useResponsiveListView(viewMode);
+  const pager = usePagination(tareas, { resetKey: `${filtroEstado}|${filtroUsuario}|${q}` });
 
   const [formOpen, setFormOpen] = useState(false);
   const [formTitulo, setFormTitulo] = useState("");
@@ -74,6 +76,7 @@ export default function TareasPage() {
   const [formFotos, setFormFotos] = useState<File[]>([]);
   const [cols, setCols] = useState<Array<{ Per_Cod: number; Nombre: string; Rol?: string }>>([]);
   const fotoRef = useRef<HTMLInputElement>(null);
+  const loadRequest = useRef(0);
 
   const fotoPreviews = useMemo(
     () => formFotos.map((f) => URL.createObjectURL(f)),
@@ -88,20 +91,21 @@ export default function TareasPage() {
   const detalleOpen = tareas.find((t) => t.Tar_Cod === detalleCod) ?? null;
 
   const loadTareas = useCallback(async () => {
+    const request = ++loadRequest.current;
     setLoading(true);
     setError("");
     try {
-      const url = `/api/tareas?Ses_Dat_Dis=${encodeURIComponent(db)}&Emp_Cod=${empCod}&estado=${encodeURIComponent(filtroEstado)}&q=${encodeURIComponent(q)}`;
+      const url = `/api/tareas?Ses_Dat_Dis=${encodeURIComponent(db)}&Emp_Cod=${empCod}&estado=${encodeURIComponent(filtroEstado)}&Per_Cod=${encodeURIComponent(filtroUsuario)}&q=${encodeURIComponent(q)}`;
       const res = await fetch(url);
       const j = await res.json();
       if (!j.success) throw new Error(j.message || "Error al cargar tareas");
-      setTareas(j.tareas || []);
+      if (request === loadRequest.current) setTareas(j.tareas || []);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Error");
+      if (request === loadRequest.current) setError(e instanceof Error ? e.message : "Error");
     } finally {
-      setLoading(false);
+      if (request === loadRequest.current) setLoading(false);
     }
-  }, [db, empCod, filtroEstado, q]);
+  }, [db, empCod, filtroEstado, filtroUsuario, q]);
 
   useEffect(() => {
     void loadTareas();
@@ -145,13 +149,17 @@ export default function TareasPage() {
     setFormFotos(next);
   };
 
-  const loadCols = async () => {
+  const loadCols = useCallback(async () => {
     const res = await fetch(
       `/api/devs?view=colaboradores&asignables=1&Ses_Dat_Dis=${encodeURIComponent(db)}`
     );
     const j = await res.json();
-    setCols(j.colaboradores || []);
-  };
+    if (j.success) setCols(j.colaboradores || []);
+  }, [db]);
+
+  useEffect(() => {
+    void loadCols().catch(() => {});
+  }, [loadCols]);
 
   const crearTarea = async () => {
     if (!formTitulo.trim()) {
@@ -256,7 +264,7 @@ export default function TareasPage() {
   return (
     <>
       <Topbar title="Tareas" subtitle={isDeveloper ? "Creadas por ti" : "Asignaciones y seguimiento"} showDbSelector={false} />
-      <main className="flex h-[calc(100dvh-3.5rem)] min-h-0 w-full min-w-0 flex-col overflow-hidden">
+      <main className="flex min-h-[calc(100dvh-3.5rem)] w-full min-w-0 flex-col sm:h-[calc(100dvh-3.5rem)] sm:min-h-0 sm:overflow-hidden">
         <div className="mx-auto flex min-h-0 w-full min-w-0 max-w-[1400px] flex-1 flex-col px-4 py-3 sm:px-6 sm:py-4">
         <FilterBar className="mb-3">
           <div className="relative w-full min-w-0 sm:w-[240px]">
@@ -279,6 +287,18 @@ export default function TareasPage() {
             <option value="Asignado">Asignado</option>
             <option value="En Proceso">En Proceso</option>
             <option value="Finalizada">Finalizada</option>
+          </Select>
+          <Select
+            aria-label="Filtrar por usuario asignado"
+            value={filtroUsuario}
+            onChange={(e) => setFiltroUsuario(e.target.value)}
+            wrapperClassName="w-full sm:w-[200px]"
+            className="h-9 min-h-0 w-full py-0 text-sm"
+          >
+            <option value="">Todos los usuarios</option>
+            {cols.map((c) => (
+              <option key={c.Per_Cod} value={c.Per_Cod}>{c.Nombre}</option>
+            ))}
           </Select>
           <ViewModeToggle value={viewMode} onChange={setViewMode} withKanban />
           <Button
@@ -313,11 +333,11 @@ export default function TareasPage() {
 
         <div
           className={cn(
-            "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/80 bg-card shadow-sm",
-            viewMode === "kanban" ? "p-2 sm:p-3" : "p-3 sm:p-4"
+            "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/80 bg-card shadow-sm max-sm:flex-none",
+            displayMode === "kanban" ? "p-2 sm:p-3" : "p-3 sm:p-4"
           )}
         >
-          {viewMode === "kanban" ? (
+          {displayMode === "kanban" ? (
             <KanbanBoard
               tareas={tareas}
               loading={loading}
@@ -325,11 +345,11 @@ export default function TareasPage() {
               onMoveEstado={moveEstado}
               canMoveEstado={(t, estado) => canAvance && (!isDeveloper || estado !== "Asignado" || t.Asignados.length > 0)}
               onOpen={openDetalle}
-              className="min-h-0 flex-1"
+              className="h-[min(68dvh,38rem)] min-h-[20rem] flex-none sm:h-auto sm:min-h-0 sm:flex-1"
             />
-          ) : viewMode === "grid" ? (
+          ) : displayMode === "grid" ? (
             <div className="flex min-h-0 flex-1 flex-col">
-              <div className="min-h-0 flex-1 overflow-y-auto">
+              <div className="min-h-0 flex-1 overflow-y-auto max-sm:overflow-visible">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {pager.slice.map((t) => (
                   <div

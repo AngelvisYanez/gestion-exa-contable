@@ -251,17 +251,14 @@ export async function listTareas(dbDis: string, opts: {
   type AsigRow = { Tar_Cod: number; Per_Cod: number; Tas_Cod: number; Nombre: string | null };
   let asignaciones: AsigRow[] = [];
   if (tarCodes.length) {
-    const perFilter = opts.perCod && opts.perCod > 0 ? "AND a.Per_Cod = ?" : "";
-    const asigParams: Array<string | number> = [...tarCodes];
-    if (opts.perCod && opts.perCod > 0) asigParams.push(opts.perCod);
     asignaciones = await prisma.$queryRawUnsafe<AsigRow[]>(
       `SELECT a.Tar_Cod, a.Per_Cod, a.Tas_Cod,
               CONVERT(CONCAT(IFNULL(p.Prs_Ape,''), ' ', IFNULL(p.Prs_Nom,'')) USING utf8mb4) AS Nombre
        FROM aud_tareas_asignadas a
        LEFT JOIN personal per ON per.Per_Cod = a.Per_Cod
        LEFT JOIN persona p ON p.Prs_Cod = per.Prs_Cod
-       WHERE a.Tas_Est = 'A' AND a.Tar_Cod IN (${tarCodes.map(() => "?").join(",")}) ${perFilter}`,
-      ...asigParams
+       WHERE a.Tas_Est = 'A' AND a.Tar_Cod IN (${tarCodes.map(() => "?").join(",")})`,
+      ...tarCodes
     );
   }
 

@@ -32,7 +32,7 @@ export type AssigneeMetric = {
 
 export function ManagerKpisWidget({ kpis }: { kpis: Kpis | null }) {
   return (
-    <div className="grid h-auto grid-cols-2 gap-2 sm:grid-cols-3 lg:h-full lg:grid-cols-6">
+    <div className="grid h-auto grid-cols-1 gap-2 min-[380px]:grid-cols-2 sm:grid-cols-3 lg:h-full lg:grid-cols-6">
       <MetricCard compact label="Total" value={kpis?.total ?? "—"} tone="info" />
       <MetricCard compact label="Finalizadas" value={kpis?.completadas ?? "—"} tone="success" />
       <MetricCard compact label="En proceso" value={kpis?.proceso ?? "—"} tone="default" />
@@ -200,7 +200,7 @@ export function DevKpisWidget({
   abiertas: number;
 }) {
   return (
-    <div className="grid h-auto grid-cols-2 gap-2 sm:grid-cols-3 lg:h-full lg:grid-cols-6">
+    <div className="grid h-auto grid-cols-1 gap-2 min-[380px]:grid-cols-2 sm:grid-cols-3 lg:h-full lg:grid-cols-6">
       <MetricCard compact label="Total asignado" value={total} tone="info" />
       <MetricCard compact label="Tareas" value={tareas} tone="default" />
       <MetricCard
@@ -241,7 +241,7 @@ export function DevKpisExtraWidget({
   periodo: number;
 }) {
   return (
-    <div className="grid h-auto grid-cols-2 gap-2 md:grid-cols-4 lg:h-full">
+    <div className="grid h-auto grid-cols-1 gap-2 min-[380px]:grid-cols-2 md:grid-cols-4 lg:h-full">
       <MetricCard compact label="Avance medio" value={avance} tone="info" />
       <MetricCard compact label="Cumplimiento" value={cumplimiento} tone="success" />
       <MetricCard

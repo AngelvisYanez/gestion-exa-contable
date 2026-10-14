@@ -252,7 +252,7 @@ export default function IncidenciasPage() {
         )}
 
         {logConfigured && (
-          <p className="mb-4 text-[11px] text-muted-foreground">
+          <p className="mb-4 break-all text-[11px] text-muted-foreground">
             Leyendo{" "}
             {logFiles
               .filter((f) => f.exists)
@@ -362,7 +362,7 @@ export default function IncidenciasPage() {
                       {inc.Inc_Titulo}
                     </h3>
                     {(inc.Inc_Archivo || inc.Inc_Fuente) && (
-                      <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+                      <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">
                         {inc.Inc_Archivo
                           ? `${inc.Inc_Archivo}${inc.Inc_Linea != null ? `:${inc.Inc_Linea}` : ""}`
                           : null}

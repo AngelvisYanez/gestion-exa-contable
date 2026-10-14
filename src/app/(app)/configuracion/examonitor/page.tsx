@@ -654,7 +654,7 @@ export default function ExaMonitorConfigPage() {
               Aplicar políticas en lote
             </CardTitle>
             <CardDescription>
-              Selecciona colaboradores en la tabla y aplica las mismas opciones de golpe.
+              Selecciona colaboradores en el listado y aplica las mismas opciones de golpe.
               Horario en hora de Guayaquil (ahora {ahoraLabel}). Incluye pausa de almuerzo
               (1 h) que apaga el monitoreo dentro de la jornada.
             </CardDescription>
@@ -746,7 +746,7 @@ export default function ExaMonitorConfigPage() {
                       disabled={!bulkHorario}
                       onClick={() => setBulkDias(toggleDia(bulkDias, d.id))}
                       className={
-                        "size-7 rounded text-xs font-semibold " +
+                        "size-11 rounded text-xs font-semibold sm:size-7 " +
                         (on
                           ? "bg-sky-600 text-white"
                           : "bg-muted text-muted-foreground") +
@@ -821,7 +821,7 @@ export default function ExaMonitorConfigPage() {
         {okMsg && <Alert variant="success">{okMsg}</Alert>}
 
         <Card className="overflow-hidden">
-          <Table>
+          <Table className="responsive-card-table">
             <TableHeader className="bg-muted [&_th]:text-muted-foreground">
               <TableRow className="border-border hover:bg-muted">
                 <TableHead className="w-10">
@@ -851,7 +851,7 @@ export default function ExaMonitorConfigPage() {
                 const enHorario = h.Mon_Horario_Activo ? estaEnHorarioLaboral(h) : null;
                 return (
                 <TableRow key={c.Per_Cod}>
-                  <TableCell>
+                  <TableCell data-label="Seleccionar">
                     <input
                       type="checkbox"
                       checked={selected.has(c.Per_Cod)}
@@ -859,14 +859,14 @@ export default function ExaMonitorConfigPage() {
                       aria-label={`Seleccionar ${c.Nombre}`}
                     />
                   </TableCell>
-                  <TableCell>
+                  <TableCell data-label="Colaborador">
                     <div className="font-semibold">{c.Nombre || "Sin nombre en ficha"}</div>
                     <div className="text-xs text-muted-foreground">
                       {[c.Cedula && `Cédula ${c.Cedula}`, c.Cargo].filter(Boolean).join(" · ") ||
                         "Sin datos de ficha"}
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell data-label="Monitoreo">
                     <div className="flex flex-col gap-1">
                       <div className="flex items-center gap-2">
                         <Switch
@@ -898,7 +898,7 @@ export default function ExaMonitorConfigPage() {
                       ) : null}
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell data-label="Horario laboral">
                     <div className="space-y-2 py-1">
                       <div className="flex items-center gap-2">
                         <Switch
@@ -955,7 +955,7 @@ export default function ExaMonitorConfigPage() {
                                 })
                               }
                               className={
-                                "size-6 rounded text-[10px] font-semibold " +
+                                "size-11 rounded text-[10px] font-semibold sm:size-6 " +
                                 (on
                                   ? "bg-sky-600 text-white"
                                   : "bg-muted text-muted-foreground") +
@@ -1015,7 +1015,7 @@ export default function ExaMonitorConfigPage() {
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell data-label="Intervalo">
                     <Select
                       value={String(c.Mon_Intervalo_Minutos)}
                       onChange={(e) =>
@@ -1031,7 +1031,7 @@ export default function ExaMonitorConfigPage() {
                       ))}
                     </Select>
                   </TableCell>
-                  <TableCell>
+                  <TableCell data-label="Captura">
                     <Switch
                       checked={!!c.Mon_Captura_Pantalla}
                       onCheckedChange={(v) =>
@@ -1040,7 +1040,7 @@ export default function ExaMonitorConfigPage() {
                       disabled={saving === c.Per_Cod}
                     />
                   </TableCell>
-                  <TableCell>
+                  <TableCell data-label="Forzar bandeja">
                     <Switch
                       checked={!!(c.Mon_Forzar_Bandeja ?? 1)}
                       onCheckedChange={(v) =>
@@ -1049,7 +1049,7 @@ export default function ExaMonitorConfigPage() {
                       disabled={saving === c.Per_Cod}
                     />
                   </TableCell>
-                  <TableCell>
+                  <TableCell data-label="Permitir salir">
                     <Switch
                       checked={!!c.Mon_Permitir_Salir}
                       onCheckedChange={(v) =>

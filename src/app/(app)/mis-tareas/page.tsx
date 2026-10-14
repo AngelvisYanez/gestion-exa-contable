@@ -18,7 +18,7 @@ import Topbar from "@/components/layout/Topbar";
 import { KanbanBoard, type KanbanEstado, workItemKey } from "@/components/dashboard/kanban-board";
 import type { Tarea } from "@/components/dashboard/types";
 import { KpiCarousel } from "@/components/kpi-carousel";
-import { PaginationBar, FilterBar, ViewModeToggle, type ListViewMode } from "@/components/list-controls";
+import { PaginationBar, FilterBar, ViewModeToggle, useResponsiveListView, type ListViewMode } from "@/components/list-controls";
 import { EstadoBadge, PrioridadBadge, fmtDate } from "@/components/status-badges";
 import { AvanceDialog } from "@/components/tareas/avance-dialog";
 import { MetricasPanel, metricasKpiItems } from "@/components/tareas/metricas-panel";
@@ -116,6 +116,7 @@ export default function MisTareasPage() {
   const [filtro, setFiltro] = useState<Filtro>("abiertas");
   const [tipoFiltro, setTipoFiltro] = useState<TipoFiltro>("todos");
   const [viewMode, setViewMode] = useState<ListViewMode>("kanban");
+  const displayMode = useResponsiveListView(viewMode);
   const [q, setQ] = useState("");
   const [avanceKey, setAvanceKey] = useState<string | null>(null);
   const [detalleKey, setDetalleKey] = useState<string | null>(null);
@@ -301,7 +302,7 @@ export default function MisTareasPage() {
                 title={`Ultimos ${d} dias`}
                 onClick={() => setPeriodo(d)}
                 className={cn(
-                  "whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-bold transition-colors",
+                  "min-h-11 whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-bold transition-colors sm:min-h-0",
                   periodo === d ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -316,7 +317,7 @@ export default function MisTareasPage() {
                 setPeriodo("rango");
               }}
               className={cn(
-                "whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-bold transition-colors",
+                "min-h-11 whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-bold transition-colors sm:min-h-0",
                 periodo === "rango" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
               )}
             >
@@ -392,7 +393,7 @@ export default function MisTareasPage() {
                 type="button"
                 onClick={() => setTipoFiltro(f.id)}
                 className={cn(
-                  "inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-bold transition-colors",
+                  "inline-flex min-h-11 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-bold transition-colors sm:min-h-0",
                   tipoFiltro === f.id
                     ? "bg-background text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground"
@@ -411,7 +412,7 @@ export default function MisTareasPage() {
                 type="button"
                 onClick={() => setFiltro(f.id)}
                 className={cn(
-                  "inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-bold transition-colors",
+                  "inline-flex min-h-11 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-bold transition-colors sm:min-h-0",
                   filtro === f.id ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -437,11 +438,11 @@ export default function MisTareasPage() {
         <div
           className={cn(
             "rounded-xl border border-border/80 bg-card p-3 shadow-sm sm:p-4",
-            viewMode === "kanban" &&
+            displayMode === "kanban" &&
               "flex h-[min(70dvh,calc(100dvh-14rem))] min-h-[280px] w-full min-w-0 flex-col overflow-hidden sm:h-[min(72dvh,calc(100dvh-12rem))]"
           )}
         >
-          {viewMode === "kanban" ? (
+          {displayMode === "kanban" ? (
             <KanbanBoard
               tareas={visibles}
               loading={loading}
@@ -451,7 +452,7 @@ export default function MisTareasPage() {
               canMoveEstado={(t) => canAdvanceItem(t)}
               onOpen={(t) => setDetalleKey(workItemKey(t))}
             />
-          ) : viewMode === "grid" ? (
+          ) : displayMode === "grid" ? (
             <>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {pager.slice.map((t) => {

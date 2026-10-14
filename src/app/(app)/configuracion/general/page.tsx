@@ -473,7 +473,7 @@ function TeamTable({ title, rows }: { title: string; rows: TeamMemberRow[] }) {
     <div>
       <p className="mb-2 text-xs font-bold uppercase tracking-wide text-brand-gray-500">{title}</p>
       <div className="overflow-hidden rounded-lg border border-brand-gray-200">
-        <Table>
+        <Table className="responsive-card-table">
           <TableHeader>
             <TableRow>
               <TableHead>Miembro</TableHead>
@@ -485,18 +485,18 @@ function TeamTable({ title, rows }: { title: string; rows: TeamMemberRow[] }) {
           <TableBody>
             {rows.map((r) => (
               <TableRow key={r.name}>
-                <TableCell>
+                <TableCell data-label="Miembro">
                   <div className="font-semibold text-brand-gray-900">{r.name}</div>
                   {r.Nombre_BD && r.Nombre_BD !== r.name && (
                     <div className="text-[10px] text-brand-gray-500">BD: {r.Nombre_BD}</div>
                   )}
                 </TableCell>
-                <TableCell>
+                <TableCell data-label="Rol">
                   <Badge variant={r.role === "manager" ? "info" : "secondary"}>
                     {roleLabel(r.role)}
                   </Badge>
                 </TableCell>
-                <TableCell className="text-xs text-brand-gray-700">
+                <TableCell data-label="Ficha EXA" className="text-xs text-brand-gray-700">
                   {r.linked ? (
                     <>
                       Per_Cod {r.Per_Cod}
@@ -509,7 +509,7 @@ function TeamTable({ title, rows }: { title: string; rows: TeamMemberRow[] }) {
                     <span className="text-brand-gray-400">Sin ficha vinculada</span>
                   )}
                 </TableCell>
-                <TableCell>
+                <TableCell data-label="Estado">
                   {r.linked ? (
                     <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
                       <CheckCircle2 className="size-3.5" /> Vinculado

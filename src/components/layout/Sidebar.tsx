@@ -18,11 +18,13 @@ import {
   Settings,
   Ticket,
   Users,
+  X,
 } from "lucide-react";
 import { type UserRole } from "@/lib/auth/users";
 import { hasRolePermission, type RolePermissionKey, type RolePermissions } from "@/lib/auth/role-permissions";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSidebar } from "@/contexts/SidebarContext";
+import { useMediaQuery } from "@/hooks/use-media-query";
 
 type NavLeaf = {
   href: string;
@@ -156,6 +158,7 @@ export default function Sidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
   const { collapsed, setCollapsed, mobileOpen, setMobileOpen } = useSidebar();
+  const isMobile = useMediaQuery("(max-width: 767px)");
 
   const groups = navGroups
     .map((g) => ({
@@ -177,9 +180,22 @@ export default function Sidebar() {
     return () => window.removeEventListener("keydown", onKey);
   }, [mobileOpen, setMobileOpen]);
 
+  useEffect(() => {
+    if (!mobileOpen || !isMobile) return;
+    const main = document.getElementById("main-content");
+    if (!main) return;
+    const previousOverflow = main.style.overflowY;
+    main.style.overflowY = "hidden";
+    return () => { main.style.overflowY = previousOverflow; };
+  }, [mobileOpen, isMobile]);
+
   return (
     <>
       <aside
+        id="app-sidebar"
+        aria-label="Navegación principal"
+        aria-hidden={isMobile && !mobileOpen}
+        inert={isMobile && !mobileOpen}
         className={`
           ${sidebarWidth} overflow-x-hidden bg-sidebar border-r border-sidebar-border
           h-dvh max-h-dvh flex flex-col fixed top-0 left-0 z-[60]
@@ -188,7 +204,7 @@ export default function Sidebar() {
         `}
       >
         <div
-          className={`relative flex h-16 shrink-0 items-center justify-center border-b border-sidebar-border bg-sidebar ${
+          className={`relative flex h-16 shrink-0 items-center justify-center border-b border-sidebar-border bg-sidebar max-md:pr-12 ${
             collapsed ? "px-2" : "px-3"
           }`}
         >
@@ -207,6 +223,14 @@ export default function Sidebar() {
           ) : (
             <SidebarWordmark />
           )}
+          <button
+            type="button"
+            onClick={() => setMobileOpen(false)}
+            className="absolute right-2 top-2 flex size-12 items-center justify-center rounded-lg text-sidebar-foreground md:hidden"
+            aria-label="Cerrar menú"
+          >
+            <X className="size-5" />
+          </button>
         </div>
 
         <nav className="flex-1 py-2 flex flex-col overflow-y-auto overflow-x-hidden">
@@ -262,7 +286,7 @@ export default function Sidebar() {
           ))}
         </nav>
 
-        <div className="shrink-0 border-t border-sidebar-border p-2">
+        <div className="shrink-0 border-t border-sidebar-border p-2 max-md:pb-[max(0.5rem,env(safe-area-inset-bottom))]">
           <button
             type="button"
             onClick={() => void logout()}

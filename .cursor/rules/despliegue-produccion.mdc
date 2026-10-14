@@ -11,24 +11,35 @@ Después de un commit que el usuario pidió y de un push exitoso a `main` de est
 
 No hay Actions ni webhook. El sitio es `gestion.exacontable.com`. El código vive en `/var/www/vhosts/gestion.exacontable.com/httpdocs`. Nginx manda el dominio a `127.0.0.1:3010`. Node es `/opt/plesk/node/26/bin/node`. Ese proceso no sobrevive a un reinicio del servidor: hay que volver a levantarlo.
 
-Usa el helper de Plesk que ya existe. No imprimas contraseñas, ni las copies a la regla, al chat o al repo. En el comando remoto no uses comillas dobles: el scheduler las quita. Evita `$()`.
+## Acceso al servidor
 
-Orden en el servidor, con `PATH=/opt/plesk/node/26/bin:/usr/bin:/bin`:
+Usa el helper de Plesk del repositorio hermano `../exa-relavera-desarrollo-api/scripts/run_plesk.ps1`, con su parámetro `-Command`. No imprimas el contenido del helper ni contraseñas, tokens, cookies o valores de `.env`; no los copies al chat ni al repositorio. El helper oculta la salida estándar de los comandos que terminan bien. Para diagnósticos **solo de lectura**, se puede terminar intencionadamente con `exit 1` y leer esa salida. Para mutaciones, conserva el código de salida real y verifica el resultado con otra tarea de solo lectura.
 
-1. `git pull` de `main` en `httpdocs`. Si hay cambios locales, detente y dilo. No hagas reset ni force.
-2. Si cambió `package-lock.json`, `npm ci`. Si cambió Prisma, `prisma generate`.
-3. `npm run build` en segundo plano, con log en `logs/next-build.log`. No mates el Node viejo hasta que el build termine bien.
-4. Si el build falla, deja el proceso anterior en 3010 y reporta el error. No dejes el sitio en 502.
-5. Si terminó, reinicia:
+En cada comando remoto establece `PATH=/opt/plesk/node/26/bin:/usr/bin:/bin`. El scheduler elimina las comillas dobles e interpreta `%`: no uses ninguno de los dos en comandos remotos. Evita también `$()`.
+
+## Antes de actualizar
+
+1. Consulta el SHA remoto con `git ls-remote origin refs/heads/main` y confirma que sea el commit solicitado. En `httpdocs`, comprueba el branch, `HEAD` y `git status --porcelain=v1`; luego ejecuta `git fetch origin main` para poder inspeccionar los cambios entrantes. No incluyas cambios locales del equipo de trabajo que no se hayan publicado.
+2. Si hay modificaciones en archivos **versionados** del servidor, detente y repórtalas. No hagas `reset`, `force`, ni borres o sobrescribas esos archivos.
+3. Conserva los archivos sin seguimiento que ya existían durante el despliegue del 13 de octubre de 2026: `.node-version`, `.plesk.startup.cjs`, `docs/Brief_PRUEBA_160_20261002.{md,pdf}`, `docs/Brief_PRUEBA_160_20261003.{md,pdf}`, `index.html.autoconfig-bak`, `public/deploy-status-7b2bc20.txt` y `tmp/`. Después del `fetch`, compara sus rutas con `git diff --name-only HEAD..FETCH_HEAD`: ningún archivo entrante debe ocuparlas. Si aparece otro archivo sin seguimiento o hay un conflicto, detente y repórtalo. No incluyas estos archivos en commits.
+4. Normalmente `httpdocs/.git` ya existe: se restauró en el despliegue del 13 de octubre de 2026. Si vuelve a faltar, no hagas un `git init` ciego. Clona `main` **sin checkout** en una ruta temporal fuera de `httpdocs`, identifica el commit exacto que corresponde al código servido y audita el árbol de trabajo contra ese commit. Solo si todos los archivos versionados coinciden, prepara el branch y el índice en el clon temporal, mueve únicamente `.git` a `httpdocs`, verifica `git status` y elimina la carpeta temporal vacía. Si no puedes demostrar esa coincidencia, detente; no copies código encima del sitio.
+
+## Actualizar y compilar
+
+1. En `httpdocs`, ejecuta `git pull --ff-only origin main`. Confirma que `HEAD` quedó en el SHA previsto y que no hay diferencias en archivos versionados. Los archivos sin seguimiento permitidos deben permanecer intactos.
+2. Compara el commit anterior con el nuevo. Si cambió `package-lock.json`, ejecuta `npm ci`. Si cambió Prisma, ejecuta `npm run db:generate`. Si alguno falla, no reinicies Node.
+3. Ejecuta `npm run build` en segundo plano, con salida en `/var/www/vhosts/gestion.exacontable.com/logs/next-build.log` y un archivo de estado nuevo por commit, por ejemplo `logs/next-build-<sha>.exit`. En el despliegue comprobado se usó `setsid sh -c` para ejecutar el build y escribir su código de salida en ese archivo. No mates el proceso anterior en 3010 mientras compila.
+4. Espera hasta que exista el archivo de estado y confirma que contiene exactamente `0`; revisa el final del log. Si el build falla, conserva el proceso anterior, informa el error y evita dejar el sitio en 502.
+5. Solo después del éxito, reinicia:
 
 ```sh
 cd /var/www/vhosts/gestion.exacontable.com/httpdocs && fuser -k 3010/tcp ; sleep 2 ; PORT=3010 NODE_ENV=production setsid /opt/plesk/node/26/bin/node server.js >> /var/www/vhosts/gestion.exacontable.com/logs/node3010.log 2>&1 < /dev/null &
 ```
 
-Comprueba desde fuera, no solo con curl interno:
+## Verificar
 
-- `https://gestion.exacontable.com/login` responde 200.
-- El chunk `app/(app)/page-*.js` del build nuevo responde 200 `application/javascript`. Un 400 en esos chunks deja el panel en «Application error».
-- Con sesión iniciada, `/` y `/tareas` abren sin ese error.
+- Comprueba que el proceso escucha en 3010 y que arrancó después del build. Confirma que `HEAD` coincide con `origin/main` y que no hay diferencias en archivos versionados.
+- Comprueba **desde fuera del servidor** que `https://gestion.exacontable.com/login` responde `200` y que los chunks nuevos `/_next/static/chunks/app/(app)/page-*.js` y `/_next/static/chunks/app/(app)/tareas/page-*.js` responden `200` con `application/javascript`. Comprueba también el chunk de Usuarios si ese módulo cambió. Un `400` en esos chunks puede dejar el panel en «Application error».
+- Con una sesión real de prueba, abre `/` y `/tareas` y confirma que no aparece ese error. Si no hay una sesión legítima disponible, informa que esta comprobación quedó pendiente. No leas `AUTH_SECRET` ni fabriques cookies para eludir el inicio de sesión.
 
-No hagas commit de `.env`, logs ni archivos ajenos al cambio.
+No hagas commit de `.env`, logs, archivos sin seguimiento del servidor ni archivos ajenos al cambio solicitado.

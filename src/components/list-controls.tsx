@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { PAGE_SIZE_OPTIONS, type PageSize } from "@/hooks/use-pagination";
 import { cn } from "@/lib/utils";
+import { useMediaQuery } from "@/hooks/use-media-query";
 
 /** Barra de filtros: los controles bajan de línea en lugar de recortarse. */
 export function FilterBar({
@@ -30,6 +31,12 @@ export function FilterBar({
 }
 
 export type ListViewMode = "lista" | "grid" | "kanban";
+
+/** On phones, the existing card view replaces the wide list table. */
+export function useResponsiveListView(value: ListViewMode) {
+  const isPhone = useMediaQuery("(max-width: 639px)");
+  return isPhone && value === "lista" ? "grid" : value;
+}
 
 type ToggleOption = {
   id: ListViewMode;
@@ -55,9 +62,11 @@ type ViewModeToggleProps = {
 };
 
 export function ViewModeToggle({ value, onChange, withKanban, className }: ViewModeToggleProps) {
-  const options = withKanban ? WITH_KANBAN : DEFAULT_OPTIONS;
+  const isPhone = useMediaQuery("(max-width: 639px)");
+  const options = (withKanban ? WITH_KANBAN : DEFAULT_OPTIONS).filter((o) => !isPhone || o.id !== "lista");
+  const selected = isPhone && value === "lista" ? "grid" : value;
   return (
-    <div className={cn("inline-flex max-w-full rounded-lg border border-border bg-muted/40 p-0.5", className)}>
+    <div className={cn("inline-flex max-w-full rounded-lg border border-border bg-muted/40 p-0.5", className)} role="group" aria-label="Vista del listado">
       {options.map((o) => {
         const Icon = o.icon;
         return (
@@ -66,9 +75,11 @@ export function ViewModeToggle({ value, onChange, withKanban, className }: ViewM
             type="button"
             onClick={() => onChange(o.id)}
             title={o.label}
+            aria-label={`Vista ${o.label}`}
+            aria-pressed={selected === o.id}
             className={cn(
-              "inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-xs font-bold transition-colors",
-              value === o.id
+              "inline-flex min-h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-3 text-xs font-bold transition-colors sm:min-h-0 sm:h-9 sm:px-2.5",
+              selected === o.id
                 ? "bg-background text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground"
             )}

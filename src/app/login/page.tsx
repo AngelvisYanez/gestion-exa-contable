@@ -45,7 +45,7 @@ function LoginForm() {
   };
 
   return (
-    <main className="relative flex min-h-screen items-center justify-center bg-background px-4 py-10">
+    <main className="relative flex min-h-dvh items-center justify-center bg-background px-4 py-10 pb-[max(2.5rem,env(safe-area-inset-bottom))]">
       <div className="absolute right-4 top-4 z-20">
         <ThemeToggle />
       </div>
@@ -77,7 +77,6 @@ function LoginForm() {
               <Label htmlFor="cedula">Cedula</Label>
               <Input
                 id="cedula"
-                autoFocus
                 inputMode="numeric"
                 autoComplete="username"
                 value={cedula}

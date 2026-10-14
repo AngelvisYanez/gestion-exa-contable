@@ -239,7 +239,7 @@ export function DevDashboard({ userName }: { userName?: string }) {
                 type="button"
                 onClick={() => setPeriodo(d)}
                 className={cn(
-                  "rounded-md px-3 py-1.5 text-xs font-bold transition-colors",
+                  "min-h-11 rounded-md px-3 py-1.5 text-xs font-bold transition-colors sm:min-h-0",
                   periodo === d
                     ? "bg-background text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground"

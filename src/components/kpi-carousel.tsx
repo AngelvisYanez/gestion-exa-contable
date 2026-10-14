@@ -58,10 +58,11 @@ type Props = {
 const GAP_PX = 8;
 /** Ancho al que apunta cada tarjeta; el carrusel mete más o menos columnas para llenar la fila. */
 const PREFERRED_CARD_PX = 132;
-const MIN_COLS = 2;
+const MIN_COLS = 1;
 const MAX_COLS = 8;
 
 function columnsFor(width: number) {
+  if (width < 320) return 1;
   const raw = Math.floor((width + GAP_PX) / (PREFERRED_CARD_PX + GAP_PX));
   return Math.min(MAX_COLS, Math.max(MIN_COLS, raw || MIN_COLS));
 }

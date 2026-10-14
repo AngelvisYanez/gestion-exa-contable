@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { History, Keyboard, Loader2, MousePointerClick, RefreshCw, Timer } from "lucide-react";
 import Topbar from "@/components/layout/Topbar";
 import { DateRangeFilter, rangoDesdePreset, type DateRangeValue } from "@/components/date-range-filter";
-import { PaginationBar, FilterBar, ViewModeToggle, type ListViewMode } from "@/components/list-controls";
+import { PaginationBar, FilterBar, ViewModeToggle, useResponsiveListView, type ListViewMode } from "@/components/list-controls";
 import { EstadoBadge, fechaLocal } from "@/components/status-badges";
 import { fmtFechaHoraZona } from "@/lib/timezone";
 import { useAuth } from "@/contexts/AuthContext";
@@ -106,6 +106,7 @@ export default function MonitoreoPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [viewMode, setViewMode] = useState<ListViewMode>("lista");
+  const displayMode = useResponsiveListView(viewMode);
   const [rango, setRango] = useState<DateRangeValue>({ desde: hoy, hasta: hoy });
   const pager = usePagination(devs, { resetKey: `${rango.desde}|${rango.hasta}` });
   const [histOpen, setHistOpen] = useState(false);
@@ -362,7 +363,7 @@ export default function MonitoreoPage() {
           .
         </Alert>
 
-        {viewMode === "grid" ? (
+        {displayMode === "grid" ? (
           <>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {pager.slice.map((d) => (

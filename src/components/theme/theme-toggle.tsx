@@ -12,7 +12,7 @@ export function ThemeToggle({ className }: { className?: string }) {
       type="button"
       onClick={toggleTheme}
       className={cn(
-        "relative flex size-10 items-center justify-center rounded-lg border border-transparent text-brand-gray-600 transition-colors hover:border-brand-gray-200 hover:bg-brand-gray-100 hover:text-brand-gray-900 sm:size-8",
+        "relative flex size-11 items-center justify-center rounded-lg border border-transparent text-brand-gray-600 transition-colors hover:border-brand-gray-200 hover:bg-brand-gray-100 hover:text-brand-gray-900 sm:size-8",
         className
       )}
       aria-label="Cambiar entre modo claro y oscuro"

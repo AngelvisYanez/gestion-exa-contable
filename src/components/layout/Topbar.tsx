@@ -18,7 +18,7 @@ type Props = {
 
 export default function Topbar({ title, subtitle, showDbSelector = true }: Props) {
   const { user, projects, db, setDb, logout, loading } = useAuth();
-  const { setMobileOpen } = useSidebar();
+  const { mobileOpen, setMobileOpen } = useSidebar();
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -45,6 +45,8 @@ export default function Topbar({ title, subtitle, showDbSelector = true }: Props
           onClick={() => setMobileOpen(true)}
           className="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-lg text-brand-gray-600 transition-colors hover:bg-brand-gray-100 hover:text-brand-gray-900 md:hidden"
           aria-label="Abrir menu"
+          aria-controls="app-sidebar"
+          aria-expanded={mobileOpen}
         >
           <Menu className="w-[18px] h-[18px]" strokeWidth={2} />
         </button>
@@ -135,7 +137,7 @@ export default function Topbar({ title, subtitle, showDbSelector = true }: Props
                   <Link
                     href="/configuracion/usuarios"
                     onClick={() => setOpen(false)}
-                    className="flex items-center gap-3 px-4 py-2.5 text-xs font-medium text-brand-gray-700 hover:bg-brand-gray-100"
+                    className="flex min-h-11 items-center gap-3 px-4 py-2.5 text-xs font-medium text-brand-gray-700 hover:bg-brand-gray-100"
                   >
                     <Settings className="w-3.5 h-3.5" strokeWidth={1.8} />
                     Usuarios de la empresa
@@ -143,7 +145,7 @@ export default function Topbar({ title, subtitle, showDbSelector = true }: Props
                   <Link
                     href="/configuracion"
                     onClick={() => setOpen(false)}
-                    className="flex items-center gap-3 px-4 py-2.5 text-xs font-medium text-brand-gray-700 hover:bg-brand-gray-100"
+                    className="flex min-h-11 items-center gap-3 px-4 py-2.5 text-xs font-medium text-brand-gray-700 hover:bg-brand-gray-100"
                   >
                     <Settings className="w-3.5 h-3.5" strokeWidth={1.8} />
                     Administracion
@@ -151,7 +153,7 @@ export default function Topbar({ title, subtitle, showDbSelector = true }: Props
                   <Link
                     href="/configuracion/general"
                     onClick={() => setOpen(false)}
-                    className="flex items-center gap-3 px-4 py-2.5 text-xs font-medium text-brand-gray-700 hover:bg-brand-gray-100"
+                    className="flex min-h-11 items-center gap-3 px-4 py-2.5 text-xs font-medium text-brand-gray-700 hover:bg-brand-gray-100"
                   >
                     <Settings className="w-3.5 h-3.5" strokeWidth={1.8} />
                     Config. general
@@ -159,7 +161,7 @@ export default function Topbar({ title, subtitle, showDbSelector = true }: Props
                   <Link
                     href="/configuracion/incidencias"
                     onClick={() => setOpen(false)}
-                    className="flex items-center gap-3 px-4 py-2.5 text-xs font-medium text-brand-gray-700 hover:bg-brand-gray-100"
+                    className="flex min-h-11 items-center gap-3 px-4 py-2.5 text-xs font-medium text-brand-gray-700 hover:bg-brand-gray-100"
                   >
                     <Settings className="w-3.5 h-3.5" strokeWidth={1.8} />
                     Monitor de incidencias
@@ -167,7 +169,7 @@ export default function Topbar({ title, subtitle, showDbSelector = true }: Props
                   <Link
                     href="/configuracion/examonitor"
                     onClick={() => setOpen(false)}
-                    className="flex items-center gap-3 px-4 py-2.5 text-xs font-medium text-brand-gray-700 hover:bg-brand-gray-100"
+                    className="flex min-h-11 items-center gap-3 px-4 py-2.5 text-xs font-medium text-brand-gray-700 hover:bg-brand-gray-100"
                   >
                     <Settings className="w-3.5 h-3.5" strokeWidth={1.8} />
                     Config. ExaMonitor
@@ -180,7 +182,7 @@ export default function Topbar({ title, subtitle, showDbSelector = true }: Props
                   setOpen(false);
                   void logout();
                 }}
-                className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-medium text-brand-gray-700 hover:bg-brand-red-subtle hover:text-brand-red cursor-pointer"
+                className="flex min-h-11 w-full items-center gap-3 px-4 py-2.5 text-xs font-medium text-brand-gray-700 hover:bg-brand-red-subtle hover:text-brand-red cursor-pointer"
               >
                 <LogOut className="w-3.5 h-3.5" strokeWidth={1.8} />
                 Cerrar sesion

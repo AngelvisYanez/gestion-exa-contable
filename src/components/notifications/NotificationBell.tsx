@@ -37,7 +37,7 @@ export function NotificationBell() {
           setOpen((v) => !v);
           if (!open) markAllRead();
         }}
-        className="relative flex size-10 items-center justify-center rounded-lg border border-transparent text-brand-gray-600 transition-colors hover:border-brand-gray-200 hover:bg-brand-gray-100 hover:text-brand-gray-900 sm:size-8"
+        className="relative flex size-11 items-center justify-center rounded-lg border border-transparent text-brand-gray-600 transition-colors hover:border-brand-gray-200 hover:bg-brand-gray-100 hover:text-brand-gray-900 sm:size-8"
         aria-label="Notificaciones"
       >
         <Bell className="h-4 w-4" strokeWidth={2} />
@@ -49,7 +49,7 @@ export function NotificationBell() {
       </button>
 
       {open && (
-        <div className="absolute right-0 z-50 mt-1.5 w-[min(340px,calc(100vw-1.25rem))] overflow-hidden rounded-xl border border-brand-gray-200 bg-white shadow-lg">
+        <div className="fixed inset-x-2 top-14 z-50 overflow-hidden rounded-xl border border-brand-gray-200 bg-white shadow-lg sm:absolute sm:inset-x-auto sm:right-0 sm:top-auto sm:mt-1.5 sm:w-[min(340px,calc(100vw-1.25rem))]">
           <div className="flex items-center justify-between border-b border-brand-gray-100 px-3 py-2.5">
             <div>
               <p className="text-[13px] font-bold text-brand-gray-900">Notificaciones</p>
@@ -60,7 +60,7 @@ export function NotificationBell() {
                 type="button"
                 title="Marcar leidas"
                 onClick={markAllRead}
-                className="rounded-md p-1.5 text-brand-gray-500 hover:bg-brand-gray-100 hover:text-brand-gray-800"
+                className="flex size-11 items-center justify-center rounded-md text-brand-gray-500 hover:bg-brand-gray-100 hover:text-brand-gray-800 sm:size-8"
               >
                 <CheckCheck className="h-3.5 w-3.5" />
               </button>
@@ -68,14 +68,14 @@ export function NotificationBell() {
                 type="button"
                 title="Limpiar"
                 onClick={clearAll}
-                className="rounded-md p-1.5 text-brand-gray-500 hover:bg-brand-gray-100 hover:text-brand-gray-800"
+                className="flex size-11 items-center justify-center rounded-md text-brand-gray-500 hover:bg-brand-gray-100 hover:text-brand-gray-800 sm:size-8"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
             </div>
           </div>
 
-          <div className="max-h-[360px] overflow-y-auto">
+          <div className="max-h-[calc(100dvh-8rem)] overflow-y-auto sm:max-h-[360px]">
             {items.length === 0 && (
               <p className="px-4 py-10 text-center text-xs text-brand-gray-500">
                 Sin notificaciones por ahora.

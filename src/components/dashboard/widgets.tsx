@@ -108,7 +108,7 @@ export function KpisWidget({ kpis }: { kpis: Kpis | null }) {
     { label: "Avance", value: `${kpis?.avance_promedio ?? 0}%`, tone: "text-sky-700", bg: "from-sky-50 to-white border-sky-100" },
   ];
   return (
-    <div className="grid h-full grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+    <div className="grid h-full grid-cols-1 gap-2 min-[380px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
       {items.map((k) => (
         <div
           key={k.label}

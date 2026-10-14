@@ -210,7 +210,7 @@ def clipboard_files() -> list[str]:
     try:
         dest_dir = Path(tempfile.gettempdir()) / "examontor"
         dest_dir.mkdir(parents=True, exist_ok=True)
-        dest = dest_dir / f"paste_{int(time.time())}.png"
+        dest = dest_dir / f"paste_{time.time_ns()}.png"
         if getattr(data, "mode", "") not in ("RGB", "L"):
             data = data.convert("RGB")
         data.save(dest, "PNG")
