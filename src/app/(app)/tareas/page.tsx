@@ -33,6 +33,7 @@ import { AvanceDialog } from "@/components/tareas/avance-dialog";
 import { TareaDetalleDialog } from "@/components/tareas/tarea-detalle-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { clearDetailLink, detailIdFromSearch } from "@/lib/detail-link";
 import {
   EVIDENCIA_ACCEPT,
   EVIDENCIA_HELP,
@@ -86,9 +87,37 @@ export default function TareasPage() {
 
   const [avanceCod, setAvanceCod] = useState<number | null>(null);
   const [detalleCod, setDetalleCod] = useState<number | null>(null);
+  const [linkedTarea, setLinkedTarea] = useState<Tarea | null>(null);
+  const [linkError, setLinkError] = useState("");
   const [detalleReload, setDetalleReload] = useState(0);
   const avanceOpen = tareas.find((t) => t.Tar_Cod === avanceCod) ?? null;
-  const detalleOpen = tareas.find((t) => t.Tar_Cod === detalleCod) ?? null;
+  const detalleOpen = (linkedTarea?.Tar_Cod === detalleCod ? linkedTarea : null)
+    ?? tareas.find((t) => t.Tar_Cod === detalleCod) ?? null;
+
+  useEffect(() => {
+    const raw = new URLSearchParams(window.location.search).get("detalle");
+    if (raw === null) return;
+    const id = detailIdFromSearch(window.location.search);
+    if (id === null) {
+      setLinkError("El enlace de la tarea no es válido.");
+      return;
+    }
+    const controller = new AbortController();
+    fetch(`/api/tareas?detalle=${id}`, { signal: controller.signal })
+      .then(async (res) => {
+        const body = await res.json();
+        if (!res.ok || !body.success) throw new Error(body.message || "No se pudo abrir la tarea.");
+        return body;
+      })
+      .then((body) => {
+        setLinkedTarea({ ...body.tarea, Asignados: body.asignados || [] });
+        setDetalleCod(id);
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) setLinkError(error instanceof Error ? error.message : "No se pudo abrir la tarea.");
+      });
+    return () => controller.abort();
+  }, []);
 
   const loadTareas = useCallback(async () => {
     const request = ++loadRequest.current;
@@ -328,6 +357,11 @@ export default function TareasPage() {
         {error && (
           <div className="mb-4 shrink-0">
             <Alert variant="destructive">{error}</Alert>
+          </div>
+        )}
+        {linkError && (
+          <div className="mb-4 shrink-0">
+            <Alert variant="destructive">{linkError}</Alert>
           </div>
         )}
 
@@ -693,7 +727,7 @@ export default function TareasPage() {
         <TareaDetalleDialog
           tarea={detalleOpen}
           detailUrl={(cod) => `/api/tareas?Ses_Dat_Dis=${encodeURIComponent(db)}&detalle=${cod}`}
-          onClose={() => setDetalleCod(null)}
+          onClose={() => { setDetalleCod(null); setLinkedTarea(null); clearDetailLink(); }}
           onRegistrarAvance={openAvance}
           editExtraBody={{ Ses_Dat_Dis: db }}
           onSaved={async () => {

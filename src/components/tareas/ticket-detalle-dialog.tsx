@@ -33,6 +33,7 @@ import { cn } from "@/lib/utils";
 import { evidenciaLabel } from "@/lib/evidencia-files";
 import { AdjuntoPreviewDialog, esPdfAdjunto, type AdjuntoPreview } from "@/components/tareas/adjunto-preview-dialog";
 import { ShareMenu, type CompartirEstado } from "@/components/tareas/share-menu";
+import { ticketDetailUrl } from "@/lib/detail-link";
 
 type AvanceTicket = {
   Ava_Cod: number;
@@ -687,7 +688,7 @@ export function TicketDetalleDialog({ ticket, onClose, onRegistrarAvance }: Prop
             {compartirEstado === "error" ? "No se pudo copiar o compartir el detalle." : compartirEstado === "copiado" ? "Detalle copiado." : ""}
           </span>
           <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
-            <ShareMenu title={`Ticket #${ticCod}: ${ticket?.Tar_Titulo ?? ""}`} getText={textoCompartir} onStatus={setCompartirEstado} disabled={!ticket} />
+            <ShareMenu title={`Ticket #${ticCod}: ${ticket?.Tar_Titulo ?? ""}`} getText={textoCompartir} getUrl={() => ticketDetailUrl(window.location.origin, ticCod, ticket!.Db_Origen || db)} onStatus={setCompartirEstado} disabled={!ticket} />
             <Button type="button" variant="ghost" className="w-full sm:w-auto" onClick={() => { setCompartirEstado(null); setPreview(null); onClose(); }}>
               Cerrar
             </Button>

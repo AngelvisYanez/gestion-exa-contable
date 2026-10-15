@@ -47,6 +47,7 @@ import { cn } from "@/lib/utils";
 import { evidenciaLabel } from "@/lib/evidencia-files";
 import { AdjuntoPreviewDialog, esPdfAdjunto, type AdjuntoPreview } from "@/components/tareas/adjunto-preview-dialog";
 import { ShareMenu, type CompartirEstado } from "@/components/tareas/share-menu";
+import { tareaDetailUrl } from "@/lib/detail-link";
 
 type Props = {
   tarea: Tarea | null;
@@ -898,7 +899,7 @@ export function TareaDetalleDialog({
               </div>
             )}
             <div className="contents sm:ml-auto sm:flex sm:min-w-0 sm:flex-1 sm:flex-wrap sm:justify-end sm:gap-2">
-              <ShareMenu title={`Tarea #${tarea?.Tar_Cod ?? ""}: ${tituloTarea}`} getText={textoCompartir} onStatus={setCompartirEstado} disabled={!tarea} />
+              <ShareMenu title={`Tarea #${tarea?.Tar_Cod ?? ""}: ${tituloTarea}`} getText={textoCompartir} getUrl={() => tareaDetailUrl(window.location.origin, tarea!.Tar_Cod)} onStatus={setCompartirEstado} disabled={!tarea} />
               <Button type="button" variant="ghost" className="w-full sm:w-auto" onClick={() => { setCompartirEstado(null); setPreview(null); onClose(); }}>
                 Cerrar
               </Button>

@@ -36,6 +36,29 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, message: "Tu rol no tiene acceso a tickets." }, { status: 403 });
     }
     const sp = req.nextUrl.searchParams;
+    const itemParam = sp.get("item");
+    if (itemParam !== null) {
+      const itemCod = Number(itemParam);
+      const rawDb = sp.get("db") || "";
+      const bases = await resolveTicketDatabaseIds();
+      if (!Number.isSafeInteger(itemCod) || itemCod <= 0 || !bases.includes(rawDb)) {
+        return NextResponse.json({ success: false, message: "Ticket no encontrado" }, { status: 404 });
+      }
+      const scope = actor.role === "developer" ? await ticketScopeForSession(actor) : null;
+      const tickets = scope && !scope.aseCodes.length && !scope.perCodes.length
+        ? []
+        : await listTicketsAsignados({
+            ticCod: itemCod,
+            bases: [rawDb],
+            limit: 1,
+            ...(scope ? { aseCodes: scope.aseCodes, perCodes: scope.perCodes } : {}),
+          });
+      const ticket = tickets.find((t) => t.Tic_Cod === itemCod && t.Db_Origen === rawDb);
+      if (!ticket) {
+        return NextResponse.json({ success: false, message: "Ticket no encontrado" }, { status: 404 });
+      }
+      return NextResponse.json({ success: true, ticket });
+    }
     const detalleCod = parseInt(sp.get("detalle") || "0", 10);
     if (detalleCod > 0) {
       const session = await getSessionFromRequest(req);

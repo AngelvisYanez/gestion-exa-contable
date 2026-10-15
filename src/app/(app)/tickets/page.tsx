@@ -50,6 +50,7 @@ import { fmtFechaHoraZona } from "@/lib/timezone";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { plainTextFromHtml } from "@/components/ui/rich-text";
 import { cn } from "@/lib/utils";
+import { clearDetailLink, detailIdFromSearch } from "@/lib/detail-link";
 import {
   EVIDENCIA_ACCEPT,
   EVIDENCIA_HELP,
@@ -175,6 +176,34 @@ export default function TicketsPage() {
   const [avanceTarea, setAvanceTarea] = useState<Tarea | null>(null);
   const [detalleCod, setDetalleCod] = useState<number | null>(null);
   const [detalleDb, setDetalleDb] = useState<string | null>(null);
+  const [linkedTicket, setLinkedTicket] = useState<Ticket | null>(null);
+  const [linkError, setLinkError] = useState("");
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has("detalle")) return;
+    const id = detailIdFromSearch(window.location.search);
+    const origen = params.get("db");
+    if (id === null || !origen) {
+      setLinkError("El enlace del ticket no es válido.");
+      return;
+    }
+    const controller = new AbortController();
+    fetch(`/api/tickets?item=${id}&db=${encodeURIComponent(origen)}`, { signal: controller.signal })
+      .then(async (res) => {
+        const body = await res.json();
+        if (!res.ok || !body.success) throw new Error(body.message || "No se pudo abrir el ticket.");
+        return body;
+      })
+      .then((body) => {
+        setLinkedTicket(body.ticket);
+        setDetalleCod(id);
+        setDetalleDb(origen);
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) setLinkError(error instanceof Error ? error.message : "No se pudo abrir el ticket.");
+      });
+    return () => controller.abort();
+  }, []);
   const opcionesDev = useMemo(() => {
     const byName = new Map<string, { nombre: string; usuCods: Set<number> }>();
     const add = (usu: number | null | undefined, nombre: string | null | undefined) => {
@@ -230,12 +259,11 @@ export default function TicketsPage() {
   const pager = usePagination(ticketsVisibles, {
     resetKey: `${bandeja}|${q}|${rango.desde}|${rango.hasta}|${filtroDev}`,
   });
-  const detalleTicket =
-    detalleCod != null
-      ? tickets.find(
-          (t) => t.Tic_Cod === detalleCod && (!detalleDb || t.Db_Origen === detalleDb)
-        ) ?? null
-      : null;
+  const linkedDetalle = linkedTicket?.Tic_Cod === detalleCod && linkedTicket.Db_Origen === detalleDb
+    ? linkedTicket : null;
+  const detalleTicket = linkedDetalle ?? (detalleCod != null
+    ? tickets.find((t) => t.Tic_Cod === detalleCod && (!detalleDb || t.Db_Origen === detalleDb)) ?? null
+    : null);
   const bandejasVisibles = isDev
     ? [
         { id: "asignados" as Bandeja, label: "Abiertos" },
@@ -707,6 +735,11 @@ export default function TicketsPage() {
             <Alert variant="destructive">{error}</Alert>
           </div>
         )}
+        {linkError && (
+          <div className="mb-4">
+            <Alert variant="destructive">{linkError}</Alert>
+          </div>
+        )}
 
         <div
           className={cn(
@@ -991,7 +1024,7 @@ export default function TicketsPage() {
 
         <TicketDetalleDialog
           ticket={detalleTicket ? ticketAsTarea(detalleTicket) : null}
-          onClose={() => setDetalleCod(null)}
+          onClose={() => { setDetalleCod(null); setDetalleDb(null); setLinkedTicket(null); clearDetailLink("db"); }}
           onRegistrarAvance={puedeAvanzar ? (t) => setAvanceTarea(t) : undefined}
         />
         <AvanceDialog

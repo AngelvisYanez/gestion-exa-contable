@@ -58,8 +58,8 @@ export async function GET(req: NextRequest) {
     const detalleCod = parseInt(sp.get("detalle") || "0", 10);
     if (detalleCod > 0) {
       if (session.role === "developer") {
-        const access = await getTareaAccess(db, detalleCod, session.usuCod);
-        if (!access?.isCreator) {
+        const access = await developerAccess(db, detalleCod, session);
+        if (!access?.isCreator && !access?.isAssigned) {
           return NextResponse.json({ success: false, message: "Tarea no encontrada" }, { status: 404 });
         }
       }

@@ -10,33 +10,36 @@ export type CompartirEstado = "copiado" | "error" | null;
 export function ShareMenu({
   title,
   getText,
+  getUrl,
   onStatus,
   disabled,
 }: {
   title: string;
   getText: () => string;
+  getUrl: () => string;
   onStatus: (status: CompartirEstado) => void;
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const message = () => `${getText()}\n\nAbrir en EXA: ${getUrl()}`;
 
   const compartirWhatsApp = () => {
     onStatus(null);
-    window.open(`https://wa.me/?text=${encodeURIComponent(getText())}`, "_blank", "noopener,noreferrer");
+    window.open(`https://wa.me/?text=${encodeURIComponent(message())}`, "_blank", "noopener,noreferrer");
     setOpen(false);
   };
 
   const compartirCorreo = () => {
     onStatus(null);
     const subject = encodeURIComponent(title);
-    const body = encodeURIComponent(getText());
+    const body = encodeURIComponent(message());
     window.location.href = `mailto:?subject=${subject}&body=${body}`;
     setOpen(false);
   };
 
   const copiar = async () => {
     try {
-      await navigator.clipboard.writeText(getText());
+      await navigator.clipboard.writeText(message());
       onStatus("copiado");
     } catch {
       onStatus("error");
@@ -46,7 +49,7 @@ export function ShareMenu({
 
   const compartirDispositivo = async () => {
     try {
-      await navigator.share({ title, text: getText() });
+      await navigator.share({ title, text: getText(), url: getUrl() });
       onStatus(null);
     } catch (error) {
       if (!(error instanceof DOMException && error.name === "AbortError")) onStatus("error");
