@@ -31,7 +31,9 @@ from win_shell import (
     start_input_counter,
 )
 
-AGENT_VERSION = "2.11.2-flet"
+AGENT_VERSION = "2.12.0-flet"
+UPDATE_REPO = "AngelvisYanez/gestion-exa-contable"
+GITHUB_API_LATEST = f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest"
 
 # Tokens alineados a globals.css / Badge del dashboard EXA
 LIGHT = {
@@ -300,6 +302,35 @@ def desc_box(text: str) -> ft.Container:
     )
 
 
+
+def _clean_version(v: str) -> str:
+    if not v:
+        return "0.0.0"
+    v = str(v).strip().lower()
+    v = v.replace("v", "")
+    if "-" in v:
+        v = v.split("-", 1)[0]
+    if "+" in v:
+        v = v.split("+", 1)[0]
+    return v
+
+def _version_tuple(v: str):
+    try:
+        parts = _clean_version(v).split(".")
+        nums = []
+        for p in parts:
+            s = ''
+            for c in p:
+                if c.isdigit():
+                    s += c
+            if s == '': s = '0'
+            nums.append(int(s))
+        while len(nums) < 3:
+            nums.append(0)
+        return tuple(nums[:4])
+    except Exception:
+        return (0, 0, 0)
+
 class ExaMonitorApp:
     def __init__(self, page: ft.Page):
         self.page = page
@@ -344,6 +375,10 @@ class ExaMonitorApp:
         self._setup_page()
         self._build()
         self._render()
+        try:
+            self._check_for_updates(auto=True)
+        except Exception:
+            pass
 
     # --- config ---
     def load_config(self):
@@ -2942,6 +2977,170 @@ class ExaMonitorApp:
         except Exception as e:
             print("telemetria post:", e)
 
+
+
+    def _close_update_dialog(self, e=None):
+        try:
+            self.page.pop_dialog()
+        except Exception:
+            pass
+
+    def _set_update_error(self, msg):
+        try:
+            if getattr(self, "_upd_text", None) is not None:
+                self._upd_text.value = msg
+            if getattr(self, "_upd_guardar", None) is not None:
+                self._upd_guardar.disabled = False
+            self.page.update()
+        except Exception:
+            pass
+
+    def _start_update(self, e=None):
+        try:
+            if getattr(self, "_upd_guardar", None) is not None:
+                self._upd_guardar.disabled = True
+        except Exception:
+            pass
+        if getattr(self, "_upd_progress", None) is not None:
+            self._upd_progress.visible = True
+        if getattr(self, "_upd_text", None) is not None:
+            self._upd_text.value = "Descargando actualizaci\u00f3n..."
+        try:
+            self.page.update()
+        except Exception:
+            pass
+        threading.Thread(target=self._apply_update, daemon=True).start()
+
+    def _apply_update(self):
+        info = getattr(self, "_upd_info", {}) or {}
+        url = info.get("download_url")
+        if not url:
+            self._set_update_error("No se encontr\u00f3 el archivo de descarga.")
+            return
+        try:
+            import tempfile, subprocess, sys, os
+            if not getattr(sys, "frozen", False):
+                import webbrowser
+                webbrowser.open(url)
+                self._set_update_error("Modo desarrollo: abriendo descarga en el navegador.")
+                return
+            tmpdir = tempfile.gettempdir()
+            new_path = os.path.join(tmpdir, "ExaMonitor.new.exe")
+            with requests.get(
+                url,
+                stream=True,
+                timeout=180,
+                headers={"User-Agent": f"ExaMonitor/{_clean_version(AGENT_VERSION)}"},
+            ) as r:
+                r.raise_for_status()
+                total = int(r.headers.get("content-length", 0))
+                downloaded = 0
+                with open(new_path, "wb") as f:
+                    for chunk in r.iter_content(chunk_size=1024 * 256):
+                        if not chunk:
+                            continue
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if total > 0 and getattr(self, "_upd_progress", None) is not None:
+                            self._upd_progress.value = min(1.0, downloaded / total)
+                            try:
+                                self.page.update()
+                            except Exception:
+                                pass
+            exe_path = sys.executable
+            bat_path = os.path.join(tmpdir, "exa_updater.bat")
+            bat = (
+                "@echo off\r\n"
+                "chcp 65001 > nul\r\n"
+                "timeout /t 2 /nobreak > nul\r\n"
+                "copy /Y \"" + new_path + "\" \"" + exe_path + "\"\r\n"
+                "start \"\" \"" + exe_path + "\"\r\n"
+                "del \"%~f0\"\r\n"
+            )
+            with open(bat_path, "w", encoding="utf-8") as f:
+                f.write(bat)
+            subprocess.Popen([bat_path], shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
+            try:
+                self.page.window.destroy()
+            except Exception:
+                pass
+            sys.exit(0)
+        except Exception as ex:
+            self._set_update_error(f"Error al actualizar: {ex}")
+
+    def _check_for_updates(self, auto=True):
+        def _worker():
+            try:
+                headers = {
+                    "User-Agent": f"ExaMonitor/{_clean_version(AGENT_VERSION)}",
+                    "Accept": "application/vnd.github+json",
+                }
+                with requests.get(GITHUB_API_LATEST, headers=headers, timeout=15) as r:
+                    if r.status_code != 200:
+                        return
+                    data = r.json()
+                tag = data.get("tag_name") or data.get("name") or ""
+                if not tag:
+                    return
+                if _version_tuple(tag) <= _version_tuple(AGENT_VERSION):
+                    return
+                assets = data.get("assets") or []
+                url_d = None
+                for a in assets:
+                    n = (a.get("name") or "").lower()
+                    if n.endswith(".exe"):
+                        url_d = a.get("browser_download_url")
+                        if "examonitor" in n:
+                            break
+                if not url_d:
+                    for a in assets:
+                        if (a.get("name") or "").lower().endswith(".exe"):
+                            url_d = a.get("browser_download_url")
+                            break
+                if not url_d:
+                    return
+                self._show_update_dialog({"version": _clean_version(tag), "download_url": url_d})
+            except Exception:
+                pass
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _show_update_dialog(self, info):
+        ver = info.get("version")
+        self._upd_info = info
+        self._upd_progress = ft.ProgressBar(value=0, width=380, visible=False)
+        self._upd_text = ft.Text("Hay una nueva versi\u00f3n disponible.", size=12)
+        self._upd_guardar = ft.FilledButton(
+            "Actualizar ahora",
+            icon=ft.Icons.SYSTEM_UPDATE_ALT,
+            on_click=self._start_update,
+            style=ft.ButtonStyle(
+                bgcolor=C["primary"],
+                color="#ffffff",
+                shape=ft.RoundedRectangleBorder(radius=8),
+            ),
+        )
+        dlg = ft.AlertDialog(
+            modal=True,
+            bgcolor=C["card"],
+            shape=ft.RoundedRectangleBorder(radius=12),
+            title=ft.Text(f"Nueva versi\u00f3n v{ver}"),
+            content=ft.Column(
+                [
+                    ft.Text(f"Se detect\u00f3 la versi\u00f3n v{ver}. \u00bfDeseas actualizar ExaMonitor ahora?"),
+                    self._upd_progress,
+                    self._upd_text,
+                ],
+                tight=True,
+                spacing=10,
+                width=400,
+            ),
+            actions=[
+                ft.TextButton("M\u00e1s tarde", on_click=self._close_update_dialog),
+                self._upd_guardar,
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        self.page.show_dialog(dlg)
 
 def main(page: ft.Page):
     ExaMonitorApp(page)
