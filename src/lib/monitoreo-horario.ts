@@ -27,14 +27,22 @@ async function ensureColumn(
 }
 
 const schemaReady = new Set<string>();
+const schemaInflight = new Map<string, Promise<void>>();
 
 const HORARIO_SELECT = `Mon_Horario_Activo, Mon_Hora_Inicio, Mon_Hora_Fin, Mon_Dias_Laborales,
         Mon_Almuerzo_Activo, Mon_Almuerzo_Inicio, Mon_Almuerzo_Fin`;
 
-export async function ensureHorarioSchema(prisma: PrismaClient) {
+export function ensureHorarioSchema(prisma: PrismaClient): Promise<void> {
   const key = `${(prisma as { _exaDbKey?: string })._exaDbKey || "default"}:v2-almuerzo`;
-  if (schemaReady.has(key)) return;
+  if (schemaReady.has(key)) return Promise.resolve();
+  const pending = schemaInflight.get(key);
+  if (pending) return pending;
+  const job = prepareHorarioSchema(prisma, key).finally(() => schemaInflight.delete(key));
+  schemaInflight.set(key, job);
+  return job;
+}
 
+async function prepareHorarioSchema(prisma: PrismaClient, key: string) {
   // Asegura CREATE de aud_dev_monitoreo_config antes de ALTER COLUMN
   await ensureMonitoreoSchema(prisma);
 

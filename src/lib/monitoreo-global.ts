@@ -147,13 +147,21 @@ async function ensureColumn(
 }
 
 const schemaReady = new Set<string>();
+const schemaInflight = new Map<string, Promise<void>>();
 
-export async function ensureMonitoreoSchema(prisma: PrismaClient) {
+export function ensureMonitoreoSchema(prisma: PrismaClient): Promise<void> {
   // Evita martillar information_schema en cada telemetría / request.
   // v3: CREATE telemetria + config (antes solo global; caché vieja saltaba el CREATE).
   const key = `${(prisma as { _exaDbKey?: string })._exaDbKey || "default"}:v4-tel`;
-  if (schemaReady.has(key)) return;
+  if (schemaReady.has(key)) return Promise.resolve();
+  const pending = schemaInflight.get(key);
+  if (pending) return pending;
+  const job = prepareMonitoreoSchema(prisma, key).finally(() => schemaInflight.delete(key));
+  schemaInflight.set(key, job);
+  return job;
+}
 
+async function prepareMonitoreoSchema(prisma: PrismaClient, key: string) {
   await prisma.$executeRawUnsafe(CREATE_CONFIG_SQL);
   await prisma.$executeRawUnsafe(CREATE_TELEMETRIA_SQL);
   await prisma.$executeRawUnsafe(CREATE_GLOBAL_SQL);
