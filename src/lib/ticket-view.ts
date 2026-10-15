@@ -3,6 +3,16 @@
  * No importar Prisma, fs ni otros módulos de servidor desde aquí.
  */
 
+/** Adjunto cargado por el cliente en el panel legacy EXA (Tic_Evi_Pro / Tic_Evi_Sol). */
+export type TicketAdjuntoExa = {
+  ruta: string;
+  url: string;
+  nombre: string;
+  esImagen: boolean;
+  /** "problema" = evidencia del cliente; "solucion" = evidencia de la solucion. */
+  tipo: "problema" | "solucion";
+};
+
 export type Ticket = {
   Tic_Cod: number;
   Tic_Titulo: string;
@@ -34,6 +44,8 @@ export type Ticket = {
   Enviado_Por: string | null;
   Proceso: string | null;
   Evidencias: Array<{ ruta: string; url: string; nombre: string; esImagen: boolean }>;
+  /** Archivos que el cliente adjunto al crear el ticket en EXA. */
+  Adjuntos_Exa?: TicketAdjuntoExa[];
   /** Base donde vive la fila (`exa` o `servicios`). */
   Db_Origen?: string;
 };
@@ -85,6 +97,7 @@ export function ticketAsTarea(t: Ticket) {
     Enviado_Por: t.Enviado_Por,
     Proceso: t.Proceso,
     Evidencias: t.Evidencias,
+    Adjuntos_Exa: t.Adjuntos_Exa,
     Db_Origen: t.Db_Origen || null,
   };
 }

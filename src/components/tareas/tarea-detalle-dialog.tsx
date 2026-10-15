@@ -13,7 +13,6 @@ import {
   Loader2,
   Paperclip,
   Pencil,
-  Share2,
   Sparkles,
   Trash2,
   TrendingUp,
@@ -46,6 +45,8 @@ import type { TareaDetalle } from "@/lib/tareas";
 import { fmtFechaHoraZona, hoyFecha, startOfDayZona } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
 import { evidenciaLabel } from "@/lib/evidencia-files";
+import { AdjuntoPreviewDialog, esPdfAdjunto, type AdjuntoPreview } from "@/components/tareas/adjunto-preview-dialog";
+import { ShareMenu, type CompartirEstado } from "@/components/tareas/share-menu";
 
 type Props = {
   tarea: Tarea | null;
@@ -97,10 +98,12 @@ function BriefArchivos({
   mdRel,
   pdfRel,
   evidencias,
+  onPreview,
 }: {
   mdRel: string;
   pdfRel: string | null;
   evidencias: TareaDetalle["evidencias_iniciales"];
+  onPreview: (archivo: AdjuntoPreview) => void;
 }) {
   const items = [mdRel, pdfRel].filter((rel): rel is string => Boolean(rel));
   return (
@@ -109,6 +112,19 @@ function BriefArchivos({
       <div className="flex flex-wrap gap-2">
         {items.map((rel) => {
           const file = briefAdjunto(rel, evidencias);
+          if (file && esPdfAdjunto(file)) {
+            return (
+              <button
+                key={rel}
+                type="button"
+                onClick={() => onPreview({ url: file.url, nombre: file.nombre, tipo: "pdf" })}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-background px-2 py-1 font-semibold text-foreground hover:bg-muted"
+              >
+                <FileText className="size-3.5 shrink-0" />
+                <span className="max-w-[220px] truncate">{file.nombre}</span>
+              </button>
+            );
+          }
           return file ? (
             <a
               key={rel}
@@ -234,14 +250,14 @@ export function TareaDetalleDialog({
   const [capturasDias, setCapturasDias] = useState<(typeof CAPTURA_DIAS)[number] | "rango" | "todo">(7);
   const [rangoDesde, setRangoDesde] = useState("");
   const [rangoHasta, setRangoHasta] = useState("");
-  const [zoom, setZoom] = useState<string | null>(null);
+  const [preview, setPreview] = useState<AdjuntoPreview | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [briefOpen, setBriefOpen] = useState(false);
   const [alcance, setAlcance] = useState({ modulo: "", proceso: "", directorio: "" });
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
-  const [compartirEstado, setCompartirEstado] = useState<"copiado" | "error" | null>(null);
+  const [compartirEstado, setCompartirEstado] = useState<CompartirEstado>(null);
   const [localReload, setLocalReload] = useState(0);
   const tarCod = tarea?.Tar_Cod ?? null;
   const fetchReloadKey = (reloadKey || 0) + localReload;
@@ -332,25 +348,10 @@ export function TareaDetalleDialog({
   const sesDb = String(editExtraBody?.Ses_Dat_Dis || db || "exa");
   const tituloTarea = t?.Tar_Titulo || tarea?.Tar_Titulo || "esta tarea";
 
-  const compartir = async () => {
-    if (!tarea) return;
-    setCompartirEstado(null);
+  const textoCompartir = () => {
+    if (!tarea) return "";
     const detalleActual = data?.tarea.Tar_Cod === tarea.Tar_Cod ? data : null;
-    const text = textoParaCompartir(tarea, detalleActual);
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: `Tarea #${tarea.Tar_Cod}`, text });
-        return;
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-      }
-    }
-    try {
-      await navigator.clipboard.writeText(text);
-      setCompartirEstado("copiado");
-    } catch {
-      setCompartirEstado("error");
-    }
+    return textoParaCompartir(tarea, detalleActual);
   };
 
   const borrarTarea = async () => {
@@ -386,7 +387,7 @@ export function TareaDetalleDialog({
         if (!o) {
           setCompartirEstado(null);
           onClose();
-          setZoom(null);
+          setPreview(null);
         }
       }}
     >
@@ -534,6 +535,7 @@ export function TareaDetalleDialog({
                       mdRel={t.Tar_Brief_Md}
                       pdfRel={t.Tar_Brief_Pdf}
                       evidencias={data?.evidencias_iniciales || []}
+                      onPreview={setPreview}
                     />
                   ) : null}
                 </div>
@@ -547,16 +549,29 @@ export function TareaDetalleDialog({
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                     {data!.evidencias_iniciales.map((f) =>
                       f.esImagen ? (
-                        <a
+                        <button
                           key={f.ruta}
-                          href={f.url}
-                          target="_blank"
-                          rel="noreferrer"
+                          type="button"
+                          title={f.nombre}
+                          onClick={() => setPreview({ url: f.url, nombre: f.nombre, tipo: "imagen" })}
                           className="overflow-hidden rounded-lg border border-border/70"
                         >
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img src={f.url} alt={f.nombre} className="aspect-video w-full object-cover" />
-                        </a>
+                        </button>
+                      ) : esPdfAdjunto(f) ? (
+                        <button
+                          key={f.ruta}
+                          type="button"
+                          onClick={() => setPreview({ url: f.url, nombre: f.nombre, tipo: "pdf" })}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-muted/40 px-2.5 py-2 text-left text-[11px] font-semibold hover:bg-muted"
+                        >
+                          <FileText className="size-3.5 shrink-0 text-muted-foreground" />
+                          <span className="min-w-0">
+                            <span className="block text-[9px] uppercase tracking-wide text-muted-foreground">PDF</span>
+                            <span className="line-clamp-1">{f.nombre}</span>
+                          </span>
+                        </button>
                       ) : (
                         <a
                           key={f.ruta}
@@ -699,7 +714,7 @@ export function TareaDetalleDialog({
                                 key={f.ruta}
                                 type="button"
                                 title={f.nombre}
-                                onClick={() => setZoom(f.url)}
+                                onClick={() => setPreview({ url: f.url, nombre: f.nombre, tipo: "imagen" })}
                                 className="overflow-hidden rounded-md border border-border/70"
                               >
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -708,6 +723,16 @@ export function TareaDetalleDialog({
                                   alt={f.nombre}
                                   className="h-16 w-24 object-cover transition hover:opacity-80"
                                 />
+                              </button>
+                            ) : esPdfAdjunto(f) ? (
+                              <button
+                                key={f.ruta}
+                                type="button"
+                                onClick={() => setPreview({ url: f.url, nombre: f.nombre, tipo: "pdf" })}
+                                className="inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-muted/40 px-2 py-1 text-[11px] font-semibold hover:bg-muted"
+                              >
+                                <FileText className="size-3" />
+                                <span>PDF {f.nombre}</span>
                               </button>
                             ) : (
                               <a
@@ -828,7 +853,7 @@ export function TareaDetalleDialog({
                       key={c.Tel_Cod}
                       type="button"
                       className="group block overflow-hidden rounded-md border border-border/70 text-left transition hover:border-sky-300"
-                      onClick={() => setZoom(c.Url)}
+                      onClick={() => setPreview({ url: c.Url, nombre: `Captura ${fmtFechaHora(c.Fecha)}`, tipo: "imagen" })}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
@@ -848,49 +873,55 @@ export function TareaDetalleDialog({
           </Tabs>
         </div>
 
-        <DialogFooter className="shrink-0 gap-2 border-t border-border/60 px-4 py-4 max-sm:flex-row max-sm:flex-wrap max-sm:justify-end sm:gap-2 sm:px-6">
-          {tarea && canDelete && (
-            <Button
-              type="button"
-              variant="destructive"
-              className="sm:mr-auto"
-              onClick={() => {
-                setDeleteError("");
-                setDeleteOpen(true);
-              }}
-            >
-              <Trash2 className="size-4" />
-              Borrar
-            </Button>
-          )}
-          <span aria-live="polite" className="self-center text-xs text-muted-foreground">
-            {compartirEstado === "error" ? "No se pudo copiar el detalle." : compartirEstado === "copiado" ? "Detalle copiado." : ""}
+        <div className="shrink-0 border-t border-border/60 px-4 py-4 sm:px-6">
+          <span
+            aria-live="polite"
+            className={cn("mb-2 block text-xs text-muted-foreground", !compartirEstado && "sr-only")}
+          >
+            {compartirEstado === "error" ? "No se pudo copiar o compartir el detalle." : compartirEstado === "copiado" ? "Detalle copiado." : ""}
           </span>
-          <Button type="button" variant="outline" onClick={() => void compartir()} disabled={!tarea}>
-            <Share2 className="size-4" />
-            Compartir
-          </Button>
-          <Button type="button" variant="ghost" onClick={() => { setCompartirEstado(null); onClose(); }}>
-            Cerrar
-          </Button>
-          {tarea && isManager && canEdit && (
-            <Button type="button" variant="outline" onClick={() => setBriefOpen(true)}>
-              <Sparkles className="size-4" />
-              Generar brief
-            </Button>
-          )}
-          {canEdit && tarea && (
-            <Button type="button" variant="secondary" onClick={() => setEditOpen(true)}>
-              <Pencil className="size-4" />
-              Editar
-            </Button>
-          )}
-          {canAvance && onRegistrarAvance && tarea && abierta && (
-            <Button type="button" variant="success" onClick={() => onRegistrarAvance(tarea)}>
-              Registrar avance
-            </Button>
-          )}
-        </DialogFooter>
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:items-start">
+            {tarea && canDelete && (
+              <div className="contents sm:mr-auto sm:flex">
+                <Button
+                  type="button"
+                  variant="destructive"
+                  className="w-full sm:w-auto"
+                  onClick={() => {
+                    setDeleteError("");
+                    setDeleteOpen(true);
+                  }}
+                >
+                  <Trash2 className="size-4" />
+                  Borrar
+                </Button>
+              </div>
+            )}
+            <div className="contents sm:ml-auto sm:flex sm:min-w-0 sm:flex-1 sm:flex-wrap sm:justify-end sm:gap-2">
+              <ShareMenu title={`Tarea #${tarea?.Tar_Cod ?? ""}: ${tituloTarea}`} getText={textoCompartir} onStatus={setCompartirEstado} disabled={!tarea} />
+              <Button type="button" variant="ghost" className="w-full sm:w-auto" onClick={() => { setCompartirEstado(null); setPreview(null); onClose(); }}>
+                Cerrar
+              </Button>
+              {tarea && isManager && canEdit && (
+                <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setBriefOpen(true)}>
+                  <Sparkles className="size-4" />
+                  Generar brief
+                </Button>
+              )}
+              {canEdit && tarea && (
+                <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={() => setEditOpen(true)}>
+                  <Pencil className="size-4" />
+                  Editar
+                </Button>
+              )}
+              {canAvance && onRegistrarAvance && tarea && abierta && (
+                <Button type="button" variant="success" className="col-span-2 w-full sm:w-auto" onClick={() => onRegistrarAvance(tarea)}>
+                  Registrar avance
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
       </DialogContent>
 
       <TareaEditDialog
@@ -945,15 +976,7 @@ export function TareaDetalleDialog({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!zoom} onOpenChange={(o) => !o && setZoom(null)}>
-        <DialogContent className="max-h-[94dvh] max-w-5xl overflow-auto p-2 sm:p-4">
-          <DialogTitle className="sr-only">Imagen ampliada</DialogTitle>
-          {zoom && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={zoom} alt="captura" className="max-h-[80dvh] w-full rounded-lg object-contain" />
-          )}
-        </DialogContent>
-      </Dialog>
+      <AdjuntoPreviewDialog archivo={preview} onClose={() => setPreview(null)} />
     </Dialog>
   );
 }

@@ -16,6 +16,7 @@ import {
 } from "./ticket-format";
 import { isImagePath } from "./avance-format";
 import { type Ticket } from "./ticket-view";
+import { mapTicketAdjuntos } from "./ticket-adjuntos";
 import { attachAvancePorcentaje } from "./ticket-avances";
 import { ensureMonitoreoSchema } from "./monitoreo-global";
 
@@ -339,6 +340,8 @@ export async function listTickets(
     Tic_Tel: string | null;
     Tic_Obs: string | null;
     Tic_Tip: number | null;
+    Tic_Evi_Pro: string | null;
+    Tic_Evi_Sol: string | null;
   };
 
   const rows = await prisma.$queryRawUnsafe<Row[]>(
@@ -357,7 +360,9 @@ export async function listTickets(
        CONVERT(CONCAT(IFNULL(pa.Prs_Ape,''), ' ', IFNULL(pa.Prs_Nom,'')) USING utf8mb4) AS Asignado_Nombre,
        CONVERT(t.Tic_Tel USING utf8mb4) AS Tic_Tel,
        CONVERT(t.Tic_Obs USING utf8mb4) AS Tic_Obs,
-       t.Tic_Tip
+       t.Tic_Tip,
+       CONVERT(t.Tic_Evi_Pro USING utf8mb4) AS Tic_Evi_Pro,
+       CONVERT(t.Tic_Evi_Sol USING utf8mb4) AS Tic_Evi_Sol
      FROM tickets t
      LEFT JOIN empresas e ON e.Emp_Cod = t.Emp_Cod
      LEFT JOIN usuarios uc ON uc.Usu_Cod = t.Usu_Cod
@@ -466,6 +471,10 @@ export async function listTickets(
           esImagen: isImagePath(ruta),
         };
       }),
+      Adjuntos_Exa: mapTicketAdjuntos([
+        { ruta: r.Tic_Evi_Pro, tipo: "problema" },
+        { ruta: r.Tic_Evi_Sol, tipo: "solucion" },
+      ], db, Number(r.Tic_Cod)),
     };
   });
   await attachAvancePorcentaje(prisma, mapped);

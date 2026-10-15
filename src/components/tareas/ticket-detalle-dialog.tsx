@@ -8,8 +8,8 @@ import {
   FileText,
   History,
   Loader2,
+  Paperclip,
   Phone,
-  Share2,
   Ticket,
   User,
   Wrench,
@@ -21,7 +21,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -32,6 +31,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { fmtFechaHoraZona } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
 import { evidenciaLabel } from "@/lib/evidencia-files";
+import { AdjuntoPreviewDialog, esPdfAdjunto, type AdjuntoPreview } from "@/components/tareas/adjunto-preview-dialog";
+import { ShareMenu, type CompartirEstado } from "@/components/tareas/share-menu";
 
 type AvanceTicket = {
   Ava_Cod: number;
@@ -93,6 +94,12 @@ function textoParaCompartir(ticket: Tarea, avances: AvanceTicket[]) {
       lineas.push(`- ${archivo.nombre}: ${new URL(archivo.url, window.location.origin).href}`);
     }
   }
+  if (ticket.Adjuntos_Exa?.length) {
+    lineas.push("\nArchivos del cliente (EXA):");
+    for (const archivo of ticket.Adjuntos_Exa) {
+      lineas.push(`- ${archivo.nombre}: ${new URL(archivo.url, window.location.origin).href}`);
+    }
+  }
   if (ticket.Tic_Obs && ticket.Tic_Obs !== "N/A" && ticket.Tic_Obs !== ticket.Proceso) {
     lineas.push(`\nObservaciones:\n${ticket.Tic_Obs}`);
   }
@@ -119,32 +126,14 @@ export function TicketDetalleDialog({ ticket, onClose, onRegistrarAvance }: Prop
     ultima_actividad: string | null;
   } | null>(null);
   const [loadingCap, setLoadingCap] = useState(false);
-  const [zoom, setZoom] = useState<string | null>(null);
+  const [preview, setPreview] = useState<AdjuntoPreview | null>(null);
   const [avances, setAvances] = useState<AvanceTicket[]>([]);
   const [avancesKey, setAvancesKey] = useState("");
-  const [compartirEstado, setCompartirEstado] = useState<"copiado" | "error" | null>(null);
+  const [compartirEstado, setCompartirEstado] = useState<CompartirEstado>(null);
   const ticketKey = `${ticket?.Db_Origen || db}:${ticCod}`;
   const avancesActuales = avancesKey === ticketKey ? avances : [];
 
-  const compartir = async () => {
-    if (!ticket) return;
-    setCompartirEstado(null);
-    const text = textoParaCompartir(ticket, avancesActuales);
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: `Ticket #${ticCod}`, text });
-        return;
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-      }
-    }
-    try {
-      await navigator.clipboard.writeText(text);
-      setCompartirEstado("copiado");
-    } catch {
-      setCompartirEstado("error");
-    }
-  };
+  const textoCompartir = () => ticket ? textoParaCompartir(ticket, avancesActuales) : "";
 
   const timeline = useMemo(() => {
     if (!ticket) return [];
@@ -255,7 +244,7 @@ export function TicketDetalleDialog({ ticket, onClose, onRegistrarAvance }: Prop
         if (!o) {
           onClose();
           setTab("detalle");
-          setZoom(null);
+          setPreview(null);
         }
       }}
     >
@@ -387,6 +376,59 @@ export function TicketDetalleDialog({ ticket, onClose, onRegistrarAvance }: Prop
                 </div>
               </section>
 
+              {(ticket?.Adjuntos_Exa?.length ?? 0) > 0 && (
+                <section>
+                  <h3 className="mb-1.5 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                    <Paperclip className="size-3.5" />
+                    Archivos del cliente (EXA)
+                  </h3>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {ticket!.Adjuntos_Exa!.map((f) =>
+                      f.esImagen ? (
+                        <button
+                          key={f.ruta}
+                          type="button"
+                          title={f.nombre}
+                          onClick={() => setPreview({ url: f.url, nombre: f.nombre, tipo: "imagen" })}
+                          className="overflow-hidden rounded-lg border border-border/70"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={f.url} alt={f.nombre} className="aspect-square w-full object-cover" />
+                        </button>
+                      ) : esPdfAdjunto(f) ? (
+                        <button
+                          key={f.ruta}
+                          type="button"
+                          onClick={() => setPreview({ url: f.url, nombre: f.nombre, tipo: "pdf" })}
+                          className="flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border border-border/70 bg-muted/40 p-2 text-center text-[11px] font-medium hover:bg-muted"
+                        >
+                          <FileText className="size-5 text-muted-foreground" />
+                          <span className="text-[9px] font-bold uppercase text-muted-foreground">
+                            {f.tipo === "solucion" ? "Solución · PDF" : "PDF"}
+                          </span>
+                          <span className="line-clamp-2">{f.nombre}</span>
+                        </button>
+                      ) : (
+                        <a
+                          key={f.ruta}
+                          href={f.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          download
+                          className="flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border border-border/70 bg-muted/40 p-2 text-center text-[11px] font-medium hover:bg-muted"
+                        >
+                          <FileText className="size-5 text-muted-foreground" />
+                          <span className="text-[9px] font-bold uppercase text-muted-foreground">
+                            {f.tipo === "solucion" ? "Solución" : evidenciaLabel(f.nombre)}
+                          </span>
+                          <span className="line-clamp-2">{f.nombre}</span>
+                        </a>
+                      )
+                    )}
+                  </div>
+                </section>
+              )}
+
               {avancesActuales.length > 0 && (
                 <section className="space-y-2">
                   <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
@@ -410,10 +452,26 @@ export function TicketDetalleDialog({ ticket, onClose, onRegistrarAvance }: Prop
                         <div className="mt-2 grid grid-cols-2 gap-2">
                           {a.adjuntos.map((f) =>
                             f.esImagen ? (
-                              <a key={f.ruta} href={f.url} target="_blank" rel="noreferrer" className="overflow-hidden rounded-lg border">
+                              <button
+                                key={f.ruta}
+                                type="button"
+                                title={f.nombre}
+                                onClick={() => setPreview({ url: f.url, nombre: f.nombre, tipo: "imagen" })}
+                                className="overflow-hidden rounded-lg border"
+                              >
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img src={f.url} alt={f.nombre} className="aspect-video w-full object-cover" />
-                              </a>
+                              </button>
+                            ) : esPdfAdjunto(f) ? (
+                              <button
+                                key={f.ruta}
+                                type="button"
+                                onClick={() => setPreview({ url: f.url, nombre: f.nombre, tipo: "pdf" })}
+                                className="flex items-center gap-2 rounded-lg border px-2 py-2 text-left text-[11px]"
+                              >
+                                <FileText className="size-4 shrink-0" />
+                                <span className="line-clamp-2">{f.nombre}</span>
+                              </button>
                             ) : (
                               <a
                                 key={f.ruta}
@@ -442,16 +500,27 @@ export function TicketDetalleDialog({ ticket, onClose, onRegistrarAvance }: Prop
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                     {ticket!.Evidencias!.map((f) =>
                       f.esImagen ? (
-                        <a
+                        <button
                           key={f.ruta}
-                          href={f.url}
-                          target="_blank"
-                          rel="noreferrer"
+                          type="button"
+                          title={f.nombre}
+                          onClick={() => setPreview({ url: f.url, nombre: f.nombre, tipo: "imagen" })}
                           className="overflow-hidden rounded-lg border border-border/70"
                         >
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img src={f.url} alt={f.nombre} className="aspect-square w-full object-cover" />
-                        </a>
+                        </button>
+                      ) : esPdfAdjunto(f) ? (
+                        <button
+                          key={f.ruta}
+                          type="button"
+                          onClick={() => setPreview({ url: f.url, nombre: f.nombre, tipo: "pdf" })}
+                          className="flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border border-border/70 bg-muted/40 p-2 text-center text-[11px] font-medium hover:bg-muted"
+                        >
+                          <FileText className="size-5 text-muted-foreground" />
+                          <span className="text-[9px] font-bold uppercase text-muted-foreground">PDF</span>
+                          <span className="line-clamp-2">{f.nombre}</span>
+                        </button>
                       ) : (
                         <a
                           key={f.ruta}
@@ -595,7 +664,7 @@ export function TicketDetalleDialog({ ticket, onClose, onRegistrarAvance }: Prop
                       key={c.Tel_Cod}
                       type="button"
                       className="overflow-hidden rounded-md border border-border/70 text-left"
-                      onClick={() => setZoom(c.Url)}
+                      onClick={() => setPreview({ url: c.Url, nombre: `Captura ${fmtFechaHoraZona(c.Fecha)}`, tipo: "imagen" })}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={c.Url} alt="" className="aspect-video w-full object-cover" />
@@ -610,34 +679,28 @@ export function TicketDetalleDialog({ ticket, onClose, onRegistrarAvance }: Prop
           </Tabs>
         </div>
 
-        <DialogFooter className="shrink-0 gap-2 border-t border-border/60 px-4 py-4 sm:gap-0 sm:px-6">
-          <span aria-live="polite" className="mr-auto self-center text-xs text-muted-foreground">
-            {compartirEstado === "error" ? "No se pudo copiar el detalle." : compartirEstado === "copiado" ? "Detalle copiado." : ""}
+        <div className="shrink-0 border-t border-border/60 px-4 py-4 sm:px-6">
+          <span
+            aria-live="polite"
+            className={cn("mb-2 block text-xs text-muted-foreground", !compartirEstado && "sr-only")}
+          >
+            {compartirEstado === "error" ? "No se pudo copiar o compartir el detalle." : compartirEstado === "copiado" ? "Detalle copiado." : ""}
           </span>
-          <Button type="button" variant="outline" onClick={() => void compartir()} disabled={!ticket}>
-            <Share2 className="size-4" />
-            Compartir
-          </Button>
-          <Button type="button" variant="ghost" onClick={onClose}>
-            Cerrar
-          </Button>
-          {ticket && onRegistrarAvance && !cerrado && (
-            <Button type="button" variant="success" onClick={() => onRegistrarAvance(ticket)}>
-              Registrar avance
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
+            <ShareMenu title={`Ticket #${ticCod}: ${ticket?.Tar_Titulo ?? ""}`} getText={textoCompartir} onStatus={setCompartirEstado} disabled={!ticket} />
+            <Button type="button" variant="ghost" className="w-full sm:w-auto" onClick={() => { setCompartirEstado(null); setPreview(null); onClose(); }}>
+              Cerrar
             </Button>
-          )}
-        </DialogFooter>
+            {ticket && onRegistrarAvance && !cerrado && (
+              <Button type="button" variant="success" className="col-span-2 w-full sm:w-auto" onClick={() => onRegistrarAvance(ticket)}>
+                Registrar avance
+              </Button>
+            )}
+          </div>
+        </div>
       </DialogContent>
 
-      <Dialog open={!!zoom} onOpenChange={(o) => !o && setZoom(null)}>
-        <DialogContent className="max-h-[94dvh] max-w-5xl overflow-auto p-2 sm:p-4">
-          <DialogTitle className="sr-only">Captura ampliada</DialogTitle>
-          {zoom && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={zoom} alt="captura" className="max-h-[80dvh] w-full rounded-lg object-contain" />
-          )}
-        </DialogContent>
-      </Dialog>
+      <AdjuntoPreviewDialog archivo={preview} onClose={() => setPreview(null)} />
     </Dialog>
   );
 }

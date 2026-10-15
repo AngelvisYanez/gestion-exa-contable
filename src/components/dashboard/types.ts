@@ -40,6 +40,14 @@ export type Tarea = {
   Enviado_Por?: string | null;
   Proceso?: string | null;
   Evidencias?: Array<{ ruta: string; url: string; nombre: string; esImagen: boolean }>;
+  /** Archivos que el cliente adjunto al ticket en el panel legacy EXA. */
+  Adjuntos_Exa?: Array<{
+    ruta: string;
+    url: string;
+    nombre: string;
+    esImagen: boolean;
+    tipo: "problema" | "solucion";
+  }>;
   /** Base del ticket cuando viene de EXA o Servicios. */
   Db_Origen?: string | null;
 };
