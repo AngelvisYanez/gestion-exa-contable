@@ -31,7 +31,7 @@ from win_shell import (
     start_input_counter,
 )
 
-AGENT_VERSION = "2.12.0-flet"
+AGENT_VERSION = "2.12.1-flet"
 UPDATE_REPO = "AngelvisYanez/gestion-exa-contable"
 GITHUB_API_LATEST = f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest"
 
@@ -1355,6 +1355,8 @@ class ExaMonitorApp:
         creado = {"cod": 0}
         label_files = ft.Text("Ningún archivo seleccionado", size=11, color=C["text_muted"])
         error = ft.Text("", size=12, color=C["danger_fg"], visible=False)
+        progreso = ft.ProgressBar(value=0, visible=False)
+        estado_upload = ft.Text("", size=11, color=C["text_muted"], visible=False)
         guardar = ft.FilledButton("Crear tarea", icon=ft.Icons.ADD_TASK)
         btn_files = ft.OutlinedButton("Adjuntar archivos", icon=ft.Icons.ATTACH_FILE)
 
@@ -1377,6 +1379,8 @@ class ExaMonitorApp:
                     fecha_fin,
                     *([asignar] if self.permisos_tarea.get("asignar") else []),
                     *([ft.Row([btn_files, label_files], wrap=True)] if self.permisos_tarea.get("editar") else []),
+                    progreso,
+                    estado_upload,
                     error,
                 ],
                 width=520, height=500, scroll=ft.ScrollMode.AUTO,
@@ -1459,12 +1463,29 @@ class ExaMonitorApp:
                         for field in (titulo, descripcion, prioridad, complejidad, fecha_fin, asignar):
                             field.disabled = True
                         self._apply_task_list(payload)
+                    total_files = len(archivos)
+                    subidos = 0
+                    if total_files:
+                        progreso.value = 0
+                        progreso.visible = True
+                        estado_upload.value = f"Subiendo evidencias 0/{total_files}..."
+                        estado_upload.visible = True
+                        self.page.update()
                     while archivos:
                         batch = archivos[:10]
                         self._upload_evidencias(
                             creado["cod"], "tarea", batch, vincular_descripcion=True
                         )
                         del archivos[:len(batch)]
+                        subidos += len(batch)
+                        if total_files:
+                            progreso.value = subidos / total_files
+                            estado_upload.value = f"Subiendo evidencias {subidos}/{total_files}..."
+                            self.page.update()
+                    if total_files:
+                        progreso.value = 1
+                        estado_upload.value = "Evidencias subidas."
+                        self.page.update()
                     if not self._es_mesa():
                         self.bandeja_filtro = "creadas"
                     elif not asignar.value:
