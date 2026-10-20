@@ -908,7 +908,11 @@ export async function registrarAvance(
 }
 
 /** Arma Ava_Descripcion desde el body (campos estructurados o texto libre legacy). */
-export function descripcionAvanceDesdeBody(body: Record<string, unknown>, tarCod: number): string {
+export function descripcionAvanceDesdeBody(
+  body: Record<string, unknown>,
+  tarCod: number,
+  apoyo: string | null = null
+): string {
   const str = (v: unknown, max: number) => String(v ?? "").slice(0, max);
   const list = (v: unknown) => (Array.isArray(v) ? v.map((x) => String(x ?? "").trim()).filter(Boolean) : []);
   const realizado = str(body.realizado ?? body.descripcion, 4000);
@@ -920,6 +924,7 @@ export function descripcionAvanceDesdeBody(body: Record<string, unknown>, tarCod
   const horasNum = Number(body.horas);
   return buildAvanceDescripcion({
     realizado,
+    apoyo,
     siguiente: str(body.siguiente, 1000),
     bloqueos: str(body.bloqueos, 1000),
     horas: Number.isFinite(horasNum) && horasNum > 0 ? Math.min(horasNum, 24) : null,

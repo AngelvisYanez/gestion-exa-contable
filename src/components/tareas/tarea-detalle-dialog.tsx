@@ -227,6 +227,7 @@ function textoParaCompartir(tarea: Tarea, detalle: TareaDetalle | null) {
       lineas.push(`- ${encabezado}`);
       const realizado = plainTextFromHtml(avance.realizado);
       if (realizado) lineas.push(`  ${realizado}`);
+      if (avance.apoyo) lineas.push(`  Ayudó: ${avance.apoyo}`);
       if (avance.siguiente) lineas.push(`  Siguiente: ${avance.siguiente}`);
       if (avance.bloqueos) lineas.push(`  Bloqueos: ${avance.bloqueos}`);
       for (const enlace of avance.enlaces) lineas.push(`  Enlace: ${enlace}`);
@@ -727,6 +728,9 @@ export function TareaDetalleDialog({
                         <span className="text-muted-foreground">{fmtFechaHora(item.avance.Ava_Fecha)}</span>
                         {item.avance.Autor && (
                           <span className="text-muted-foreground">· {item.avance.Autor}</span>
+                        )}
+                        {item.avance.apoyo && (
+                          <span className="text-muted-foreground">· Ayudó: {item.avance.apoyo}</span>
                         )}
                         {item.avance.horas ? (
                           <span className="text-muted-foreground">· {item.avance.horas} h</span>

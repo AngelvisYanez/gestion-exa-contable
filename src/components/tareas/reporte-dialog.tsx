@@ -223,6 +223,11 @@ function ReportePreview({ data }: { data: ReporteData }) {
                         {a.realizado && (
                           <p className="text-xs leading-relaxed text-foreground/90">{a.realizado}</p>
                         )}
+                        {a.apoyo && (
+                          <p className="mt-1 text-[11px] text-muted-foreground">
+                            <span className="font-semibold text-foreground/70">Ayudó:</span> {a.apoyo}
+                          </p>
+                        )}
                         {a.siguiente && (
                           <p className="mt-1 text-[11px] text-muted-foreground">
                             <span className="font-semibold text-foreground/70">Siguiente:</span> {a.siguiente}
@@ -317,6 +322,7 @@ function buildPrintHtml(data: ReporteData) {
             .map((a) => {
               const bits: string[] = [];
               if (a.realizado) bits.push(`<p class="done">${escapeHtml(a.realizado)}</p>`);
+              if (a.apoyo) bits.push(`<p class="meta"><b>Ayudó:</b> ${escapeHtml(a.apoyo)}</p>`);
               if (a.siguiente) bits.push(`<p class="meta"><b>Siguiente:</b> ${escapeHtml(a.siguiente)}</p>`);
               if (a.bloqueos) bits.push(`<p class="warn"><b>Bloqueo:</b> ${escapeHtml(a.bloqueos)}</p>`);
               for (const e of a.enlaces) bits.push(`<p class="link"><a href="${escapeHtml(e)}">${escapeHtml(e)}</a></p>`);

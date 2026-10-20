@@ -5,6 +5,7 @@
 
 export type AvanceEstructurado = {
   realizado: string;
+  apoyo: string | null;
   siguiente: string;
   bloqueos: string;
   horas: number | null;
@@ -13,6 +14,7 @@ export type AvanceEstructurado = {
 };
 
 const PREFIJOS = {
+  apoyo: "Apoyo:",
   siguiente: "Siguiente paso:",
   bloqueos: "Bloqueos:",
   horas: "Horas:",
@@ -28,6 +30,7 @@ export function buildAvanceDescripcion(a: Partial<AvanceEstructurado>): string {
   const lines: string[] = [];
   const realizado = (a.realizado || "").trim();
   if (realizado) lines.push(realizado);
+  if (a.apoyo?.trim()) lines.push(`${PREFIJOS.apoyo} ${oneLine(a.apoyo)}`);
   if (a.siguiente?.trim()) lines.push(`${PREFIJOS.siguiente} ${oneLine(a.siguiente)}`);
   if (a.bloqueos?.trim()) lines.push(`${PREFIJOS.bloqueos} ${oneLine(a.bloqueos)}`);
   if (a.horas != null && a.horas > 0) lines.push(`${PREFIJOS.horas} ${Math.round(a.horas * 100) / 100}`);
@@ -39,6 +42,7 @@ export function buildAvanceDescripcion(a: Partial<AvanceEstructurado>): string {
 export function parseAvanceDescripcion(raw: string | null | undefined): AvanceEstructurado {
   const out: AvanceEstructurado = {
     realizado: "",
+    apoyo: null,
     siguiente: "",
     bloqueos: "",
     horas: null,
@@ -49,7 +53,8 @@ export function parseAvanceDescripcion(raw: string | null | undefined): AvanceEs
   const libres: string[] = [];
   for (const line of String(raw).split(/\r?\n/)) {
     const l = line.trim();
-    if (l.startsWith(PREFIJOS.siguiente)) out.siguiente = l.slice(PREFIJOS.siguiente.length).trim();
+    if (l.startsWith(PREFIJOS.apoyo)) out.apoyo = l.slice(PREFIJOS.apoyo.length).trim() || null;
+    else if (l.startsWith(PREFIJOS.siguiente)) out.siguiente = l.slice(PREFIJOS.siguiente.length).trim();
     else if (l.startsWith(PREFIJOS.bloqueos)) out.bloqueos = l.slice(PREFIJOS.bloqueos.length).trim();
     else if (l.startsWith(PREFIJOS.horas)) {
       const n = parseFloat(l.slice(PREFIJOS.horas.length).replace(",", "."));

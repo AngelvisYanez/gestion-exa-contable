@@ -18,6 +18,7 @@ import {
   getTareaAccess,
   isAsignableTeamMember,
   kpisTareas,
+  listAsignables,
   listTareas,
   registrarAvance,
   setTareaAsignados,
@@ -391,7 +392,18 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ success: false, message: "No puedes registrar avances en esa tarea." }, { status: 403 });
         }
       }
-      const descripcion = descripcionAvanceDesdeBody(body, tarCod);
+      let apoyo: string | null = null;
+      if (body.apoyoPerCod != null && body.apoyoPerCod !== "") {
+        const apoyoPerCod = Number(body.apoyoPerCod);
+        if (!Number.isSafeInteger(apoyoPerCod) || apoyoPerCod <= 0) {
+          return NextResponse.json({ success: false, message: "Apoyo inválido." }, { status: 400 });
+        }
+        apoyo = (await listAsignables(db)).find((a) => a.Per_Cod === apoyoPerCod)?.Nombre || null;
+        if (!apoyo) {
+          return NextResponse.json({ success: false, message: "El apoyo debe ser un miembro del equipo autorizado." }, { status: 400 });
+        }
+      }
+      const descripcion = descripcionAvanceDesdeBody(body, tarCod, apoyo);
       const resumen = String(body.realizado ?? body.descripcion ?? "").trim();
       const res = await registrarAvance(db, {
         tarCod,

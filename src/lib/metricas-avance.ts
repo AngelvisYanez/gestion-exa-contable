@@ -14,6 +14,7 @@ export type AvanceActividad = {
   Ava_Fecha: string | null;
   Autor: string | null;
   realizado: string;
+  apoyo?: string | null;
   siguiente: string;
   bloqueos: string;
   horas: number | null;
@@ -325,6 +326,7 @@ export function buildReporte(opts: {
     for (const a of t.avances) {
       L.push(`- **${fmtFechaHora(a.Ava_Fecha)} — ${a.Ava_Porcentaje}%** (${a.Ava_Delta >= 0 ? "+" : ""}${a.Ava_Delta})`);
       if (a.realizado) L.push(`  - Realizado: ${a.realizado.replace(/\n+/g, " ")}`);
+      if (a.apoyo) L.push(`  - Ayudó: ${a.apoyo}`);
       if (a.horas) L.push(`  - Tiempo invertido: ${a.horas} h`);
       if (a.siguiente) L.push(`  - Siguiente paso: ${a.siguiente}`);
       if (a.bloqueos) L.push(`  - Bloqueos: ${a.bloqueos}`);

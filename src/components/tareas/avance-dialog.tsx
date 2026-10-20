@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
@@ -29,6 +30,7 @@ import {
   isAllowedEvidenciaFile,
 } from "@/lib/evidencia-files";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
 
 const MAX_FILES = 5;
 
@@ -43,7 +45,11 @@ type Props = {
 };
 
 export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, requireDescripcion = true }: Props) {
+  const { db } = useAuth();
   const esTicket = tarea?.tipo === "ticket";
+  const apoyoDb = typeof extraBody?.Ses_Dat_Dis === "string"
+    ? extraBody.Ses_Dat_Dis
+    : typeof extraBody?.project === "string" ? extraBody.project : db || "";
   const ticketsVinculados = (!esTicket && tarea?.Tickets_Vinculados) || [];
   const refCod = esTicket ? (tarea?.Tic_Cod ?? tarea?.Tar_Cod ?? null) : (tarea?.Tar_Cod ?? null);
   const tarCod = refCod;
@@ -53,6 +59,9 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
   const [siguiente, setSiguiente] = useState("");
   const [bloqueos, setBloqueos] = useState("");
   const [horas, setHoras] = useState("");
+  const [apoyoPerCod, setApoyoPerCod] = useState("");
+  const [asignables, setAsignables] = useState<Array<{ Per_Cod: number; Nombre: string }>>([]);
+  const [loadingApoyos, setLoadingApoyos] = useState(false);
   const [enlace, setEnlace] = useState("");
   const [enlaces, setEnlaces] = useState<string[]>([]);
   const [files, setFiles] = useState<File[]>([]);
@@ -87,6 +96,35 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
     // Solo reiniciar al abrir otra tarea; recargas de la lista no deben borrar lo escrito
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tarCod]);
+
+  useEffect(() => {
+    if (!tarea || esTicket) return;
+    let cancelled = false;
+    const apoyoInicial = tarea.Tar_Apoyo_Per_Cod ? String(tarea.Tar_Apoyo_Per_Cod) : "";
+    setApoyoPerCod(apoyoInicial);
+    setAsignables([]);
+    setLoadingApoyos(true);
+    fetch(`/api/devs?view=colaboradores&asignables=1&Ses_Dat_Dis=${encodeURIComponent(apoyoDb)}`)
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.message || "No se pudo cargar el equipo.");
+        return data.colaboradores as Array<{ Per_Cod: number; Nombre: string }>;
+      })
+      .then((rows) => {
+        if (cancelled) return;
+        setAsignables(rows);
+        if (apoyoInicial && !rows.some((a) => String(a.Per_Cod) === apoyoInicial)) setApoyoPerCod("");
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setApoyoPerCod("");
+        setError(err instanceof Error ? err.message : "No se pudo cargar el equipo.");
+      })
+      .finally(() => { if (!cancelled) setLoadingApoyos(false); });
+    return () => { cancelled = true; };
+    // Se carga al abrir otra tarea; las recargas de la lista no borran la selección.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tarCod, esTicket, apoyoDb]);
 
   const previews = useMemo(
     () => files.map((f) => (f.type.startsWith("image/") ? URL.createObjectURL(f) : "")),
@@ -182,6 +220,7 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
           siguiente,
           bloqueos,
           horas: horas ? Number(horas.replace(",", ".")) : null,
+          apoyoPerCod: !esTicket && apoyoPerCod ? Number(apoyoPerCod) : undefined,
           enlaces: allLinks,
           adjuntos,
         }),
@@ -349,6 +388,26 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
             </div>
           </div>
 
+          {!esTicket && (
+            <div className="space-y-2">
+              <Label htmlFor="avance-apoyo">¿Quién ayudó en este avance?</Label>
+              <Select
+                id="avance-apoyo"
+                value={apoyoPerCod}
+                onChange={(e) => setApoyoPerCod(e.target.value)}
+                disabled={saving || loadingApoyos}
+              >
+                <option value="">Nadie más</option>
+                {asignables.map((a) => (
+                  <option key={a.Per_Cod} value={a.Per_Cod}>{a.Nombre}</option>
+                ))}
+              </Select>
+              <p className="text-[11px] text-muted-foreground">
+                Se guardará con este avance, aunque luego cambie el apoyo de la tarea.
+              </p>
+            </div>
+          )}
+
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Siguiente paso</Label>
@@ -488,7 +547,7 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
               <Button type="button" variant="ghost" onClick={onClose} disabled={saving || pendingUploads > 0}>
                 Cancelar
               </Button>
-              <Button type="button" variant="success" onClick={() => void guardar()} disabled={saving || pendingUploads > 0}>
+              <Button type="button" variant="success" onClick={() => void guardar()} disabled={saving || pendingUploads > 0 || (!esTicket && loadingApoyos)}>
                 {saving ? (
                   <>
                     <Loader2 className="animate-spin" />
