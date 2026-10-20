@@ -6,12 +6,14 @@ import Topbar from "@/components/layout/Topbar";
 import { KanbanBoard, type KanbanEstado } from "@/components/dashboard/kanban-board";
 import type { Tarea } from "@/components/dashboard/types";
 import { PaginationBar, FilterBar, ViewModeToggle, useResponsiveListView, type ListViewMode } from "@/components/list-controls";
-import { EstadoBadge, PrioridadBadge, fmtDate } from "@/components/status-badges";
+import { EstadoBadge, PlazoBadge, PrioridadBadge, fmtDate } from "@/components/status-badges";
+import { PlazoSelector } from "@/components/tareas/plazo-selector";
 import { useAuth } from "@/contexts/AuthContext";
 import { hasRolePermission } from "@/lib/auth/role-permissions";
 import { roleLabel } from "@/lib/auth/users";
 import { useNotifications } from "@/contexts/NotificationsContext";
 import { usePagination } from "@/hooks/use-pagination";
+import { hoyFecha } from "@/lib/timezone";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,6 +33,7 @@ import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { plainTextFromHtml } from "@/components/ui/rich-text";
 import { AvanceDialog } from "@/components/tareas/avance-dialog";
 import { TareaDetalleDialog } from "@/components/tareas/tarea-detalle-dialog";
+import { TicketVinculadoChip } from "@/components/tareas/ticket-vinculado-chip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { clearDetailLink, detailIdFromSearch } from "@/lib/detail-link";
@@ -60,10 +63,11 @@ export default function TareasPage() {
   const [tareas, setTareas] = useState<Tarea[]>([]);
   const [filtroEstado, setFiltroEstado] = useState("todos");
   const [filtroUsuario, setFiltroUsuario] = useState("");
+  const [filtroPlazo, setFiltroPlazo] = useState("todos");
   const [q, setQ] = useState("");
   const [viewMode, setViewMode] = useState<ListViewMode>("kanban");
   const displayMode = useResponsiveListView(viewMode);
-  const pager = usePagination(tareas, { resetKey: `${filtroEstado}|${filtroUsuario}|${q}` });
+  const pager = usePagination(tareas, { resetKey: `${filtroEstado}|${filtroUsuario}|${filtroPlazo}|${q}` });
 
   const [formOpen, setFormOpen] = useState(false);
   const [formTitulo, setFormTitulo] = useState("");
@@ -124,7 +128,7 @@ export default function TareasPage() {
     setLoading(true);
     setError("");
     try {
-      const url = `/api/tareas?Ses_Dat_Dis=${encodeURIComponent(db)}&Emp_Cod=${empCod}&estado=${encodeURIComponent(filtroEstado)}&Per_Cod=${encodeURIComponent(filtroUsuario)}&q=${encodeURIComponent(q)}`;
+      const url = `/api/tareas?Ses_Dat_Dis=${encodeURIComponent(db)}&Emp_Cod=${empCod}&estado=${encodeURIComponent(filtroEstado)}&plazo=${encodeURIComponent(filtroPlazo)}&Per_Cod=${encodeURIComponent(filtroUsuario)}&q=${encodeURIComponent(q)}`;
       const res = await fetch(url);
       const j = await res.json();
       if (!j.success) throw new Error(j.message || "Error al cargar tareas");
@@ -134,7 +138,7 @@ export default function TareasPage() {
     } finally {
       if (request === loadRequest.current) setLoading(false);
     }
-  }, [db, empCod, filtroEstado, filtroUsuario, q]);
+  }, [db, empCod, filtroEstado, filtroPlazo, filtroUsuario, q]);
 
   useEffect(() => {
     void loadTareas();
@@ -329,6 +333,19 @@ export default function TareasPage() {
               <option key={c.Per_Cod} value={c.Per_Cod}>{c.Nombre}</option>
             ))}
           </Select>
+          <Select
+            aria-label="Filtrar por plazo"
+            value={filtroPlazo}
+            onChange={(e) => setFiltroPlazo(e.target.value)}
+            wrapperClassName="w-full sm:w-[170px]"
+            className="h-9 min-h-0 w-full py-0 text-sm"
+          >
+            <option value="todos">Todos los plazos</option>
+            <option value="Diaria">Diaria (1 día)</option>
+            <option value="Semanal">Semanal (hasta 7 días)</option>
+            <option value="Mensual">Mensual (+1 semana)</option>
+            <option value="Sin fechas">Sin fechas</option>
+          </Select>
           <ViewModeToggle value={viewMode} onChange={setViewMode} withKanban />
           <Button
             type="button"
@@ -400,9 +417,15 @@ export default function TareasPage() {
                     }}
                     className="cursor-pointer rounded-xl border border-border/70 bg-background p-3.5 text-left shadow-sm transition-colors hover:border-primary/30 hover:bg-accent/40"
                   >
-                    <div className="mb-2 flex items-start justify-between gap-2">
-                      <span className="font-mono text-[11px] text-muted-foreground">#{t.Tar_Cod}</span>
-                      <PrioridadBadge prioridad={t.Tar_Prioridad} />
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                        <span className="font-mono text-[11px] text-muted-foreground">#{t.Tar_Cod}</span>
+                        <TicketVinculadoChip tickets={t.Tickets_Vinculados} />
+                      </span>
+                      <span className="flex flex-wrap items-center gap-1.5">
+                        <PlazoBadge inicio={t.Tar_Fecha_Inicio} fin={t.Tar_Fecha_Fin} />
+                        <PrioridadBadge prioridad={t.Tar_Prioridad} />
+                      </span>
                     </div>
                     <div className="line-clamp-2 text-sm font-bold">{t.Tar_Titulo}</div>
                     {t.Tar_Descripcion && (
@@ -484,6 +507,7 @@ export default function TareasPage() {
                         </TableCell>
                         <TableCell className="min-w-[260px]">
                           <div className="font-semibold leading-snug">{t.Tar_Titulo}</div>
+                          <TicketVinculadoChip tickets={t.Tickets_Vinculados} className="mt-1" />
                           {t.Tar_Descripcion && (
                             <div className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
                               {plainTextFromHtml(t.Tar_Descripcion)}
@@ -496,7 +520,10 @@ export default function TareasPage() {
                             : "Sin asignar"}
                         </TableCell>
                         <TableCell className="whitespace-nowrap">
-                          <PrioridadBadge prioridad={t.Tar_Prioridad} />
+                          <div className="flex flex-col items-start gap-1">
+                            <PrioridadBadge prioridad={t.Tar_Prioridad} />
+                            <PlazoBadge inicio={t.Tar_Fecha_Inicio} fin={t.Tar_Fecha_Fin} />
+                          </div>
                         </TableCell>
                         <TableCell className="whitespace-nowrap">
                           <EstadoBadge estado={t.Tar_Estado} />
@@ -627,7 +654,14 @@ export default function TareasPage() {
                 </div>
               </div>
               <div className="space-y-2">
-                <Label>Fecha fin</Label>
+                <Label>Plazo de la tarea</Label>
+                <PlazoSelector
+                  inicio={hoyFecha()}
+                  fechaFin={formFin}
+                  disabled={formSaving}
+                  onSelect={(_plazo, fin) => setFormFin(fin)}
+                />
+                <Label className="mt-2 block">Fecha fin</Label>
                 <DatePicker
                   value={formFin}
                   onChange={setFormFin}
@@ -635,6 +669,12 @@ export default function TareasPage() {
                   allowClear
                   placeholder="Sin fecha limite"
                 />
+                {formFin && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-muted-foreground">Plazo:</span>
+                    <PlazoBadge inicio={hoyFecha()} fin={formFin} />
+                  </div>
+                )}
               </div>
               {canAssign && <div className="space-y-2">
                 <Label>Asignar a (equipo)</Label>

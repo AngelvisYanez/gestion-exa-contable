@@ -90,6 +90,8 @@ export function ticketAsTarea(t: Ticket) {
           : [],
     tipo: "ticket" as const,
     Tic_Cod: t.Tic_Cod,
+    /** Tarea creada con "Convertir a tarea", si existe. */
+    Tar_Cod_Vinculado: t.Tar_Cod ?? null,
     Emp_Nom: t.Emp_Nom,
     Tic_Tel: t.Tic_Tel,
     Tic_Obs: t.Tic_Obs,

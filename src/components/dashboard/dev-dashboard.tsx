@@ -15,6 +15,13 @@ import {
   DevKpisWidget,
   MisAtrasadasWidget,
 } from "@/components/dashboard/metric-widgets";
+import {
+  DevHorarioWidget,
+  DevHorasTareaWidget,
+  DevProcesosWidget,
+  DevTelemetriaKpisWidget,
+} from "@/components/dashboard/dev-telemetria-widgets";
+import type { TelemetriaPersonal } from "@/lib/tareas";
 import { MetricasPanel } from "@/components/tareas/metricas-panel";
 import { TareaDetalleDialog } from "@/components/tareas/tarea-detalle-dialog";
 import { AvanceDialog } from "@/components/tareas/avance-dialog";
@@ -72,6 +79,7 @@ export function DevDashboard({ userName }: { userName?: string }) {
   const [items, setItems] = useState<Tarea[]>([]);
   const [kpis, setKpis] = useState<Kpis | null>(null);
   const [actividad, setActividad] = useState<Actividad | null>(null);
+  const [telemetria, setTelemetria] = useState<TelemetriaPersonal | null>(null);
   const [periodo, setPeriodo] = useState<7 | 30>(7);
   const [detalleCod, setDetalleCod] = useState<number | null>(null);
   const [avanceCod, setAvanceCod] = useState<number | null>(null);
@@ -98,6 +106,7 @@ export function DevDashboard({ userName }: { userName?: string }) {
       setItems(j.tareas || []);
       setKpis(j.kpis || null);
       setActividad(j.actividad || null);
+      setTelemetria(j.telemetria || null);
       setWarning(j.warning || null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error");
@@ -120,6 +129,12 @@ export function DevDashboard({ userName }: { userName?: string }) {
     () => calcularMetricas(soloTareas, actividad, periodo),
     [soloTareas, actividad, periodo]
   );
+
+  const tituloPorTar = useMemo(() => {
+    const map: Record<number, string> = {};
+    for (const t of soloTareas) map[t.Tar_Cod] = t.Tar_Titulo;
+    return map;
+  }, [soloTareas]);
 
   const porEstado = useMemo(() => {
     const counts = {
@@ -162,6 +177,20 @@ export function DevDashboard({ userName }: { userName?: string }) {
       : kpis?.total
         ? `${Math.round(((kpis.completadas || 0) / kpis.total) * 1000) / 10}%`
         : "—";
+
+  const tel: TelemetriaPersonal = telemetria ?? {
+    desde: "",
+    hasta: "",
+    horasActivas: 0,
+    actividad: 0,
+    clicks: 0,
+    teclas: 0,
+    lineas: 0,
+    registros: 0,
+    porTarea: [],
+    procesos: [],
+    horario: { activo: false, hora_inicio: null, hora_fin: null, registros: 0, dentro: 0, pct: 0 },
+  };
 
   const renderWidget = (id: string) => {
     switch (id) {
@@ -213,6 +242,14 @@ export function DevDashboard({ userName }: { userName?: string }) {
             }}
           />
         );
+      case "tel-kpis":
+        return <DevTelemetriaKpisWidget tel={tel} />;
+      case "tel-tareas":
+        return <DevHorasTareaWidget tel={tel} tituloPorTar={tituloPorTar} />;
+      case "tel-procesos":
+        return <DevProcesosWidget tel={tel} />;
+      case "tel-horario":
+        return <DevHorarioWidget tel={tel} />;
       case "actividad":
         return <ActividadWidget />;
       case "accesos":

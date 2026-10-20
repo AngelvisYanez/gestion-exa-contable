@@ -17,7 +17,8 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { CalendarClock, GripVertical, History, Maximize2, Ticket } from "lucide-react";
-import { EstadoBadge, PrioridadBadge, ComplejidadBadge, fmtDate } from "@/components/status-badges";
+import { EstadoBadge, PrioridadBadge, PlazoBadge, ComplejidadBadge, fmtDate } from "@/components/status-badges";
+import { TicketVinculadoChip } from "@/components/tareas/ticket-vinculado-chip";
 import { Progress } from "@/components/ui/progress";
 import { hoyFecha, startOfDayZona } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
@@ -212,6 +213,7 @@ function KanbanCardBody({
             Ticket
           </span>
         )}
+        {!esTicket && <TicketVinculadoChip tickets={t.Tickets_Vinculados} />}
         <PrioridadBadge prioridad={t.Tar_Prioridad} />
         {!esTicket && t.Tar_Complejidad && <ComplejidadBadge complejidad={t.Tar_Complejidad} />}
         <EstadoBadge estado={t.Tar_Estado} />
@@ -234,15 +236,22 @@ function KanbanCardBody({
             : "Sin asignar"}
         </span>
         {!esTicket && (
-          <span
-            className={cn(
-              "inline-flex items-center gap-0.5",
-              atrasada && "font-bold text-red-600",
-              pronto && "font-bold text-amber-600"
-            )}
-          >
-            <CalendarClock className="size-3" />
-            {fmtDate(t.Tar_Fecha_Fin)}
+          <span className="inline-flex items-center gap-1">
+            <span
+              className={cn(
+                "inline-flex items-center gap-0.5",
+                atrasada && "font-bold text-red-600",
+                pronto && "font-bold text-amber-600"
+              )}
+            >
+              <CalendarClock className="size-3" />
+              {fmtDate(t.Tar_Fecha_Fin)}
+            </span>
+            <PlazoBadge
+              inicio={t.Tar_Fecha_Inicio}
+              fin={t.Tar_Fecha_Fin}
+              className="px-1.5 py-0 text-[10px]"
+            />
           </span>
         )}
       </div>

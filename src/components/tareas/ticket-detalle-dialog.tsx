@@ -48,6 +48,7 @@ type Props = {
   ticket: Tarea | null;
   onClose: () => void;
   onRegistrarAvance?: (t: Tarea) => void;
+  onConvertirTarea?: (t: Tarea) => void;
 };
 
 const CAPTURA_DIAS = [1, 3, 7, 15, 30, 90] as const;
@@ -107,12 +108,13 @@ function textoParaCompartir(ticket: Tarea, avances: AvanceTicket[]) {
   return lineas.join("\n");
 }
 
-export function TicketDetalleDialog({ ticket, onClose, onRegistrarAvance }: Props) {
+export function TicketDetalleDialog({ ticket, onClose, onRegistrarAvance, onConvertirTarea }: Props) {
   const { db, user } = useAuth();
   const isManager = user?.role === "manager";
   const open = !!ticket && ticket.tipo === "ticket";
   const cerrado = ticket?.Tar_Estado === "Finalizada";
   const ticCod = ticket?.Tic_Cod ?? ticket?.Tar_Cod ?? 0;
+  const tareaVinculada = ticket?.Tar_Cod_Vinculado ?? 0;
   const [tab, setTab] = useState("detalle");
   const [capturasDias, setCapturasDias] = useState<(typeof CAPTURA_DIAS)[number] | "rango" | "todo">(
     30
@@ -692,10 +694,33 @@ export function TicketDetalleDialog({ ticket, onClose, onRegistrarAvance }: Prop
             <Button type="button" variant="ghost" className="w-full sm:w-auto" onClick={() => { setCompartirEstado(null); setPreview(null); onClose(); }}>
               Cerrar
             </Button>
+            {ticket && onConvertirTarea && !cerrado && tareaVinculada <= 0 && (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto"
+                onClick={() => onConvertirTarea(ticket)}
+              >
+                <Wrench className="size-4" />
+                Convertir a tarea
+              </Button>
+            )}
             {ticket && onRegistrarAvance && !cerrado && (
               <Button type="button" variant="success" className="col-span-2 w-full sm:w-auto" onClick={() => onRegistrarAvance(ticket)}>
                 Registrar avance
               </Button>
+            )}
+            {ticket && tareaVinculada > 0 && (
+              <p className="col-span-2 text-xs text-muted-foreground sm:order-first sm:mr-auto">
+                Vinculado a la tarea{" "}
+                <a
+                  href={`/tareas?detalle=${tareaVinculada}`}
+                  className="font-semibold text-brand-navy underline-offset-2 hover:underline"
+                >
+                  #{tareaVinculada}
+                </a>
+                . Al llegar al 100% se resuelve este ticket.
+              </p>
             )}
           </div>
         </div>

@@ -16,6 +16,7 @@ import {
   descripcionAvanceDesdeBody,
   getTareaDetalle,
   getTareaAccess,
+  isAsignableTeamMember,
   kpisTareas,
   listTareas,
   registrarAvance,
@@ -87,11 +88,12 @@ export async function GET(req: NextRequest) {
     const empCod = tasksEmpCod(sp.get("Emp_Cod"));
     const perCod = parseInt(sp.get("Per_Cod") || "0", 10) || undefined;
     const estado = sp.get("estado") || "todos";
+    const plazo = sp.get("plazo") || "todos";
     const q = sp.get("q") || "";
     const withKpis = sp.get("kpis") === "1";
 
     const usuCreador = session.role === "developer" ? session.usuCod : undefined;
-    const tareas = await listTareas(db, { empCod, perCod, estado, q, usuCreador });
+    const tareas = await listTareas(db, { empCod, perCod, estado, plazo, q, usuCreador });
     const payload: Record<string, unknown> = {
       success: true,
       db,
@@ -207,6 +209,7 @@ export async function POST(req: NextRequest) {
         fechaInicio?: string;
         fechaFin?: string | null;
         estado?: string;
+        apoyoPerCod?: number | null;
         adjuntos?: string[];
       } = {};
       if (body.titulo != null) patch.titulo = String(body.titulo);
@@ -217,6 +220,17 @@ export async function POST(req: NextRequest) {
       if (body.fechaFin !== undefined) patch.fechaFin = body.fechaFin ? String(body.fechaFin) : null;
       if (body.estado != null && body.estado !== "") patch.estado = String(body.estado);
       if (Array.isArray(body.adjuntos)) patch.adjuntos = body.adjuntos.map(String);
+
+      const rawApoyo = body.apoyoPerCod !== undefined ? body.apoyoPerCod : body.Apoyo_Per_Cod;
+      const wantsApoyo = rawApoyo !== undefined;
+      if (wantsApoyo) {
+        const vacio = rawApoyo === null || rawApoyo === "" || rawApoyo === 0 || rawApoyo === "0";
+        const n = vacio ? null : Number(rawApoyo);
+        if (n !== null && (!Number.isInteger(n) || n <= 0)) {
+          return NextResponse.json({ success: false, message: "Apoyo invalido" }, { status: 400 });
+        }
+        patch.apoyoPerCod = n;
+      }
 
       const contentKeys = ["titulo", "descripcion", "prioridad", "complejidad", "fechaInicio", "fechaFin", "adjuntos"] as const;
       const touchesContent = contentKeys.some((k) => patch[k] !== undefined);
@@ -229,6 +243,9 @@ export async function POST(req: NextRequest) {
       }
       if (patch.estado !== undefined && !hasRolePermission(session, "tareas.avance")) {
         return NextResponse.json({ success: false, message: "Tu rol no puede cambiar el estado." }, { status: 403 });
+      }
+      if (wantsApoyo && !hasRolePermission(session, "tareas.editar")) {
+        return NextResponse.json({ success: false, message: "Tu rol no puede editar tareas." }, { status: 403 });
       }
       if (wantsAssign && !hasRolePermission(session, "tareas.asignar")) {
         return NextResponse.json({ success: false, message: "Tu rol no puede asignar tareas." }, { status: 403 });
@@ -257,8 +274,23 @@ export async function POST(req: NextRequest) {
         if (permission === "unassigned") {
           return NextResponse.json({ success: false, message: "No puedes marcar una tarea sin asignar como asignada." }, { status: 400 });
         }
+        // El apoyo solo lo marca quien participa en la tarea (creador o asignado).
+        if (wantsApoyo && !access?.isCreator && !access?.isAssigned) {
+          return NextResponse.json({ success: false, message: "No puedes editar esa tarea." }, { status: 403 });
+        }
       } else if (touchesContent && !canAssignWork(session.role)) {
         return NextResponse.json({ success: false, message: "No puedes editar esa tarea." }, { status: 403 });
+      }
+
+      // El apoyo debe ser una persona del equipo autorizado (misma regla que asignación).
+      if (patch.apoyoPerCod != null) {
+        const okApoyo = await isAsignableTeamMember(db, patch.apoyoPerCod);
+        if (!okApoyo) {
+          return NextResponse.json(
+            { success: false, message: "El apoyo debe ser un miembro del equipo autorizado." },
+            { status: 400 }
+          );
+        }
       }
 
       let tarea = Object.keys(patch).length ? await updateTarea(db, tarCod, patch) : { Tar_Cod: tarCod };

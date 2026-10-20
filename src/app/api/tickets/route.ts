@@ -4,6 +4,11 @@ import { canAssignWork, canSeeOversight } from "@/lib/auth/users";
 import { hasRolePermission } from "@/lib/auth/role-permissions";
 import { publishAsignacion, publishEvent } from "@/lib/events";
 import { resolveTicketDatabaseIds, sanitizeDbDis } from "@/lib/db";
+import { tasksDbDis, tasksEmpCod } from "@/lib/empresa";
+import { createTarea, setTareaAsignados } from "@/lib/tareas";
+import { normalizePrioridad } from "@/lib/domain-constants";
+import { fechaFinPorPlazo } from "@/lib/plazo";
+import { linkTicketTarea } from "@/lib/ticket-tarea";
 import { ticketScopeForSession } from "@/lib/ticket-scope";
 import {
   assignTicket,
@@ -14,6 +19,7 @@ import {
   listTicketAssignees,
   listTicketEmpresas,
   listTicketsAsignados,
+  pickTicketByOrigen,
   resumirTickets,
   ticketsKpisBases,
   updateTicketEstado,
@@ -263,6 +269,106 @@ export async function POST(req: NextRequest) {
       }
       const res = await attachTicketEvidencias(db, ticCod, rutas);
       return NextResponse.json({ success: true, ...res });
+    }
+
+    if (action === "convertir_tarea") {
+      // Decisión manual de atención al cliente o el encargado.
+      if (!canAssignWork(session.role)) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Solo atención al cliente o el encargado pueden convertir un ticket en tarea.",
+          },
+          { status: 403 }
+        );
+      }
+      const ticCod = Number(body.Tic_Cod || 0);
+      if (!ticCod) {
+        return NextResponse.json({ success: false, message: "Tic_Cod requerido" }, { status: 400 });
+      }
+      const preferDb = body.Db_Origen != null ? String(body.Db_Origen) : db;
+      const rows = await listTicketsAsignados({ ticCod, limit: 5 });
+      const ticket = pickTicketByOrigen(rows, preferDb);
+      if (!ticket) {
+        return NextResponse.json({ success: false, message: "Ticket no encontrado." }, { status: 404 });
+      }
+      if (ticket.Tar_Cod && ticket.Tar_Cod > 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `El ticket ya está convertido en la tarea #${ticket.Tar_Cod}.`,
+            Tar_Cod: ticket.Tar_Cod,
+          },
+          { status: 409 }
+        );
+      }
+      const ticDb = ticket.Db_Origen || preferDb;
+      const tasksDb = tasksDbDis();
+      const origen =
+        ticDb === "servicios"
+          ? "Servicios"
+          : ticDb.startsWith("relavera")
+            ? "Relavera"
+            : "EXA";
+      const partes = [`Convertido desde el ticket #${ticket.Tic_Cod} (${origen}).`];
+      if (ticket.Tic_Descripcion && String(ticket.Tic_Descripcion).trim()) {
+        partes.push(String(ticket.Tic_Descripcion).trim());
+      }
+
+      // Prioridad elegida en el diálogo (por defecto la del ticket).
+      const prioridad = normalizePrioridad(
+        body.prioridad != null ? String(body.prioridad) : null,
+        normalizePrioridad(ticket.Tic_Prioridad)
+      );
+      // Plazo: fija la fecha de fin de la tarea (Diaria = hoy, Semanal = +7, Mensual = +1 mes).
+      const fechaFin =
+        body.fechaFin != null && body.fechaFin !== ""
+          ? String(body.fechaFin)
+          : fechaFinPorPlazo(body.plazo != null ? String(body.plazo) : null);
+
+      // Asignación múltiple (Per_Cods). `perCodAsignar` sigue funcionando por compatibilidad.
+      const perCods = Array.isArray(body.perCods)
+        ? (body.perCods as unknown[])
+            .map((v) => Number(v))
+            .filter((n) => Number.isFinite(n) && n > 0)
+        : [];
+      if (!perCods.length && Number(body.perCodAsignar || 0) > 0) {
+        perCods.push(Number(body.perCodAsignar));
+      }
+
+      let tarCod = 0;
+      let tarea: Awaited<ReturnType<typeof createTarea>> | null = null;
+      try {
+        tarea = await createTarea(tasksDb, {
+          titulo: ticket.Tic_Titulo || `Ticket #${ticket.Tic_Cod}`,
+          descripcion: partes.join("\n\n"),
+          prioridad,
+          complejidad: body.complejidad != null ? String(body.complejidad) : "Media",
+          fechaFin,
+          empCod: tasksEmpCod(),
+          usuCreador: session?.usuCod || undefined,
+        });
+        tarCod = Number((tarea as { Tar_Cod: number }).Tar_Cod);
+        if (perCods.length) {
+          await setTareaAsignados(tasksDb, tarCod, perCods);
+        }
+      } catch (err) {
+        const mensaje = err instanceof Error ? err.message : "No se pudo crear la tarea.";
+        return NextResponse.json({ success: false, message: mensaje }, { status: 400 });
+      }
+
+      await linkTicketTarea({ tarCod, ticCod, ticDb });
+      publishEvent({
+        type: "tarea_creada",
+        title: "Ticket convertido a tarea",
+        message: `Ticket #${ticCod} · tarea #${tarCod} · ${String(ticket.Tic_Titulo || "").slice(0, 60)}`,
+        db: tasksDb,
+        tarCod,
+        ticCod,
+        kind: "tarea",
+        actor: session?.name,
+      });
+      return NextResponse.json({ success: true, tarea, Tic_Cod: ticCod, Tar_Cod: tarCod });
     }
 
     if (action === "assign") {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   AlertTriangle,
   ArrowRight,
@@ -14,6 +15,7 @@ import {
   Paperclip,
   Pencil,
   Sparkles,
+  Ticket,
   Trash2,
   TrendingUp,
   User,
@@ -21,7 +23,7 @@ import {
   Users,
 } from "lucide-react";
 import type { Tarea } from "@/components/dashboard/types";
-import { ComplejidadBadge, EstadoBadge, PrioridadBadge, fmtDate } from "@/components/status-badges";
+import { ComplejidadBadge, EstadoBadge, PlazoBadge, PrioridadBadge, fmtDate } from "@/components/status-badges";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -43,6 +45,7 @@ import { OfsercontAlcanceFields } from "@/components/tareas/ofsercont-alcance-fi
 import { TareaEditDialog } from "@/components/tareas/tarea-edit-dialog";
 import type { TareaDetalle } from "@/lib/tareas";
 import { fmtFechaHoraZona, hoyFecha, startOfDayZona } from "@/lib/timezone";
+import { plazoDesdeFechas } from "@/lib/plazo-tarea";
 import { cn } from "@/lib/utils";
 import { evidenciaLabel } from "@/lib/evidencia-files";
 import { AdjuntoPreviewDialog, esPdfAdjunto, type AdjuntoPreview } from "@/components/tareas/adjunto-preview-dialog";
@@ -196,7 +199,10 @@ function textoParaCompartir(tarea: Tarea, detalle: TareaDetalle | null) {
   const fin = actual?.Tar_Fecha_Fin || tarea.Tar_Fecha_Fin;
   const culminacion = actual?.Tar_Fecha_Culminacion || tarea.Tar_Fecha_Culminacion;
   if (inicio) lineas.push(`Inicio: ${fmtDate(inicio)}`);
-  if (fin) lineas.push(`Fin: ${fmtDate(fin)}`);
+  if (fin) {
+    const plazo = plazoDesdeFechas(inicio, fin);
+    lineas.push(`Fin: ${fmtDate(fin)}${plazo !== "Sin fechas" ? ` (${plazo})` : ""}`);
+  }
   if (culminacion) lineas.push(`Culminada: ${fmtDate(culminacion)}`);
   if (actual?.Creador) lineas.push(`Creada por: ${actual.Creador}`);
 
@@ -318,6 +324,10 @@ export function TareaDetalleDialog({
         ? tarea.Asignados
         : [];
   const estadoActual = t?.Tar_Estado ?? tarea?.Tar_Estado ?? "";
+  // Afiliación ticket ↔ tarea (lista o detalle, mientras carga el detalle).
+  const ticketsVinculados = data?.tickets_vinculados?.length
+    ? data.tickets_vinculados
+    : (tarea?.Tickets_Vinculados || []);
   const canEdit = hasRolePermission(user, "tareas.editar") && (canDesk || (user?.role === "developer" &&
     !!user.usuCod && user.usuCod > 0 &&
     Number(t?.Usu_Creador ?? tarea?.Usu_Creador) === user.usuCod));
@@ -412,6 +422,44 @@ export function TareaDetalleDialog({
             <Progress value={Math.min(100, pct)} className="h-2.5 flex-1" />
             <span className="text-lg font-bold tabular-nums">{pct}%</span>
           </div>
+
+          {ticketsVinculados.length > 0 && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-amber-900">
+                <span className="inline-flex items-center gap-1 font-bold uppercase tracking-wide text-amber-700">
+                  <Ticket className="size-3.5" />
+                  Ticket de origen
+                </span>
+                {ticketsVinculados.map((tv) => (
+                  <Link
+                    key={`${tv.Tic_Db}-${tv.Tic_Cod}`}
+                    href={`/tickets?detalle=${tv.Tic_Cod}&db=${encodeURIComponent(tv.Tic_Db || "exa")}`}
+                    title={tv.Titulo || `Ticket #${tv.Tic_Cod}`}
+                    className="inline-flex min-w-0 max-w-full items-center gap-1.5 font-semibold underline decoration-amber-300 underline-offset-2 hover:text-amber-700"
+                  >
+                    <span className="shrink-0">#{tv.Tic_Cod}</span>
+                    <span className="max-w-[14rem] truncate font-medium">{tv.Titulo || "Sin asunto"}</span>
+                    {tv.Estado && (
+                      <span
+                        className={cn(
+                          "rounded px-1 py-0.5 text-[10px] font-bold uppercase",
+                          tv.Estado === "Cerrado"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : "bg-amber-100 text-amber-900"
+                        )}
+                      >
+                        {tv.Estado}
+                      </span>
+                    )}
+                  </Link>
+                ))}
+              </div>
+              <p className="mt-1 text-[11px] leading-snug text-amber-800">
+                Al registrar 100% de avance en esta tarea, el ticket vinculado se cierra
+                automáticamente.
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
@@ -451,10 +499,14 @@ export function TareaDetalleDialog({
                     <span className="text-muted-foreground">Inicio:</span>
                     <strong>{fmtDate(t?.Tar_Fecha_Inicio ?? tarea?.Tar_Fecha_Inicio)}</strong>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <CalendarClock className="size-4 text-muted-foreground" />
                     <span className="text-muted-foreground">Fin:</span>
                     <strong>{fmtDate(t?.Tar_Fecha_Fin ?? tarea?.Tar_Fecha_Fin)}</strong>
+                    <PlazoBadge
+                      inicio={t?.Tar_Fecha_Inicio ?? tarea?.Tar_Fecha_Inicio}
+                      fin={t?.Tar_Fecha_Fin ?? tarea?.Tar_Fecha_Fin}
+                    />
                   </div>
                   {t?.Tar_Fecha_Culminacion && (
                     <div className="flex items-center gap-2">
@@ -470,6 +522,13 @@ export function TareaDetalleDialog({
                       <strong className="truncate">{t.Creador}</strong>
                     </div>
                   )}
+                  <div className="flex items-center gap-2">
+                    <UserPlus className="size-4 text-muted-foreground" />
+                    <span className="text-muted-foreground">Apoyo:</span>
+                    <strong className="truncate">
+                      {t?.Apoyo ?? tarea?.Apoyo ?? "Sin apoyo"}
+                    </strong>
+                  </div>
                 </div>
                 <div className="rounded-xl border border-border/70 p-3">
                   <div className="mb-1.5 flex items-center gap-2 text-muted-foreground">

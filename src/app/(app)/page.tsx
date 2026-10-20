@@ -19,10 +19,29 @@ import {
 } from "@/components/dashboard/metric-widgets";
 import {
   ApexEstadoWidget,
+  ApoyoTareasWidget,
+  ComparativaRendimientoWidget,
   RendimientoBarrasWidget,
   RendimientoOndaWidget,
   RendimientoRadarWidget,
 } from "@/components/dashboard/apex-widgets";
+import {
+  AtrasadasDetalleWidget,
+  AvanceSinActividadWidget,
+  BacklogWidget,
+  BasesWidget,
+  CargaJustaWidget,
+  CicloWidget,
+  ComplejidadWidget,
+  CreadorEjecutorWidget,
+  EsfuerzoWidget,
+  HorarioWidget,
+  HorasTareaWidget,
+  ProcesosWidget,
+  PuntualidadWidget,
+  ReaperturaWidget,
+  StandbyWidget,
+} from "@/components/dashboard/metricas-extra-widgets";
 import { DateRangeFilter, diaDesdePreset, type DateRangeValue } from "@/components/date-range-filter";
 import { hoyFecha } from "@/lib/timezone";
 import { DeveloperFilter } from "@/components/developer-filter";
@@ -33,7 +52,26 @@ import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DevDashboard } from "@/components/dashboard/dev-dashboard";
-import type { TeamDayPoint } from "@/lib/dashboard";
+import type {
+  ApoyoDev,
+  AvanceSinActividadMetric,
+  BacklogMetric,
+  BaseComparativaRow,
+  CargaJustaMetric,
+  CicloMetric,
+  ComparativaDev,
+  ComplejidadMetric,
+  CreadorEjecutorRow,
+  EsfuerzoDev,
+  HorarioAdherenciaRow,
+  HorasTareaRow,
+  ProcesoActivoRow,
+  PuntualidadMetric,
+  ReaperturaMetric,
+  StandbyMetric,
+  TareaAtrasada,
+  TeamDayPoint,
+} from "@/lib/dashboard";
 
 const DashboardGrid = dynamic(
   () => import("@/components/dashboard/dashboard-grid").then((m) => m.DashboardGrid),
@@ -59,6 +97,7 @@ type Metrics = {
   };
   porEstado: Array<{ label: string; value: number; color: string }>;
   porPrioridad: Array<{ label: string; value: number; color: string }>;
+  porPlazo: Array<{ label: string; value: number; color: string }>;
   porAsignado: Array<{
     Per_Cod: number;
     Nombre: string;
@@ -70,6 +109,23 @@ type Metrics = {
     cumplimiento: number;
   }>;
   serieEquipo: TeamDayPoint[];
+  comparativa: ComparativaDev[];
+  apoyos: ApoyoDev[];
+  atrasadasList: TareaAtrasada[];
+  ciclo: CicloMetric;
+  puntualidad: PuntualidadMetric;
+  standby: StandbyMetric;
+  backlog: BacklogMetric;
+  creadorEjecutor: CreadorEjecutorRow[];
+  cargaJusta: CargaJustaMetric;
+  reapertura: ReaperturaMetric;
+  complejidad: ComplejidadMetric;
+  esfuerzo: EsfuerzoDev[];
+  horasTarea: HorasTareaRow[];
+  procesos: ProcesoActivoRow[];
+  horario: HorarioAdherenciaRow[];
+  avanceSinActividad: AvanceSinActividadMetric;
+  bases: BaseComparativaRow[];
   desarrolladores: Array<{ Per_Cod: number; Nombre: string }>;
   filtro: { perCod: number | null };
   sinAsignar: number;
@@ -142,7 +198,7 @@ export default function HomePage() {
         setLoading(false);
       }
     },
-    [db, empCod, rango.desde, rango.hasta, perCod, isDev, authLoading, user]
+    [db, empCod, rango.desde, rango.hasta, perCod, isDev, isAtencion, authLoading, user]
   );
 
   useEffect(() => {
@@ -267,6 +323,13 @@ export default function HomePage() {
             centerLabel="prio"
           />
         );
+      case "chart-plazo":
+        return (
+          <ApexEstadoWidget
+            slices={m?.porPlazo || []}
+            centerLabel="plazo"
+          />
+        );
       case "actividad":
         return <ActividadWidget />;
       case "rendimiento-onda":
@@ -275,10 +338,119 @@ export default function HomePage() {
         return <RendimientoBarrasWidget rows={m?.porAsignado || []} />;
       case "rendimiento-radar":
         return <RendimientoRadarWidget rows={m?.porAsignado || []} />;
+      case "comparativa-rendimiento":
+        return <ComparativaRendimientoWidget rows={m?.comparativa || []} />;
+      case "apoyo-tareas":
+        return <ApoyoTareasWidget rows={m?.apoyos || []} />;
       case "carga-asignado":
         return <CargaAsignadoWidget rows={m?.porAsignado || []} />;
       case "avance-persona":
         return <AvancePersonaWidget rows={m?.porAsignado || []} />;
+      case "atrasadas-detalle":
+        return <AtrasadasDetalleWidget tareas={m?.atrasadasList || []} />;
+      case "ciclo":
+        return (
+          <CicloWidget
+            ciclo={
+              m?.ciclo || {
+                muestra: 0,
+                promedio_dias: 0,
+                mediana_dias: 0,
+                minimo_dias: 0,
+                maximo_dias: 0,
+                por_plazo: {
+                  Diaria: { muestra: 0, promedio_dias: 0 },
+                  Semanal: { muestra: 0, promedio_dias: 0 },
+                  Mensual: { muestra: 0, promedio_dias: 0 },
+                  "Sin fechas": { muestra: 0, promedio_dias: 0 },
+                },
+              }
+            }
+          />
+        );
+      case "puntualidad":
+        return (
+          <PuntualidadWidget
+            puntualidad={
+              m?.puntualidad || {
+                muestra: 0,
+                a_tiempo: 0,
+                tarde: 0,
+                pct: 0,
+                desvio_promedio: 0,
+                por_plazo: {
+                  Diaria: { muestra: 0, a_tiempo: 0, pct: 0 },
+                  Semanal: { muestra: 0, a_tiempo: 0, pct: 0 },
+                  Mensual: { muestra: 0, a_tiempo: 0, pct: 0 },
+                  "Sin fechas": { muestra: 0, a_tiempo: 0, pct: 0 },
+                },
+              }
+            }
+          />
+        );
+      case "standby":
+        return (
+          <StandbyWidget
+            standby={m?.standby || { total: 0, antiguedad_promedio: 0, tareas: [] }}
+          />
+        );
+      case "backlog":
+        return (
+          <BacklogWidget
+            backlog={
+              m?.backlog || {
+                abiertas: 0,
+                cerradas_rango: 0,
+                dias_rango: 1,
+                ritmo_dia: 0,
+                eta_dias: null,
+                eta_fecha: null,
+              }
+            }
+          />
+        );
+      case "creador-ejecutor":
+        return <CreadorEjecutorWidget rows={m?.creadorEjecutor || []} />;
+      case "carga-justa":
+        return (
+          <CargaJustaWidget
+            carga={
+              m?.cargaJusta || {
+                desviacion: 0,
+                coeficiente: 0,
+                promedio: 0,
+                maximo: 0,
+                minimo: 0,
+                indice: 100,
+                personas: [],
+              }
+            }
+          />
+        );
+      case "reapertura":
+        return (
+          <ReaperturaWidget
+            reapertura={m?.reapertura || { retrocesos: 0, tareas: 0, avances_total: 0, pct: 0 }}
+          />
+        );
+      case "complejidad":
+        return <ComplejidadWidget complejidad={m?.complejidad || { filas: [] }} />;
+      case "esfuerzo":
+        return <EsfuerzoWidget rows={m?.esfuerzo || []} />;
+      case "horas-tarea":
+        return <HorasTareaWidget rows={m?.horasTarea || []} />;
+      case "procesos":
+        return <ProcesosWidget rows={m?.procesos || []} />;
+      case "horario":
+        return <HorarioWidget rows={m?.horario || []} />;
+      case "avance-sin-actividad":
+        return (
+          <AvanceSinActividadWidget
+            data={m?.avanceSinActividad || { con_avance: 0, sin_actividad: 0, pct: 0, tareas: [] }}
+          />
+        );
+      case "bases":
+        return <BasesWidget rows={m?.bases || []} />;
       default:
         return null;
     }

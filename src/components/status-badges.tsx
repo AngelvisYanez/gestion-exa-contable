@@ -1,5 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { hoyFecha } from "@/lib/timezone";
+import { plazoDesdeFechas, plazoVariant } from "@/lib/plazo-tarea";
+import { cn } from "@/lib/utils";
 
 export function estadoVariant(estado: string) {
   const map: Record<string, "success" | "info" | "secondary" | "muted" | "warning" | "danger"> = {
@@ -38,6 +40,31 @@ export function PrioridadBadge({ prioridad }: { prioridad: string }) {
 export function ComplejidadBadge({ complejidad }: { complejidad?: string | null }) {
   const c = (complejidad || "Media").trim() || "Media";
   return <Badge variant={complejidadVariant(c)}>Complejidad: {c}</Badge>;
+}
+
+/**
+ * Plazo de la tarea (Diaria / Semanal / Mensual) segun su duracion inicio -> fin.
+ * Mismo criterio que el widget "Comparativa de rendimiento" del dashboard.
+ */
+export function PlazoBadge({
+  inicio,
+  fin,
+  className,
+}: {
+  inicio?: string | null;
+  fin?: string | null;
+  className?: string;
+}) {
+  const plazo = plazoDesdeFechas(inicio, fin);
+  return (
+    <Badge
+      variant={plazoVariant(plazo)}
+      className={cn("gap-1", className)}
+      title="Plazo estimado por la duracion de la tarea (inicio a fin)"
+    >
+      {plazo === "Sin fechas" ? "Sin fecha" : plazo}
+    </Badge>
+  );
 }
 
 export function fmtDate(v?: string | null) {

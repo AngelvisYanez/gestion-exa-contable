@@ -22,6 +22,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { hasRolePermission } from "@/lib/auth/role-permissions";
 import { roleLabel } from "@/lib/auth/users";
 import type { TareaDetalle } from "@/lib/tareas";
+import { PlazoBadge } from "@/components/status-badges";
+import { PlazoSelector } from "@/components/tareas/plazo-selector";
 import {
   EVIDENCIA_ACCEPT,
   EVIDENCIA_HELP,
@@ -49,6 +51,7 @@ export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, on
   const { db, user } = useAuth();
   const isDeveloper = user?.role === "developer";
   const canAssign = hasRolePermission(user, "tareas.asignar");
+  const canEdit = hasRolePermission(user, "tareas.editar");
   const canAvance = hasRolePermission(user, "tareas.avance");
   const tarCod = tarea?.Tar_Cod ?? null;
   const [loading, setLoading] = useState(false);
@@ -58,9 +61,12 @@ export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, on
   const [descripcion, setDescripcion] = useState("");
   const [prioridad, setPrioridad] = useState("Media");
   const [complejidad, setComplejidad] = useState("Media");
+  const [fechaInicio, setFechaInicio] = useState("");
   const [fechaFin, setFechaFin] = useState("");
   const [estado, setEstado] = useState("Pendiente");
   const [perCod, setPerCod] = useState("");
+  const [apoyoPerCod, setApoyoPerCod] = useState("");
+  const [apoyoNombre, setApoyoNombre] = useState("");
   const [asignables, setAsignables] = useState<Asignable[]>([]);
   const [evidencias, setEvidencias] = useState<EvidenciaItem[]>([]);
   const [nuevasFotos, setNuevasFotos] = useState<File[]>([]);
@@ -81,9 +87,11 @@ export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, on
     setNuevasFotos([]);
     Promise.all([
       fetch(detailUrl(tarCod)).then((r) => r.json()),
-      !canAssign ? Promise.resolve({ colaboradores: [] }) : fetch(
-        `/api/devs?view=colaboradores&asignables=1&Ses_Dat_Dis=${encodeURIComponent(db || "")}`
-      ).then((r) => r.json()),
+      !canAssign && !canEdit
+        ? Promise.resolve({ colaboradores: [] })
+        : fetch(
+            `/api/devs?view=colaboradores&asignables=1&Ses_Dat_Dis=${encodeURIComponent(db || "")}`
+          ).then((r) => r.json()),
     ])
       .then(([j, cols]) => {
         if (cancel) return;
@@ -94,11 +102,14 @@ export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, on
         setDescripcion(t?.Tar_Descripcion || tarea?.Tar_Descripcion || "");
         setPrioridad(t?.Tar_Prioridad || tarea?.Tar_Prioridad || "Media");
         setComplejidad(t?.Tar_Complejidad || tarea?.Tar_Complejidad || "Media");
+        setFechaInicio(String(t?.Tar_Fecha_Inicio || tarea?.Tar_Fecha_Inicio || "").slice(0, 10));
         setFechaFin(String(t?.Tar_Fecha_Fin || tarea?.Tar_Fecha_Fin || "").slice(0, 10));
         setEstado(t?.Tar_Estado || tarea?.Tar_Estado || "Pendiente");
         setEvidencias(d.evidencias_iniciales || []);
         const first = d.asignados?.[0];
         setPerCod(first?.Per_Cod ? String(first.Per_Cod) : "");
+        setApoyoPerCod(t?.Tar_Apoyo_Per_Cod ? String(t.Tar_Apoyo_Per_Cod) : "");
+        setApoyoNombre(t?.Apoyo || "");
         setAsignables(
           (cols.colaboradores || []).map((c: Asignable) => ({
             Per_Cod: c.Per_Cod,
@@ -112,7 +123,7 @@ export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, on
       cancel = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, tarCod, db, canAssign]);
+  }, [open, tarCod, db, canAssign, canEdit]);
 
   const addFotos = (list: FileList | null) => {
     if (!list) return;
@@ -176,6 +187,7 @@ export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, on
           ...(canAvance ? { estado } : {}),
           adjuntos,
           ...(canAssign ? { perCodAsignar: perCod ? Number(perCod) : "" } : {}),
+          ...(canEdit ? { apoyoPerCod: apoyoPerCod ? Number(apoyoPerCod) : null } : {}),
         }),
       });
       const j = await res.json();
@@ -250,7 +262,14 @@ export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, on
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
-                <Label>Fecha fin</Label>
+                <Label>Plazo de la tarea</Label>
+                <PlazoSelector
+                  inicio={fechaInicio}
+                  fechaFin={fechaFin}
+                  disabled={saving}
+                  onSelect={(_plazo, fin) => setFechaFin(fin)}
+                />
+                <Label className="mt-2 block">Fecha fin</Label>
                 <DatePicker
                   value={fechaFin}
                   onChange={setFechaFin}
@@ -258,6 +277,12 @@ export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, on
                   allowClear
                   placeholder="Sin fecha limite"
                 />
+                {fechaFin && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-muted-foreground">Plazo:</span>
+                    <PlazoBadge inicio={fechaInicio} fin={fechaFin} />
+                  </div>
+                )}
               </div>
               {canAvance && <div className="space-y-2">
                 <Label>Estado</Label>
@@ -285,6 +310,32 @@ export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, on
                 Si eliges una persona, el estado pasa a Asignado automaticamente.
               </p>
             </div>}
+
+            {canEdit && (
+              <div className="space-y-2">
+                <Label>Apoyo en la tarea</Label>
+                <Select
+                  value={apoyoPerCod}
+                  onChange={(e) => setApoyoPerCod(e.target.value)}
+                  disabled={saving}
+                >
+                  <option value="">Sin apoyo</option>
+                  {asignables.map((a) => (
+                    <option key={a.Per_Cod} value={a.Per_Cod}>
+                      {a.Nombre}
+                      {a.Rol === "atencion" ? ` · ${roleLabel(a.Rol)}` : ""}
+                    </option>
+                  ))}
+                  {apoyoPerCod &&
+                    !asignables.some((a) => String(a.Per_Cod) === apoyoPerCod) && (
+                      <option value={apoyoPerCod}>{apoyoNombre || `Persona #${apoyoPerCod}`}</option>
+                    )}
+                </Select>
+                <p className="text-[11px] text-muted-foreground">
+                  Registra quien apoyo en esta tarea (no cuenta como asignación).
+                </p>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label>Adjuntos de descripcion</Label>

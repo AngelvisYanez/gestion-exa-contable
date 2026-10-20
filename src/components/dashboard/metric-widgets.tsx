@@ -119,30 +119,44 @@ export function CargaAsignadoWidget({ rows }: { rows: AssigneeMetric[] }) {
 }
 
 export function AvancePersonaWidget({ rows }: { rows: AssigneeMetric[] }) {
-  const visible = rows.slice(0, 4);
+  const conTareas = rows.filter((r) => r.total > 0);
+  const sinTareas = rows.filter((r) => r.total === 0);
+  // Todos los miembros del proyecto: primero quien tiene tareas (por carga),
+  // luego el resto del equipo en orden alfabetico.
+  const visible = [...conTareas, ...sinTareas];
   return (
     <div className="flex h-full min-h-0 flex-col gap-1.5 overflow-hidden">
-      {visible.map((a) => (
-        <div key={a.Per_Cod} className="min-h-0 shrink rounded-lg border border-border/60 px-2.5 py-1.5">
-          <div className="mb-1 flex items-center justify-between gap-2">
-            <span className="truncate text-xs font-semibold">{a.Nombre}</span>
-            <span className="shrink-0 text-[11px] font-bold tabular-nums text-sky-700">{a.avance_promedio}%</span>
+      <p className="shrink-0 text-[10px] text-muted-foreground">
+        {rows.length} miembro(s) · {conTareas.length} con tareas asignadas
+      </p>
+      <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-0.5">
+        {visible.map((a) => (
+          <div key={a.Per_Cod} className="shrink-0 rounded-lg border border-border/60 px-2.5 py-1.5">
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <span className="truncate text-xs font-semibold">{a.Nombre}</span>
+              <span className="shrink-0 text-[11px] font-bold tabular-nums text-sky-700">
+                {a.total > 0 ? `${a.avance_promedio}%` : "—"}
+              </span>
+            </div>
+            <Progress value={a.avance_promedio} className="h-1.5" />
+            <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
+              {a.total > 0 ? (
+                <>
+                  <span>{a.total} tot</span>
+                  <span className="text-emerald-600">{a.completadas} ok</span>
+                  <span className="text-sky-600">{a.proceso} proc</span>
+                  <span>{a.pendientes} pend</span>
+                </>
+              ) : (
+                <span className="italic">Sin tareas asignadas</span>
+              )}
+            </div>
           </div>
-          <Progress value={a.avance_promedio} className="h-1.5" />
-          <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
-            <span>{a.total} tot</span>
-            <span className="text-emerald-600">{a.completadas} ok</span>
-            <span className="text-sky-600">{a.proceso} proc</span>
-            <span>{a.pendientes} pend</span>
-          </div>
-        </div>
-      ))}
-      {rows.length === 0 && (
-        <p className="py-6 text-center text-xs text-muted-foreground">Sin asignaciones</p>
-      )}
-      {rows.length > visible.length && (
-        <p className="shrink-0 text-[10px] text-muted-foreground">+{rows.length - visible.length} mas</p>
-      )}
+        ))}
+        {rows.length === 0 && (
+          <p className="py-6 text-center text-xs text-muted-foreground">Sin miembros en el equipo</p>
+        )}
+      </div>
     </div>
   );
 }

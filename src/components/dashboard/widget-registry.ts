@@ -12,7 +12,24 @@ export type ManagerWidgetId =
   | "rendimiento-onda"
   | "rendimiento-barras"
   | "rendimiento-radar"
-  | "actividad"
+  | "comparativa-rendimiento"
+  | "apoyo-tareas"
+  | "chart-plazo"
+  | "atrasadas-detalle"
+  | "ciclo"
+  | "puntualidad"
+  | "standby"
+  | "backlog"
+  | "creador-ejecutor"
+  | "carga-justa"
+  | "reapertura"
+  | "complejidad"
+  | "esfuerzo"
+  | "horas-tarea"
+  | "procesos"
+  | "horario"
+  | "avance-sin-actividad"
+  | "bases"
   | "accesos";
 
 export type DevWidgetId =
@@ -23,6 +40,10 @@ export type DevWidgetId =
   | "cola-personal"
   | "metricas"
   | "atrasadas"
+  | "tel-kpis"
+  | "tel-tareas"
+  | "tel-procesos"
+  | "tel-horario"
   | "actividad"
   | "accesos";
 
@@ -90,6 +111,18 @@ export const MANAGER_CATALOG: WidgetMeta[] = [
     defaultLayout: { i: "rendimiento-radar", x: 8, y: 10, w: 4, h: 9, minW: 3, minH: 7 },
   },
   {
+    id: "comparativa-rendimiento",
+    title: "Comparativa de rendimiento",
+    description: "Rendimiento por plazo de tarea: diaria, semanal y mensual",
+    defaultLayout: { i: "comparativa-rendimiento", x: 0, y: 36, w: 12, h: 9, minW: 5, minH: 7 },
+  },
+  {
+    id: "apoyo-tareas",
+    title: "Quien apoyo mas",
+    description: "Ranking de apoyos en tareas por desarrollador y plazo",
+    defaultLayout: { i: "apoyo-tareas", x: 0, y: 45, w: 8, h: 9, minW: 4, minH: 7 },
+  },
+  {
     id: "chart-estado",
     title: "Por estado",
     description: "Donut ApexCharts de estados",
@@ -102,10 +135,100 @@ export const MANAGER_CATALOG: WidgetMeta[] = [
     defaultLayout: { i: "chart-prioridad", x: 4, y: 19, w: 4, h: 8, minW: 3, minH: 6 },
   },
   {
-    id: "actividad",
-    title: "Actividad en vivo",
-    description: "Notificaciones recientes",
-    defaultLayout: { i: "actividad", x: 8, y: 19, w: 4, h: 8, minW: 3, minH: 5 },
+    id: "chart-plazo",
+    title: "Por plazo",
+    description: "Donut ApexCharts de plazos: diaria, semanal, mensual",
+    defaultLayout: { i: "chart-plazo", x: 8, y: 19, w: 4, h: 8, minW: 3, minH: 6 },
+  },
+  {
+    id: "atrasadas-detalle",
+    title: "Tareas atrasadas",
+    description: "Vencidas con dias de retraso y responsables",
+    defaultLayout: { i: "atrasadas-detalle", x: 0, y: 54, w: 6, h: 9, minW: 4, minH: 6 },
+  },
+  {
+    id: "ciclo",
+    title: "Tiempo de ciclo",
+    description: "Dias de inicio a culminacion por plazo",
+    defaultLayout: { i: "ciclo", x: 6, y: 54, w: 6, h: 9, minW: 4, minH: 6 },
+  },
+  {
+    id: "puntualidad",
+    title: "Puntualidad de entrega",
+    description: "Cerradas antes o el dia de la fecha fin",
+    defaultLayout: { i: "puntualidad", x: 0, y: 63, w: 6, h: 8, minW: 4, minH: 6 },
+  },
+  {
+    id: "standby",
+    title: "Tareas en standby",
+    description: "Abiertas sin fecha fin y su antiguedad",
+    defaultLayout: { i: "standby", x: 6, y: 63, w: 6, h: 8, minW: 4, minH: 6 },
+  },
+  {
+    id: "backlog",
+    title: "Backlog y ritmo",
+    description: "Abiertas, ritmo de cierre y ETA de vaciado",
+    defaultLayout: { i: "backlog", x: 0, y: 71, w: 12, h: 5, minW: 6, minH: 4 },
+  },
+  {
+    id: "creador-ejecutor",
+    title: "Creador vs ejecutor",
+    description: "Quien crea tareas frente a quien las ejecuta",
+    defaultLayout: { i: "creador-ejecutor", x: 0, y: 76, w: 6, h: 9, minW: 4, minH: 6 },
+  },
+  {
+    id: "carga-justa",
+    title: "Equilibrio de carga",
+    description: "Desviacion estandar de tareas por persona",
+    defaultLayout: { i: "carga-justa", x: 6, y: 76, w: 6, h: 9, minW: 4, minH: 6 },
+  },
+  {
+    id: "reapertura",
+    title: "Tasa de reapertura",
+    description: "Avances con retroceso de porcentaje",
+    defaultLayout: { i: "reapertura", x: 0, y: 85, w: 6, h: 5, minW: 4, minH: 4 },
+  },
+  {
+    id: "complejidad",
+    title: "Complejidad vs avance",
+    description: "Tiempo real de ciclo por nivel de complejidad",
+    defaultLayout: { i: "complejidad", x: 6, y: 85, w: 6, h: 5, minW: 4, minH: 4 },
+  },
+  {
+    id: "esfuerzo",
+    title: "Tiempo activo por persona",
+    description: "Telemetria ExaMonitor: horas activas e indice de actividad",
+    defaultLayout: { i: "esfuerzo", x: 0, y: 90, w: 6, h: 9, minW: 4, minH: 6 },
+  },
+  {
+    id: "horas-tarea",
+    title: "Horas por tarea",
+    description: "Tiempo activo medido por tarea",
+    defaultLayout: { i: "horas-tarea", x: 6, y: 90, w: 6, h: 9, minW: 4, minH: 6 },
+  },
+  {
+    id: "procesos",
+    title: "En que trabaja el equipo",
+    description: "Proceso/ventana activa mas frecuente",
+    defaultLayout: { i: "procesos", x: 0, y: 99, w: 6, h: 8, minW: 4, minH: 6 },
+  },
+  {
+    id: "horario",
+    title: "Adherencia al horario",
+    description: "Actividad dentro del horario laboral configurado",
+    defaultLayout: { i: "horario", x: 6, y: 99, w: 6, h: 8, minW: 4, minH: 6 },
+  },
+  {
+    id: "avance-sin-actividad",
+    title: "Avance sin actividad",
+    description: "Tareas con avance declarado sin telemetria medida",
+    defaultLayout: { i: "avance-sin-actividad", x: 0, y: 107, w: 12, h: 8, minW: 6, minH: 6 },
+  },
+  {
+    id: "bases",
+    title: "Selector de base",
+    description: "Comparativa y selector de KPIs por base (EXA vs Servicios)",
+    defaultLayout: { i: "bases", x: 0, y: 115, w: 6, h: 9, minW: 4, minH: 6 },
   },
   {
     id: "rendimiento-barras",
@@ -171,16 +294,40 @@ export const DEV_CATALOG: WidgetMeta[] = [
     defaultLayout: { i: "atrasadas", x: 8, y: 15, w: 4, h: 8, minW: 3, minH: 5 },
   },
   {
+    id: "tel-kpis",
+    title: "Mi tiempo activo",
+    description: "Telemetria ExaMonitor: horas activas e indice de actividad",
+    defaultLayout: { i: "tel-kpis", x: 0, y: 23, w: 12, h: 4, minW: 6, minH: 3 },
+  },
+  {
+    id: "tel-tareas",
+    title: "Mis horas por tarea",
+    description: "Tiempo activo medido por tarea",
+    defaultLayout: { i: "tel-tareas", x: 0, y: 27, w: 6, h: 8, minW: 3, minH: 5 },
+  },
+  {
+    id: "tel-procesos",
+    title: "En que trabaje",
+    description: "Procesos y ventanas mas frecuentes",
+    defaultLayout: { i: "tel-procesos", x: 6, y: 27, w: 6, h: 8, minW: 3, minH: 5 },
+  },
+  {
+    id: "tel-horario",
+    title: "Mi adherencia al horario",
+    description: "Actividad dentro de tu horario laboral",
+    defaultLayout: { i: "tel-horario", x: 0, y: 35, w: 6, h: 6, minW: 3, minH: 4 },
+  },
+  {
     id: "actividad",
     title: "Notificaciones",
     description: "Eventos en tiempo real",
-    defaultLayout: { i: "actividad", x: 0, y: 23, w: 6, h: 6, minW: 3, minH: 4 },
+    defaultLayout: { i: "actividad", x: 6, y: 35, w: 6, h: 6, minW: 3, minH: 4 },
   },
   {
     id: "accesos",
     title: "Accesos rapidos",
     description: "Ir a Mis tareas y reporte",
-    defaultLayout: { i: "accesos", x: 6, y: 23, w: 6, h: 6, minW: 3, minH: 3 },
+    defaultLayout: { i: "accesos", x: 0, y: 41, w: 6, h: 6, minW: 3, minH: 3 },
   },
 ];
 
@@ -192,12 +339,29 @@ export const MANAGER_DEFAULT: ManagerWidgetId[] = [
   "accesos",
   "rendimiento-onda",
   "rendimiento-radar",
+  "comparativa-rendimiento",
+  "apoyo-tareas",
   "chart-estado",
   "chart-prioridad",
-  "actividad",
+  "chart-plazo",
   "rendimiento-barras",
   "carga-asignado",
   "avance-persona",
+  "atrasadas-detalle",
+  "ciclo",
+  "puntualidad",
+  "standby",
+  "backlog",
+  "creador-ejecutor",
+  "carga-justa",
+  "reapertura",
+  "complejidad",
+  "esfuerzo",
+  "horas-tarea",
+  "procesos",
+  "horario",
+  "avance-sin-actividad",
+  "bases",
 ];
 
 export const DEV_DEFAULT: DevWidgetId[] = [
@@ -208,6 +372,10 @@ export const DEV_DEFAULT: DevWidgetId[] = [
   "cola-personal",
   "metricas",
   "atrasadas",
+  "tel-kpis",
+  "tel-tareas",
+  "tel-procesos",
+  "tel-horario",
   "actividad",
   "accesos",
 ];
@@ -226,7 +394,7 @@ export function defaultEnabledFor(role: DashboardRole): string[] {
 }
 
 export function storageKeyFor(role: DashboardRole) {
-  return role === "manager" ? "exa-dashboard-manager-v5" : "exa-dashboard-dev-v4";
+  return role === "manager" ? "exa-dashboard-manager-v9" : "exa-dashboard-dev-v5";
 }
 
 export function getDefaultPrefs(role: DashboardRole): DashboardPrefs {

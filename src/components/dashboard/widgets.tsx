@@ -1,7 +1,7 @@
 "use client";
 
 import { Progress } from "@/components/ui/progress";
-import { EstadoBadge, PrioridadBadge, fmtDate } from "@/components/status-badges";
+import { EstadoBadge, PlazoBadge, PrioridadBadge, fmtDate } from "@/components/status-badges";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -232,7 +232,16 @@ export function AtrasadasWidget({
                   <EstadoBadge estado={t.Tar_Estado} />
                 </div>
               </TableCell>
-              <TableCell className="text-xs text-red-600">{fmtDate(t.Tar_Fecha_Fin)}</TableCell>
+              <TableCell className="text-xs text-red-600">
+                <div className="flex flex-col items-start gap-1">
+                  <span>{fmtDate(t.Tar_Fecha_Fin)}</span>
+                  <PlazoBadge
+                    inicio={t.Tar_Fecha_Inicio}
+                    fin={t.Tar_Fecha_Fin}
+                    className="px-1.5 py-0 text-[10px]"
+                  />
+                </div>
+              </TableCell>
               <TableCell className="text-xs font-bold">{t.Ava_Porcentaje || 0}%</TableCell>
               <TableCell className="text-right">
                 <Button type="button" variant="link" size="sm" className="h-auto px-0" onClick={() => onAvance(t)}>
@@ -379,7 +388,16 @@ export function TareasWidget({
               </TableCell>
               <TableCell><PrioridadBadge prioridad={t.Tar_Prioridad} /></TableCell>
               <TableCell><EstadoBadge estado={t.Tar_Estado} /></TableCell>
-              <TableCell className="text-xs text-muted-foreground">{fmtDate(t.Tar_Fecha_Fin)}</TableCell>
+              <TableCell className="text-xs text-muted-foreground">
+                <div className="flex flex-col items-start gap-1">
+                  <span>{fmtDate(t.Tar_Fecha_Fin)}</span>
+                  <PlazoBadge
+                    inicio={t.Tar_Fecha_Inicio}
+                    fin={t.Tar_Fecha_Fin}
+                    className="px-1.5 py-0 text-[10px]"
+                  />
+                </div>
+              </TableCell>
               <TableCell>
                 <div className="flex min-w-[110px] items-center gap-2">
                   <Progress value={Math.min(100, t.Ava_Porcentaje || 0)} className="h-2 w-16" />

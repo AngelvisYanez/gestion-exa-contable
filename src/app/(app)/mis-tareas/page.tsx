@@ -25,6 +25,7 @@ import { MetricasPanel, metricasKpiItems } from "@/components/tareas/metricas-pa
 import { ReporteDialog } from "@/components/tareas/reporte-dialog";
 import { TareaDetalleDialog } from "@/components/tareas/tarea-detalle-dialog";
 import { TicketDetalleDialog } from "@/components/tareas/ticket-detalle-dialog";
+import { TicketVinculadoChip } from "@/components/tareas/ticket-vinculado-chip";
 import { useAuth } from "@/contexts/AuthContext";
 import { hasRolePermission } from "@/lib/auth/role-permissions";
 import { useNotifications } from "@/contexts/NotificationsContext";
@@ -491,6 +492,7 @@ export default function MisTareasPage() {
                         <PrioridadBadge prioridad={t.Tar_Prioridad} />
                       </div>
                       <div className="line-clamp-2 text-sm font-bold">{t.Tar_Titulo}</div>
+                      <TicketVinculadoChip tickets={t.Tickets_Vinculados} className="mt-1.5" />
                       {t.Tar_Descripcion && (
                         <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
                           {plainTextFromHtml(t.Tar_Descripcion)}
@@ -632,6 +634,7 @@ export default function MisTareasPage() {
                           </TableCell>
                           <TableCell className="min-w-[240px]">
                             <div className="font-semibold leading-snug">{t.Tar_Titulo}</div>
+                            <TicketVinculadoChip tickets={t.Tickets_Vinculados} className="mt-1" />
                             {t.Tar_Descripcion && (
                               <div className="line-clamp-1 text-xs text-muted-foreground">
                                 {plainTextFromHtml(t.Tar_Descripcion)}

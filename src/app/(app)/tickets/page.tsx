@@ -9,6 +9,7 @@ import {
   RefreshCw,
   Search,
   UserPlus,
+  Wrench,
   X,
 } from "lucide-react";
 import Topbar from "@/components/layout/Topbar";
@@ -23,7 +24,7 @@ import {
 import { PrioridadBadge } from "@/components/status-badges";
 import { useAuth } from "@/contexts/AuthContext";
 import { hasRolePermission } from "@/lib/auth/role-permissions";
-import { roleLabel } from "@/lib/auth/users";
+import { canAssignWork, roleLabel } from "@/lib/auth/users";
 import { useNotifications } from "@/contexts/NotificationsContext";
 import { usePagination } from "@/hooks/use-pagination";
 import { Alert } from "@/components/ui/alert";
@@ -51,6 +52,8 @@ import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { plainTextFromHtml } from "@/components/ui/rich-text";
 import { cn } from "@/lib/utils";
 import { clearDetailLink, detailIdFromSearch } from "@/lib/detail-link";
+import { TAR_PRIORIDADES, normalizePrioridad } from "@/lib/domain-constants";
+import { PLAZOS_TAREA, ayudaPlazo, type PlazoTarea } from "@/lib/plazo";
 import {
   EVIDENCIA_ACCEPT,
   EVIDENCIA_HELP,
@@ -156,6 +159,8 @@ export default function TicketsPage() {
   const puedeAsignar = hasRolePermission(user, "tickets.asignar");
   const puedeCrear = hasRolePermission(user, "tickets.crear");
   const puedeAvanzar = hasRolePermission(user, "tickets.avance");
+  // Convertir ticket → tarea: lo determina atención al cliente o el encargado.
+  const puedeConvertir = canAssignWork(user?.role);
   const { lastTaskEventAt } = useNotifications();
 
   const [loading, setLoading] = useState(true);
@@ -178,6 +183,13 @@ export default function TicketsPage() {
   const [detalleDb, setDetalleDb] = useState<string | null>(null);
   const [linkedTicket, setLinkedTicket] = useState<Ticket | null>(null);
   const [linkError, setLinkError] = useState("");
+  const [convertOpen, setConvertOpen] = useState<Ticket | null>(null);
+  const [convertComplejidad, setConvertComplejidad] = useState("Media");
+  const [convertPrioridad, setConvertPrioridad] = useState<string>("Media");
+  const [convertPlazo, setConvertPlazo] = useState<"" | PlazoTarea>("");
+  const [convertPerCods, setConvertPerCods] = useState<number[]>([]);
+  const [convertSaving, setConvertSaving] = useState(false);
+  const [convertError, setConvertError] = useState("");
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (!params.has("detalle")) return;
@@ -499,6 +511,58 @@ export default function TicketsPage() {
     setAssignError("");
     setAssignUsus(ids);
     setAssignOpen(t);
+  };
+
+  const abrirConvertir = (t: Ticket) => {
+    const usus = new Set<number>();
+    if (t.Asignado_Usu_Cod && t.Asignado_Usu_Cod > 0) usus.add(t.Asignado_Usu_Cod);
+    for (const a of t.Asignados || []) if (a.Usu_Cod > 0) usus.add(a.Usu_Cod);
+    // Preselecciona a los asignados del ticket que sigan siendo equipo asignable.
+    const candidatos = new Set<number>();
+    if (t.Per_Cod_Asignado && t.Per_Cod_Asignado > 0) candidatos.add(t.Per_Cod_Asignado);
+    for (const a of t.Asignados || []) if (a.Per_Cod && a.Per_Cod > 0) candidatos.add(a.Per_Cod);
+    for (const a of asignables) {
+      if (a.Usu_Cod != null && a.Usu_Cod > 0 && usus.has(a.Usu_Cod) && a.Per_Cod > 0) {
+        candidatos.add(a.Per_Cod);
+      }
+    }
+    const validos = new Set(asignables.map((a) => a.Per_Cod).filter((p) => p > 0));
+    setConvertComplejidad("Media");
+    setConvertPrioridad(normalizePrioridad(t.Tic_Prioridad));
+    setConvertPlazo("");
+    setConvertPerCods(Array.from(candidatos).filter((p) => validos.has(p)));
+    setConvertError("");
+    setConvertOpen(t);
+  };
+
+  const convertir = async () => {
+    if (!convertOpen) return;
+    setConvertSaving(true);
+    setConvertError("");
+    try {
+      const res = await fetch("/api/tickets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "convertir_tarea",
+          Ses_Dat_Dis: convertOpen.Db_Origen || db,
+          Db_Origen: convertOpen.Db_Origen || undefined,
+          Tic_Cod: convertOpen.Tic_Cod,
+          complejidad: convertComplejidad,
+          prioridad: convertPrioridad,
+          plazo: convertPlazo || undefined,
+          perCods: convertPerCods.length ? convertPerCods : undefined,
+        }),
+      });
+      const j = await res.json();
+      if (!res.ok || !j.success) throw new Error(j.message || "No se pudo convertir el ticket.");
+      setConvertOpen(null);
+      await load();
+    } catch (e) {
+      setConvertError(e instanceof Error ? e.message : "Error");
+    } finally {
+      setConvertSaving(false);
+    }
   };
 
   const setEstado = async (t: Ticket, estado: string) => {
@@ -856,7 +920,33 @@ export default function TicketsPage() {
                           Avance
                         </Button>
                       )}
+                      {puedeConvertir && t.Tic_Estado !== "Cerrado" && !(t.Tar_Cod && t.Tar_Cod > 0) && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            abrirConvertir(t);
+                          }}
+                        >
+                          <Wrench className="size-3.5" />
+                          Convertir a tarea
+                        </Button>
+                      )}
                     </div>
+                    {t.Tar_Cod && t.Tar_Cod > 0 && (
+                      <p className="mt-2 text-[11px] text-muted-foreground">
+                        Vinculado a la tarea{" "}
+                        <a
+                          href={`/tareas?detalle=${t.Tar_Cod}`}
+                          className="font-semibold text-brand-navy underline-offset-2 hover:underline"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          #{t.Tar_Cod}
+                        </a>
+                      </p>
+                    )}
                   </article>
                 ))}
               </div>
@@ -986,6 +1076,30 @@ export default function TicketsPage() {
                                 Avance
                               </Button>
                             )}
+                            {puedeConvertir && t.Tic_Estado !== "Cerrado" && !(t.Tar_Cod && t.Tar_Cod > 0) && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="shrink-0"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  abrirConvertir(t);
+                                }}
+                              >
+                                <Wrench className="size-3.5" />
+                                Convertir a tarea
+                              </Button>
+                            )}
+                            {t.Tar_Cod && t.Tar_Cod > 0 && (
+                              <a
+                                href={`/tareas?detalle=${t.Tar_Cod}`}
+                                className="shrink-0 text-[11px] font-semibold text-brand-navy underline-offset-2 hover:underline"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                Tarea #{t.Tar_Cod}
+                              </a>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -1026,6 +1140,7 @@ export default function TicketsPage() {
           ticket={detalleTicket ? ticketAsTarea(detalleTicket) : null}
           onClose={() => { setDetalleCod(null); setDetalleDb(null); setLinkedTicket(null); clearDetailLink("db"); }}
           onRegistrarAvance={puedeAvanzar ? (t) => setAvanceTarea(t) : undefined}
+          onConvertirTarea={puedeConvertir && detalleTicket ? () => abrirConvertir(detalleTicket) : undefined}
         />
         <AvanceDialog
           tarea={avanceTarea}
@@ -1037,6 +1152,119 @@ export default function TicketsPage() {
             await load();
           }}
         />
+
+        <Dialog open={!!convertOpen} onOpenChange={(o) => { if (!o) setConvertOpen(null); }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Convertir a tarea</DialogTitle>
+              <DialogDescription>
+                Ticket #{convertOpen?.Tic_Cod} · {origenLabel(convertOpen?.Db_Origen)} ·{" "}
+                {convertOpen?.Tic_Titulo}. La decisión la toma atención al cliente o el encargado.
+                Cuando la tarea llegue al 100% de avance, este ticket se resolverá.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              {convertError ? <Alert variant="destructive">{convertError}</Alert> : null}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Prioridad</Label>
+                  <Select
+                    value={convertPrioridad}
+                    onChange={(e) => setConvertPrioridad(e.target.value)}
+                    disabled={convertSaving}
+                  >
+                    {TAR_PRIORIDADES.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Complejidad</Label>
+                  <Select
+                    value={convertComplejidad}
+                    onChange={(e) => setConvertComplejidad(e.target.value)}
+                    disabled={convertSaving}
+                  >
+                    {["Baja", "Media", "Alta", "Muy alta"].map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Plazo</Label>
+                <Select
+                  value={convertPlazo}
+                  onChange={(e) => setConvertPlazo(e.target.value as "" | PlazoTarea)}
+                  disabled={convertSaving}
+                >
+                  <option value="">Sin plazo</option>
+                  {PLAZOS_TAREA.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </Select>
+                <p className="text-xs text-muted-foreground">{ayudaPlazo(convertPlazo)}</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Asignación ({convertPerCods.length})</Label>
+                <div className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-border/70 p-2">
+                  {asignables.length === 0 ? (
+                    <p className="px-2 py-3 text-sm text-muted-foreground">
+                      No hay personas del equipo asignables.
+                    </p>
+                  ) : (
+                    asignables.map((a) => {
+                      const checked = convertPerCods.includes(a.Per_Cod);
+                      return (
+                        <label
+                          key={a.Per_Cod}
+                          className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
+                        >
+                          <input
+                            type="checkbox"
+                            className="size-4 accent-sky-700"
+                            checked={checked}
+                            disabled={convertSaving}
+                            onChange={() =>
+                              setConvertPerCods((prev) =>
+                                prev.includes(a.Per_Cod)
+                                  ? prev.filter((x) => x !== a.Per_Cod)
+                                  : [...prev, a.Per_Cod]
+                              )
+                            }
+                          />
+                          <span>
+                            {a.Nombre}
+                            {a.Rol === "atencion" ? ` · ${roleLabel(a.Rol)}` : ""}
+                            {a.Cedula ? ` · ${a.Cedula}` : ""}
+                          </span>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Puedes marcar varias personas. Deja todo sin marcar si la tarea queda sin asignar.
+                </p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={() => setConvertOpen(null)} disabled={convertSaving}>
+                Cancelar
+              </Button>
+              <Button type="button" onClick={() => void convertir()} disabled={convertSaving}>
+                {convertSaving ? <Loader2 className="animate-spin" /> : <Wrench className="size-4" />}
+                Convertir a tarea
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <Dialog
           open={formOpen}

@@ -22,6 +22,10 @@ export type Tarea = {
   Tar_Fecha_Fin?: string | null;
   Tar_Fecha_Culminacion?: string | null;
   Usu_Creador?: number | null;
+  /** Per_Cod del apoyo en la tarea (desarrollador/compañero que ayudó). */
+  Tar_Apoyo_Per_Cod?: number | null;
+  /** Nombre del apoyo, si está registrado. */
+  Apoyo?: string | null;
   Ava_Porcentaje: number;
   Ava_Ultima_Fecha?: string | null;
   /** Fecha real de asignación del ticket (Tia_Fecha). */
@@ -32,6 +36,15 @@ export type Tarea = {
   /** Origen del ítem en bandejas mixtas (Mis tareas). Por defecto: tarea. */
   tipo?: ItemTipo;
   Tic_Cod?: number;
+  /** Tarea creada desde el ticket ("Convertir a tarea"). Solo en tickets. */
+  Tar_Cod_Vinculado?: number | null;
+  /** Tickets de los que deriva esta tarea ("Convertir a tarea"): afiliación visible. */
+  Tickets_Vinculados?: Array<{
+    Tic_Cod: number;
+    Tic_Db: string;
+    Titulo: string | null;
+    Estado: string | null;
+  }>;
   /** Campos extra cuando tipo === "ticket". */
   Emp_Nom?: string | null;
   Tic_Tel?: string | null;

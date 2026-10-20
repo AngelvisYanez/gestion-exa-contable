@@ -9,6 +9,7 @@ import {
   getTareaDetalle,
   listTareas,
   registrarAvance,
+  telemetriaPersonal,
 } from "@/lib/tareas";
 import { ticketScopeForSession } from "@/lib/ticket-scope";
 import {
@@ -20,7 +21,7 @@ import {
   type TicketEstado,
 } from "@/lib/tickets";
 import { TicketAvanceError, descripcionTicketAvance, registrarAvanceTicket } from "@/lib/ticket-avances";
-import { hoyFecha } from "@/lib/timezone";
+import { hoyFecha, fechaEnZona, startOfDayZona } from "@/lib/timezone";
 
 export const dynamic = "force-dynamic";
 
@@ -147,6 +148,16 @@ export async function GET(req: NextRequest) {
           hasta: hastaQ,
         });
 
+    // Telemetria ExaMonitor propia (opcional). Se acota al rango del periodo.
+    const telDias = Math.max(1, Math.min(366, dias));
+    const telHasta = hoyFecha();
+    const telDesde = fechaEnZona(
+      new Date(startOfDayZona(telHasta).getTime() - (telDias - 1) * 24 * 3600 * 1000)
+    );
+    const telemetria = emptyBecauseNoPer
+      ? await telemetriaPersonal(db, 0, telDesde, telHasta)
+      : await telemetriaPersonal(db, perCod, desdeQ || telDesde, hastaQ || telHasta);
+
     return NextResponse.json({
       success: true,
       project,
@@ -173,6 +184,7 @@ export async function GET(req: NextRequest) {
       tareas: items,
       tickets,
       actividad,
+      telemetria,
       user: {
         name: session.name,
         username: session.cedula,

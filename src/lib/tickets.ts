@@ -18,6 +18,7 @@ import { isImagePath } from "./avance-format";
 import { type Ticket } from "./ticket-view";
 import { mapTicketAdjuntos } from "./ticket-adjuntos";
 import { attachAvancePorcentaje } from "./ticket-avances";
+import { attachTareaVinculada, ticketTareaKey } from "./ticket-tarea";
 import { ensureMonitoreoSchema } from "./monitoreo-global";
 
 export { TIC_ESTADO_CODE, TIC_ESTADO_MAP, type TicketEstado };
@@ -50,6 +51,81 @@ function titleFrom(tema: string | null, des: string | null) {
   if (t) return t.slice(0, 255);
   const d = (des || "").replace(/\s+/g, " ").trim();
   return d ? d.slice(0, 120) : "Sin asunto";
+}
+
+/** Resumen mínimo de un ticket para mostrar la afiliación tarea ↔ ticket. */
+export type TicketVinculoResumen = {
+  Tic_Cod: number;
+  /** Base efectiva donde vive el ticket (para abrir `/tickets?detalle=…&db=…`). */
+  Tic_Db: string;
+  Titulo: string | null;
+  /** Nuevo | En Proceso | Asignado | Cerrado (null si el ticket ya no existe). */
+  Estado: string | null;
+};
+
+/**
+ * Título y estado de tickets referenciados por código + base, sin traer la lista
+ * completa de tickets: una consulta por base. La clave del mapa es la misma que
+ * `ticketTareaKey` (para cruzarla con los vínculos de `aud_ticket_tarea`).
+ */
+export async function resumenTickets(
+  refs: Array<{ Tic_Cod: number; Tic_Db?: string | null }>
+): Promise<Map<string, TicketVinculoResumen>> {
+  const out = new Map<string, TicketVinculoResumen>();
+  if (!refs.length) return out;
+
+  const codesPorDb = new Map<string, Set<number>>();
+  for (const r of refs) {
+    if (!Number.isFinite(r.Tic_Cod) || r.Tic_Cod <= 0) continue;
+    const db = sanitizeDbDis(r.Tic_Db || tasksDbDis());
+    const set = codesPorDb.get(db) || new Set<number>();
+    set.add(r.Tic_Cod);
+    codesPorDb.set(db, set);
+  }
+
+  const porDb = new Map<string, Map<number, TicketVinculoResumen>>();
+  for (const [db, codes] of codesPorDb) {
+    try {
+      const prisma = getPrisma(db);
+      const rows = await prisma.$queryRawUnsafe<
+        Array<{
+          Tic_Cod: number | bigint;
+          Tic_Tem: string | null;
+          Tic_Des: string | null;
+          Tic_Est: string | null;
+        }>
+      >(
+        `SELECT t.Tic_Cod,
+                CONVERT(t.Tic_Tem USING utf8mb4) AS Tic_Tem,
+                CONVERT(t.Tic_Des USING utf8mb4) AS Tic_Des,
+                CONVERT(IFNULL(t.Tic_Est, '0') USING utf8mb4) AS Tic_Est
+         FROM tickets t
+         WHERE t.Tic_Cod IN (${[...codes].map(() => "?").join(",")})`,
+        ...codes
+      );
+      const map = porDb.get(db) || new Map<number, TicketVinculoResumen>();
+      for (const row of rows) {
+        const cod = Number(row.Tic_Cod);
+        map.set(cod, {
+          Tic_Cod: cod,
+          Tic_Db: db,
+          Titulo: titleFrom(row.Tic_Tem, row.Tic_Des),
+          Estado: mapEstado(row.Tic_Est),
+        });
+      }
+      porDb.set(db, map);
+    } catch (err) {
+      console.error(`[tickets] resumen ${db}:`, err instanceof Error ? err.message : err);
+    }
+  }
+
+  for (const r of refs) {
+    if (!Number.isFinite(r.Tic_Cod) || r.Tic_Cod <= 0) continue;
+    const db = sanitizeDbDis(r.Tic_Db || tasksDbDis());
+    const hit = porDb.get(db)?.get(r.Tic_Cod);
+    if (hit) out.set(ticketTareaKey(r.Tic_Cod, r.Tic_Db ?? null), hit);
+  }
+  return out;
 }
 
 export type TicketAsignado = {
@@ -516,6 +592,8 @@ export async function listTicketsAsignados(
     if (da !== dbv) return da < dbv ? 1 : -1;
     return b.Tic_Cod - a.Tic_Cod;
   });
+  // Vínculo ticket → tarea ("Convertir a tarea") para mostrar/deshabilitar la acción.
+  await attachTareaVinculada(merged);
   const limit = Math.min(Math.max(opts.limit || 200, 1), 2000);
   return merged.slice(0, limit);
 }

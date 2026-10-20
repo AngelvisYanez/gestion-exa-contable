@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FileText, Link2, Loader2, Paperclip, Plus, X } from "lucide-react";
+import Link from "next/link";
+import { CheckCircle2, FileText, Link2, Loader2, Paperclip, Plus, Ticket, X } from "lucide-react";
 import type { Tarea } from "@/components/dashboard/types";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,7 @@ type Props = {
 
 export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, requireDescripcion = true }: Props) {
   const esTicket = tarea?.tipo === "ticket";
+  const ticketsVinculados = (!esTicket && tarea?.Tickets_Vinculados) || [];
   const refCod = esTicket ? (tarea?.Tic_Cod ?? tarea?.Tar_Cod ?? null) : (tarea?.Tar_Cod ?? null);
   const tarCod = refCod;
   const [base, setBase] = useState(tarea?.Ava_Porcentaje || 0);
@@ -58,6 +60,8 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [pendingUploads, setPendingUploads] = useState(0);
+  /** Tickets que la tarea afiliada cerró al llegar al 100%. */
+  const [ticketsCerrados, setTicketsCerrados] = useState<Array<{ Tic_Cod: number; Db: string }>>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const pastedRoutesRef = useRef<Set<string>>(new Set());
   const reservedUploadsRef = useRef(0);
@@ -77,6 +81,7 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
     setError("");
     setSaving(false);
     setPendingUploads(0);
+    setTicketsCerrados([]);
     pastedRoutesRef.current.clear();
     reservedUploadsRef.current = 0;
     // Solo reiniciar al abrir otra tarea; recargas de la lista no deben borrar lo escrito
@@ -183,7 +188,15 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
       });
       const j = await res.json();
       if (!res.ok || !j.success) throw new Error(j.message || "No se pudo guardar el avance");
+      const cerrados: Array<{ Tic_Cod: number; Db: string }> = Array.isArray(j.tickets_resueltos)
+        ? j.tickets_resueltos
+        : [];
       await onSaved();
+      if (!esTicket && cerrados.length) {
+        // Tarea al 100% con ticket afiliado: mostrar el cierre antes de cerrar.
+        setTicketsCerrados(cerrados);
+        return;
+      }
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al guardar");
@@ -205,11 +218,46 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
 
         <div className="space-y-4">
           {error && <Alert variant="destructive">{error}</Alert>}
+          {ticketsCerrados.length > 0 && (
+            <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-950">
+              <p className="flex items-center gap-2 font-bold text-emerald-800">
+                <CheckCircle2 className="size-4" />
+                Tarea al 100%: avance registrado.
+              </p>
+              <ul className="mt-2 space-y-1.5 text-xs">
+                {ticketsCerrados.map((r) => (
+                  <li key={`${r.Db}-${r.Tic_Cod}`} className="flex flex-wrap items-center gap-1.5">
+                    <Ticket className="size-3.5 shrink-0 text-emerald-700" />
+                    <Link
+                      href={`/tickets?detalle=${r.Tic_Cod}&db=${encodeURIComponent(r.Db || "exa")}`}
+                      className="font-bold underline underline-offset-2 hover:text-emerald-700"
+                    >
+                      Ticket #{r.Tic_Cod}
+                    </Link>
+                    quedó <strong className="font-bold">Cerrado</strong>.
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-[11px] text-emerald-800/90">
+                El ticket permanece enlazado a esta tarea desde su detalle.
+              </p>
+            </div>
+          )}
           {esTicket && pct === 100 && (
             <Alert variant="warning">
               Al guardar este avance al 100%, el ticket quedará resuelto y se podrá notificar al cliente.
             </Alert>
           )}
+          {!esTicket &&
+            pct >= 100 &&
+            !ticketsCerrados.length &&
+            ticketsVinculados.length > 0 && (
+              <Alert variant="warning">
+                {ticketsVinculados.length === 1
+                  ? `Al guardar este avance al 100%, el ticket #${ticketsVinculados[0].Tic_Cod} vinculado quedará cerrado.`
+                  : "Al guardar este avance al 100%, los tickets vinculados a esta tarea quedarán cerrados."}
+              </Alert>
+            )}
 
           <div className="overflow-hidden rounded-xl border border-border/80">
             <div className="bg-muted/30 p-3">
@@ -431,19 +479,27 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
         </div>
 
         <DialogFooter>
-          <Button type="button" variant="ghost" onClick={onClose} disabled={saving || pendingUploads > 0}>
-            Cancelar
-          </Button>
-          <Button type="button" variant="success" onClick={() => void guardar()} disabled={saving || pendingUploads > 0}>
-            {saving ? (
-              <>
-                <Loader2 className="animate-spin" />
-                Guardando...
-              </>
-            ) : (
-              pendingUploads > 0 ? `Adjuntando ${pendingUploads} archivo(s)...` : "Guardar avance"
-            )}
-          </Button>
+          {ticketsCerrados.length > 0 ? (
+            <Button type="button" variant="success" onClick={onClose}>
+              Cerrar
+            </Button>
+          ) : (
+            <>
+              <Button type="button" variant="ghost" onClick={onClose} disabled={saving || pendingUploads > 0}>
+                Cancelar
+              </Button>
+              <Button type="button" variant="success" onClick={() => void guardar()} disabled={saving || pendingUploads > 0}>
+                {saving ? (
+                  <>
+                    <Loader2 className="animate-spin" />
+                    Guardando...
+                  </>
+                ) : (
+                  pendingUploads > 0 ? `Adjuntando ${pendingUploads} archivo(s)...` : "Guardar avance"
+                )}
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

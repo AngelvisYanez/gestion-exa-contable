@@ -15,6 +15,12 @@ export type TarEstado = (typeof TAR_ESTADOS)[number];
 export const TAR_PRIORIDADES = ["Alta", "Media", "Baja"] as const;
 export type TarPrioridad = (typeof TAR_PRIORIDADES)[number];
 
+/** Normaliza una prioridad venga de donde venga (ticket, formulario, API). */
+export function normalizePrioridad(v?: string | null, fallback: TarPrioridad = "Media"): TarPrioridad {
+  const c = String(v ?? "").trim().toLowerCase();
+  return TAR_PRIORIDADES.find((p) => p.toLowerCase() === c) ?? fallback;
+}
+
 /** Códigos legacy en tickets.Tic_Est */
 export const TIC_ESTADO_MAP: Record<string, string> = {
   "0": "Nuevo",

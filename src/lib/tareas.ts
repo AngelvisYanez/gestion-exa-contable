@@ -1,6 +1,6 @@
 import { getPrisma, sanitizeDbDis } from "./db";
 import { toPublicCaptureUrl } from "./captures";
-import { tasksEmpCod } from "./empresa";
+import { tasksDbDis, tasksEmpCod } from "./empresa";
 import {
   buildAvanceDescripcion,
   isImagePath,
@@ -9,6 +9,9 @@ import {
 } from "./avance-format";
 import { endOfDayZona, fechaEnZona, fmtFechaHoraZona, hoyFecha, startOfDayZona, toCalendarYmd } from "./timezone";
 import { ensureMonitoreoSchema } from "./monitoreo-global";
+import { ticketTareaKey, ticketsDeTarea, ticketsDeTareas, resolverTicketsDeTarea } from "./ticket-tarea";
+import { resumenTickets, type TicketVinculoResumen } from "./tickets";
+import { CATEGORIAS_PLAZO, type CategoriaPlazo } from "./plazo-tarea";
 import {
   ensureHorarioSchema,
   estaEnAlmuerzo,
@@ -57,6 +60,79 @@ async function detectComplejidadColumn(dbKey: string): Promise<boolean> {
     // Sin cachear el fallo: la próxima petición reintenta (permisos o corte breve).
     return false;
   }
+}
+
+/** Por base (exa / servicios). El apoyo se crea con ALTER bajo demanda, igual que complejidad. */
+const apoyoReadyByDb = new Map<string, boolean>();
+const apoyoEnsureInflight = new Map<string, Promise<boolean>>();
+
+async function detectApoyoColumn(dbKey: string): Promise<boolean> {
+  const prisma = getPrisma(dbKey);
+  try {
+    const cols = await prisma.$queryRawUnsafe<Array<{ Field: string }>>(
+      `SHOW COLUMNS FROM aud_tareas LIKE 'Tar_Apoyo_Per_Cod'`
+    );
+    if (!cols.length) {
+      try {
+        await prisma.$executeRawUnsafe(
+          `ALTER TABLE aud_tareas
+           ADD COLUMN Tar_Apoyo_Per_Cod INT NULL DEFAULT NULL`
+        );
+      } catch {
+        const again = await prisma.$queryRawUnsafe<Array<{ Field: string }>>(
+          `SHOW COLUMNS FROM aud_tareas LIKE 'Tar_Apoyo_Per_Cod'`
+        );
+        if (!again.length) return false;
+      }
+    }
+    apoyoReadyByDb.set(dbKey, true);
+    return true;
+  } catch {
+    // Sin cachear el fallo: la próxima petición reintenta (permisos o corte breve).
+    return false;
+  }
+}
+
+/** Asegura la columna Tar_Apoyo_Per_Cod (desarrollador/compañero que apoyó la tarea). */
+export async function ensureTareaApoyoColumn(dbDis: string): Promise<boolean> {
+  const key = sanitizeDbDis(dbDis);
+  const cached = apoyoReadyByDb.get(key);
+  if (cached === true) return true;
+
+  const pending = apoyoEnsureInflight.get(key);
+  if (pending) return pending;
+
+  const job = detectApoyoColumn(key).finally(() => {
+    apoyoEnsureInflight.delete(key);
+  });
+  apoyoEnsureInflight.set(key, job);
+  return job;
+}
+
+/** Per_Cod → "Apellido Nombre" de los apoyos indicados. */
+async function mapApoyoNombres(
+  prisma: ReturnType<typeof getPrisma>,
+  perCods: Array<number | bigint | null | undefined>
+) {
+  const ids = Array.from(
+    new Set(
+      perCods
+        .map((n) => Number(n || 0))
+        .filter((n) => Number.isFinite(n) && n > 0)
+    )
+  );
+  const out = new Map<number, string>();
+  if (!ids.length) return out;
+  const rows = await prisma.$queryRawUnsafe<Array<{ Per_Cod: number; Nombre: string | null }>>(
+    `SELECT per.Per_Cod,
+            CONVERT(TRIM(CONCAT(IFNULL(p.Prs_Ape,''), ' ', IFNULL(p.Prs_Nom,''))) USING utf8mb4) AS Nombre
+     FROM personal per
+     LEFT JOIN persona p ON p.Prs_Cod = per.Prs_Cod
+     WHERE per.Per_Cod IN (${ids.map(() => "?").join(",")})`,
+    ...ids
+  );
+  for (const r of rows) out.set(Number(r.Per_Cod), (r.Nombre || "").trim());
+  return out;
 }
 
 /** Asegura columna Tar_Complejidad en aud_tareas de esta base (EXA legacy). */
@@ -137,6 +213,37 @@ export async function getTareasDateBounds(dbDis: string, empCod?: number) {
   return { min, max };
 }
 
+/**
+ * Afiliación de las tareas a tickets ("Convertir a tarea"): rellena
+ * `Tickets_Vinculados` con el ticket, su base y su estado actual.
+ */
+async function attachTicketsVinculados(
+  tareas: Array<{ Tar_Cod: number; Tickets_Vinculados: TicketVinculoResumen[] }>
+): Promise<void> {
+  if (!tareas.length) return;
+  const links = await ticketsDeTareas(tareas.map((t) => t.Tar_Cod));
+  if (!links.length) return;
+  const resumenes = await resumenTickets(links);
+  const byTar = new Map<number, TicketVinculoResumen[]>();
+  for (const l of links) {
+    const resumen =
+      resumenes.get(ticketTareaKey(l.Tic_Cod, l.Tic_Db)) ??
+      ({
+        Tic_Cod: l.Tic_Cod,
+        Tic_Db: sanitizeDbDis(l.Tic_Db || tasksDbDis()),
+        Titulo: null,
+        Estado: null,
+      } satisfies TicketVinculoResumen);
+    const list = byTar.get(l.Tar_Cod) || [];
+    list.push(resumen);
+    byTar.set(l.Tar_Cod, list);
+  }
+  for (const t of tareas) {
+    const list = byTar.get(t.Tar_Cod);
+    if (list?.length) t.Tickets_Vinculados = list;
+  }
+}
+
 export async function listTareas(dbDis: string, opts: {
   empCod?: number;
   perCod?: number;
@@ -145,8 +252,10 @@ export async function listTareas(dbDis: string, opts: {
   q?: string;
   desde?: string;
   hasta?: string;
+  plazo?: string;
 }) {
   const hasComplejidad = await ensureTareaComplejidadColumn(dbDis);
+  const hasApoyo = await ensureTareaApoyoColumn(dbDis);
   const prisma = getPrisma(dbDis);
 
   // Raw SQL: Prisma falla con Bytes/charset raros en TEXT de EXA
@@ -176,6 +285,20 @@ export async function listTareas(dbDis: string, opts: {
     );
     params.push(opts.perCod);
   }
+  // Filtro por plazo (duración inicio -> fin): mismo criterio que plazoDesdeFechas()
+  if (opts.plazo && opts.plazo !== "todos" && CATEGORIAS_PLAZO.includes(opts.plazo as CategoriaPlazo)) {
+    const diff = "DATEDIFF(DATE(t.Tar_Fecha_Fin), DATE(t.Tar_Fecha_Inicio))";
+    const conFechas = "t.Tar_Fecha_Inicio IS NOT NULL AND t.Tar_Fecha_Fin IS NOT NULL";
+    if (opts.plazo === "Sin fechas") {
+      where.push("NOT (t.Tar_Fecha_Inicio IS NOT NULL AND t.Tar_Fecha_Fin IS NOT NULL)");
+    } else if (opts.plazo === "Diaria") {
+      where.push(`(${conFechas} AND ${diff} <= 0)`);
+    } else if (opts.plazo === "Semanal") {
+      where.push(`(${conFechas} AND ${diff} BETWEEN 1 AND 6)`);
+    } else if (opts.plazo === "Mensual") {
+      where.push(`(${conFechas} AND ${diff} > 6)`);
+    }
+  }
   // Operativa en rango: solapa [desde, hasta] con el periodo de la tarea
   if (opts.desde && /^\d{4}-\d{2}-\d{2}$/.test(opts.desde)) {
     where.push(
@@ -198,6 +321,7 @@ export async function listTareas(dbDis: string, opts: {
     Tar_Fecha_Fin: Date | string | null;
     Tar_Fecha_Culminacion: Date | string | null;
     Usu_Creador: number | null;
+    Tar_Apoyo_Per_Cod: number | bigint | null;
     Emp_Cod: number | null;
     Ava_Porcentaje: number | null;
     Tar_Descripcion: string | null;
@@ -208,6 +332,7 @@ export async function listTareas(dbDis: string, opts: {
   const complejidadSelect = hasComplejidad
     ? `CONVERT(t.Tar_Complejidad USING utf8mb4) AS Tar_Complejidad,`
     : `'Media' AS Tar_Complejidad,`;
+  const apoyoSelect = hasApoyo ? `t.Tar_Apoyo_Per_Cod,` : `NULL AS Tar_Apoyo_Per_Cod,`;
 
   const sql = `
     SELECT
@@ -216,6 +341,7 @@ export async function listTareas(dbDis: string, opts: {
       CONVERT(t.Tar_Descripcion USING utf8mb4) AS Tar_Descripcion,
       CONVERT(t.Tar_Prioridad USING utf8mb4) AS Tar_Prioridad,
       ${complejidadSelect}
+      ${apoyoSelect}
       CONVERT(t.Tar_Estado USING utf8mb4) AS Tar_Estado,
       t.Tar_Fecha_Inicio,
       t.Tar_Fecha_Fin,
@@ -269,9 +395,17 @@ export async function listTareas(dbDis: string, opts: {
     byTar.set(a.Tar_Cod, list);
   }
 
-  return rows.map((t) => {
+  const apoyos = hasApoyo
+    ? await mapApoyoNombres(
+        prisma,
+        rows.map((r) => r.Tar_Apoyo_Per_Cod)
+      )
+    : new Map<number, string>();
+
+  const list = rows.map((t) => {
     const asigs = byTar.get(t.Tar_Cod) || [];
     const parsed = parseTareaDescripcion(t.Tar_Descripcion);
+    const apoyoPerCod = t.Tar_Apoyo_Per_Cod != null ? Number(t.Tar_Apoyo_Per_Cod) : null;
     return {
       Tar_Cod: Number(t.Tar_Cod),
       Tar_Titulo: t.Tar_Titulo || "",
@@ -283,11 +417,15 @@ export async function listTareas(dbDis: string, opts: {
       Tar_Fecha_Fin: t.Tar_Fecha_Fin,
       Tar_Fecha_Culminacion: t.Tar_Fecha_Culminacion,
       Usu_Creador: t.Usu_Creador != null ? Number(t.Usu_Creador) : null,
+      Tar_Apoyo_Per_Cod: apoyoPerCod,
+      Apoyo: (apoyoPerCod != null ? apoyos.get(apoyoPerCod) : null) || null,
       Emp_Cod: t.Emp_Cod ? Number(t.Emp_Cod) : 0,
       Ava_Porcentaje: t.Ava_Porcentaje != null ? Number(t.Ava_Porcentaje) : 0,
       Ava_Ultima_Fecha: t.Ava_Ultima_Fecha,
       Ava_Total: Number(t.Ava_Total || 0),
       Evidencias_Count: parsed.adjuntos.length,
+      /** Tickets de los que esta tarea deriva ("Convertir a tarea"). */
+      Tickets_Vinculados: [] as TicketVinculoResumen[],
       Asignados: asigs.map((a) => ({
         Per_Cod: Number(a.Per_Cod),
         Nombre: (a.Nombre || "").trim() || "Sin nombre en ficha",
@@ -295,6 +433,8 @@ export async function listTareas(dbDis: string, opts: {
       })),
     };
   });
+  await attachTicketsVinculados(list);
+  return list;
 }
 export async function kpisTareas(
   dbDis: string,
@@ -583,11 +723,14 @@ export async function updateTarea(
     fechaInicio: string;
     fechaFin: string | null;
     estado: string;
+    /** Per_Cod del apoyo en la tarea (null lo limpia). */
+    apoyoPerCod?: number | null;
     /** Si se envía, reemplaza las evidencias de la descripción (lista completa de rutas). */
     adjuntos: string[];
   }>
 ) {
   const hasComplejidad = await ensureTareaComplejidadColumn(dbDis);
+  const hasApoyo = await ensureTareaApoyoColumn(dbDis);
   const prisma = getPrisma(dbDis);
 
   const patch = Object.fromEntries(
@@ -604,6 +747,8 @@ export async function updateTarea(
         patch.estado,
         tarCod
       );
+      // Tarea finalizada al 100%: resuelve el ticket vinculado, si lo hay.
+      await resolverTicketsDeTarea(tarCod);
     } else {
       await prisma.$executeRawUnsafe(
         `UPDATE aud_tareas
@@ -658,6 +803,10 @@ export async function updateTarea(
     sets.push("Tar_Complejidad = ?");
     params.push(normalizeComplejidad(patch.complejidad));
   }
+  if (patch.apoyoPerCod !== undefined && hasApoyo) {
+    sets.push("Tar_Apoyo_Per_Cod = ?");
+    params.push(patch.apoyoPerCod && patch.apoyoPerCod > 0 ? patch.apoyoPerCod : null);
+  }
   if (patch.fechaInicio != null) {
     sets.push("Tar_Fecha_Inicio = ?");
     params.push(new Date(patch.fechaInicio));
@@ -685,12 +834,17 @@ export async function updateTarea(
     `UPDATE aud_tareas SET ${sets.join(", ")} WHERE Tar_Cod = ? AND Tar_Est = 'A'`,
     ...params
   );
+  if (patch.estado === "Finalizada") {
+    // Tarea finalizada al 100%: resuelve el ticket vinculado, si lo hay.
+    await resolverTicketsDeTarea(tarCod);
+  }
 
   return {
     Tar_Cod: tarCod,
     ...(patch.titulo != null ? { Tar_Titulo: patch.titulo } : {}),
     ...(patch.estado != null ? { Tar_Estado: patch.estado } : {}),
     ...(patch.complejidad != null ? { Tar_Complejidad: normalizeComplejidad(patch.complejidad) } : {}),
+    ...(patch.apoyoPerCod !== undefined ? { Tar_Apoyo_Per_Cod: patch.apoyoPerCod } : {}),
   };
 }
 
@@ -734,12 +888,15 @@ export async function registrarAvance(
     new Date()
   );
 
+  let tickets_resueltos: Array<{ Tic_Cod: number; Db: string }> = [];
   if (pct >= 100) {
     await prisma.$executeRawUnsafe(
       `UPDATE aud_tareas SET Tar_Estado = 'Finalizada', Tar_Fecha_Culminacion = ? WHERE Tar_Cod = ?`,
       new Date(),
       opts.tarCod
     );
+    // 100% de la tarea: el ticket vinculado (si existe) pasa a resuelto.
+    tickets_resueltos = await resolverTicketsDeTarea(opts.tarCod);
   } else if (pct > 0) {
     await prisma.$executeRawUnsafe(
       `UPDATE aud_tareas SET Tar_Estado = 'En Proceso', Tar_Fecha_Culminacion = NULL WHERE Tar_Cod = ?`,
@@ -747,7 +904,7 @@ export async function registrarAvance(
     );
   }
 
-  return { ok: true, porcentaje: pct };
+  return { ok: true, porcentaje: pct, tickets_resueltos };
 }
 
 /** Arma Ava_Descripcion desde el body (campos estructurados o texto libre legacy). */
@@ -848,6 +1005,7 @@ export async function getTareaDetalle(
   }
 ) {
   const hasComplejidad = await ensureTareaComplejidadColumn(dbDis);
+  const hasApoyo = await ensureTareaApoyoColumn(dbDis);
   const prisma = getPrisma(dbDis);
   await ensureMonitoreoSchema(prisma);
   const includeCapturas = opts?.includeCapturas !== false;
@@ -867,6 +1025,7 @@ export async function getTareaDetalle(
     Tar_Fecha_Fin: Date | string | null;
     Tar_Fecha_Culminacion: Date | string | null;
     Usu_Creador: number | null;
+    Tar_Apoyo_Per_Cod: number | bigint | null;
     Creador: string | null;
     Tar_Proceso: string | null;
     Tar_Modulo: string | null;
@@ -879,6 +1038,7 @@ export async function getTareaDetalle(
   const complejidadSelect = hasComplejidad
     ? `CONVERT(t.Tar_Complejidad USING utf8mb4) AS Tar_Complejidad,`
     : `'Media' AS Tar_Complejidad,`;
+  const apoyoSelect = hasApoyo ? `t.Tar_Apoyo_Per_Cod,` : `NULL AS Tar_Apoyo_Per_Cod,`;
   // Columnas de brief: tolerar esquemas sin migrar (SELECT con IFNULL via subquery no; usamos try)
   let briefSelect = `NULL AS Tar_Proceso, NULL AS Tar_Modulo, NULL AS Tar_Directorio,
             NULL AS Tar_Brief_Tipo, NULL AS Tar_Brief_Md, NULL AS Tar_Brief_Pdf, NULL AS Tar_Brief_Fecha,`;
@@ -902,6 +1062,7 @@ export async function getTareaDetalle(
             CONVERT(t.Tar_Descripcion USING utf8mb4) AS Tar_Descripcion,
             CONVERT(t.Tar_Prioridad USING utf8mb4) AS Tar_Prioridad,
             ${complejidadSelect}
+            ${apoyoSelect}
             ${briefSelect}
             CONVERT(t.Tar_Estado USING utf8mb4) AS Tar_Estado,
             t.Tar_Fecha_Inicio, t.Tar_Fecha_Fin, t.Tar_Fecha_Culminacion, t.Usu_Creador,
@@ -914,6 +1075,12 @@ export async function getTareaDetalle(
     tarCod
   );
   if (!t) return null;
+
+  const apoyoPerCod = t.Tar_Apoyo_Per_Cod != null ? Number(t.Tar_Apoyo_Per_Cod) : null;
+  const apoyoNombre =
+    apoyoPerCod != null
+      ? ((await mapApoyoNombres(prisma, [apoyoPerCod])).get(apoyoPerCod) || null)
+      : null;
 
   const asignados = await prisma.$queryRawUnsafe<
     Array<{ Per_Cod: number; Tas_Cod: number; Tas_Fecha_Asignacion: Date | null; Nombre: string | null }>
@@ -983,6 +1150,22 @@ export async function getTareaDetalle(
       )
     : [];
 
+  // Afiliación ticket ↔ tarea: el ticket del que deriva esta tarea y su estado actual.
+  const linksVinculados = await ticketsDeTarea(tarCod);
+  const resumenesVinculados = linksVinculados.length
+    ? await resumenTickets(linksVinculados)
+    : new Map<string, TicketVinculoResumen>();
+  const tickets_vinculados: TicketVinculoResumen[] = linksVinculados.map((l) => {
+    const hit = resumenesVinculados.get(ticketTareaKey(l.Tic_Cod, l.Tic_Db));
+    if (hit) return hit;
+    return {
+      Tic_Cod: l.Tic_Cod,
+      Tic_Db: sanitizeDbDis(l.Tic_Db || tasksDbDis()),
+      Titulo: null,
+      Estado: null,
+    };
+  });
+
   const horasReportadas = avances.reduce((s, a) => s + (a.horas || 0), 0);
   const evidencias = avances.reduce((s, a) => s + a.enlaces.length + a.adjuntos.length, 0);
   const descParsed = parseTareaDescripcion(t.Tar_Descripcion);
@@ -999,6 +1182,8 @@ export async function getTareaDetalle(
       Tar_Fecha_Fin: toIso(t.Tar_Fecha_Fin),
       Tar_Fecha_Culminacion: toIso(t.Tar_Fecha_Culminacion),
       Usu_Creador: t.Usu_Creador != null ? Number(t.Usu_Creador) : null,
+      Tar_Apoyo_Per_Cod: apoyoPerCod,
+      Apoyo: apoyoNombre,
       Creador: (t.Creador || "").trim() || null,
       Ava_Porcentaje: avances[0]?.Ava_Porcentaje ?? 0,
       Tar_Proceso: t.Tar_Proceso || null,
@@ -1017,6 +1202,7 @@ export async function getTareaDetalle(
       Fecha_Asignacion: toIso(a.Tas_Fecha_Asignacion),
     })),
     avances,
+    tickets_vinculados,
     resumen: {
       total_avances: avances.length,
       horas_reportadas: Math.round(horasReportadas * 100) / 100,
@@ -1104,6 +1290,181 @@ export async function actividadPersonal(
       Minutos: Math.round(Number(r.segundos || 0) / 60),
     })),
   };
+}
+
+export type TelemetriaPersonal = {
+  desde: string;
+  hasta: string;
+  /** Horas activas medidas por ExaMonitor en el periodo. */
+  horasActivas: number;
+  /** Indice de actividad promedio (Tel_Porc_Actividad). */
+  actividad: number;
+  clicks: number;
+  teclas: number;
+  lineas: number;
+  registros: number;
+  /** Horas por tarea (top N). */
+  porTarea: Array<{ Tar_Cod: number; minutos: number; horas: number }>;
+  /** Procesos/ventanas mas frecuentes. */
+  procesos: Array<{ nombre: string; registros: number; porcentaje: number; es_ide: boolean }>;
+  /** Adherencia al horario laboral configurado. */
+  horario: {
+    activo: boolean;
+    hora_inicio: string | null;
+    hora_fin: string | null;
+    registros: number;
+    dentro: number;
+    pct: number;
+  };
+};
+
+const TELEMETRIA_PERSONAL_VACIA: TelemetriaPersonal = {
+  desde: "",
+  hasta: "",
+  horasActivas: 0,
+  actividad: 0,
+  clicks: 0,
+  teclas: 0,
+  lineas: 0,
+  registros: 0,
+  porTarea: [],
+  procesos: [],
+  horario: { activo: false, hora_inicio: null, hora_fin: null, registros: 0, dentro: 0, pct: 0 },
+};
+
+/**
+ * Telemetria ExaMonitor de un desarrollador (aud_dev_telemetria), opcional:
+ * si la tabla no existe devuelve la estructura vacia sin romper el dashboard.
+ */
+export async function telemetriaPersonal(
+  dbDis: string,
+  perCod: number,
+  desdeDia: string,
+  hastaDia: string
+): Promise<TelemetriaPersonal> {
+  if (!perCod || perCod <= 0) return { ...TELEMETRIA_PERSONAL_VACIA, desde: desdeDia, hasta: hastaDia };
+  const prisma = getPrisma(sanitizeDbDis(dbDis));
+  try {
+    await ensureMonitoreoSchema(prisma);
+    const desde = startOfDayZona(desdeDia);
+    const hasta = endOfDayZona(hastaDia);
+
+    type Agg = {
+      segundos: bigint | number | null;
+      actividad: number | string | null;
+      clicks: bigint | number | null;
+      teclas: bigint | number | null;
+      lineas: bigint | number | null;
+      registros: bigint | number | null;
+    };
+    const [agg] = await prisma.$queryRawUnsafe<Agg[]>(
+      `SELECT SUM(Tel_Segundos_Activos) AS segundos,
+              AVG(Tel_Porc_Actividad) AS actividad,
+              SUM(Tel_Clicks) AS clicks,
+              SUM(Tel_Teclas) AS teclas,
+              SUM(Tel_Lineas_Estimadas) AS lineas,
+              COUNT(*) AS registros
+       FROM aud_dev_telemetria
+       WHERE Per_Cod = ? AND Tel_Fecha_Hora >= ? AND Tel_Fecha_Hora <= ?`,
+      perCod,
+      desde,
+      hasta
+    );
+
+    type TarAgg = { Tar_Cod: number; segundos: bigint | number | null };
+    const tarRows = await prisma.$queryRawUnsafe<TarAgg[]>(
+      `SELECT Tar_Cod AS Tar_Cod, SUM(Tel_Segundos_Activos) AS segundos
+       FROM aud_dev_telemetria
+       WHERE Per_Cod = ? AND Tar_Cod IS NOT NULL
+         AND Tel_Fecha_Hora >= ? AND Tel_Fecha_Hora <= ?
+       GROUP BY Tar_Cod
+       ORDER BY segundos DESC
+       LIMIT 8`,
+      perCod,
+      desde,
+      hasta
+    );
+    const porTarea = tarRows
+      .map((r) => {
+        const minutos = Math.round(Number(r.segundos || 0) / 60);
+        return { Tar_Cod: Number(r.Tar_Cod), minutos, horas: Math.round((minutos / 60) * 10) / 10 };
+      })
+      .filter((r) => r.minutos > 0 && r.Tar_Cod > 0);
+
+    type ProcAgg = { proceso: string | null; registros: bigint | number; ides: bigint | number | null };
+    const procRows = await prisma.$queryRawUnsafe<ProcAgg[]>(
+      `SELECT COALESCE(NULLIF(Tel_Proceso_Activo,''), NULLIF(Tel_Ventana_Activa,''), 'Sin datos') AS proceso,
+              COUNT(*) AS registros,
+              SUM(CASE WHEN Tel_Es_IDE = 1 THEN 1 ELSE 0 END) AS ides
+       FROM aud_dev_telemetria
+       WHERE Per_Cod = ? AND Tel_Fecha_Hora >= ? AND Tel_Fecha_Hora <= ?
+       GROUP BY proceso
+       ORDER BY registros DESC
+       LIMIT 6`,
+      perCod,
+      desde,
+      hasta
+    );
+    const totalProc = procRows.reduce((s, r) => s + Number(r.registros || 0), 0);
+    const procesos = procRows.map((r) => ({
+      nombre: String(r.proceso || "Sin datos"),
+      registros: Number(r.registros || 0),
+      porcentaje: totalProc ? Math.round((Number(r.registros || 0) / totalProc) * 100) : 0,
+      es_ide: Number(r.ides || 0) > 0,
+    }));
+
+    // Adherencia al horario laboral configurado (hora local del servidor MySQL).
+    const config = await prisma.aud_dev_monitoreo_config
+      .findUnique({ where: { Per_Cod: perCod } })
+      .catch(() => null);
+    const horarioActivo = !!config?.Mon_Horario_Activo;
+    const horaInicio = config?.Mon_Hora_Inicio ?? null;
+    const horaFin = config?.Mon_Hora_Fin ?? null;
+
+    let registrosHorario = 0;
+    let dentro = 0;
+    if (horarioActivo && horaInicio && horaFin) {
+      type TelHora = { hora: string | null };
+      const horasRows = await prisma.$queryRawUnsafe<TelHora[]>(
+        `SELECT DATE_FORMAT(Tel_Fecha_Hora, '%H:%i') AS hora
+         FROM aud_dev_telemetria
+         WHERE Per_Cod = ? AND Tel_Fecha_Hora >= ? AND Tel_Fecha_Hora <= ?`,
+        perCod,
+        desde,
+        hasta
+      );
+      registrosHorario = horasRows.length;
+      for (const r of horasRows) {
+        const h = String(r.hora || "");
+        if (!h) continue;
+        const ok = horaInicio <= horaFin ? h >= horaInicio && h <= horaFin : h >= horaInicio || h <= horaFin;
+        if (ok) dentro++;
+      }
+    }
+
+    return {
+      desde: desdeDia,
+      hasta: hastaDia,
+      horasActivas: Math.round((Number(agg?.segundos || 0) / 3600) * 10) / 10,
+      actividad: Math.round(Number(agg?.actividad || 0)),
+      clicks: Number(agg?.clicks || 0),
+      teclas: Number(agg?.teclas || 0),
+      lineas: Number(agg?.lineas || 0),
+      registros: Number(agg?.registros || 0),
+      porTarea,
+      procesos,
+      horario: {
+        activo: horarioActivo,
+        hora_inicio: horarioActivo ? horaInicio : null,
+        hora_fin: horarioActivo ? horaFin : null,
+        registros: registrosHorario,
+        dentro,
+        pct: horarioActivo && registrosHorario ? Math.round((dentro / registrosHorario) * 100) : 0,
+      },
+    };
+  } catch {
+    return { ...TELEMETRIA_PERSONAL_VACIA, desde: desdeDia, hasta: hastaDia };
+  }
 }
 
 export async function listDevsMonitoreo(

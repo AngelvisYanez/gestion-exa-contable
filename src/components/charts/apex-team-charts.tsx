@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useMemo } from "react";
 import type { ApexOptions } from "apexcharts";
-import type { AssigneeMetric, TeamDayPoint } from "@/lib/dashboard";
+import type { ApoyoDev, AssigneeMetric, ComparativaDev, TeamDayPoint } from "@/lib/dashboard";
 import { useTheme } from "@/contexts/ThemeContext";
 
 const ReactApexChart = dynamic(() => import("react-apexcharts").then((m) => m.default), {
@@ -404,6 +404,166 @@ export function ApexDonutChart({
   return (
     <div className="h-full min-h-0 w-full overflow-hidden">
       <ReactApexChart type="donut" height={height} series={series} options={options} />
+    </div>
+  );
+}
+
+export type ComparativaMetricKey =
+  | "cumplimiento"
+  | "avance_promedio"
+  | "avances_dia"
+  | "completadas_dia"
+  | "apoyos"
+  | "total";
+
+/** Barras agrupadas: rendimiento por desarrollador separado por plazo de tarea. */
+export function PlazoComparativaChart({
+  rows,
+  metric,
+  height = 260,
+}: {
+  rows: ComparativaDev[];
+  metric: ComparativaMetricKey;
+  height?: number | string;
+}) {
+  const { theme } = useTheme();
+  const dark = theme === "dark";
+  const ink = dark ? "#a8a29e" : "#78716c";
+  const top = useMemo(() => rows.slice(0, 8), [rows]);
+  const categories = useMemo(() => top.map((r) => shortName(r.Nombre)), [top]);
+  const isPct = metric === "cumplimiento" || metric === "avance_promedio";
+  const series = useMemo(
+    () =>
+      (["Diaria", "Semanal", "Mensual"] as const).map((plazo) => ({
+        name: plazo,
+        data: top.map((r) => {
+          const c = r.categorias[plazo];
+          const v = c ? c[metric] : 0;
+          return isPct ? Math.round(v) : Math.round(v * 100) / 100;
+        }),
+      })),
+    [top, metric, isPct]
+  );
+
+  const options = useMemo<ApexOptions>(() => {
+    const base = baseChart(dark);
+    return {
+      ...base,
+      chart: { ...base.chart, type: "bar" },
+      colors: [BRAND.sky, BRAND.violet, BRAND.emerald],
+      plotOptions: {
+        bar: {
+          horizontal: false,
+          columnWidth: "62%",
+          borderRadius: 3,
+          borderRadiusApplication: "end",
+        },
+      },
+      xaxis: {
+        ...base.xaxis,
+        categories,
+        labels: {
+          style: { fontSize: "10px", colors: ink },
+          rotate: categories.length > 5 ? -25 : 0,
+          trim: true,
+        },
+      },
+      yaxis: {
+        min: 0,
+        forceNiceScale: true,
+        labels: {
+          style: { fontSize: "10px", colors: ink },
+          formatter: (v) => (isPct ? `${Math.round(v)}%` : `${Math.round(v * 100) / 100}`),
+        },
+      },
+      tooltip: {
+        shared: true,
+        intersect: false,
+        y: {
+          formatter: (v) => (isPct ? `${Math.round(v)}%` : `${v}`),
+        },
+      },
+    };
+  }, [categories, dark, ink, isPct]);
+
+  const vacio = !top.some((r) =>
+    (["Diaria", "Semanal", "Mensual"] as const).some((p) => (r.categorias[p]?.[metric] ?? 0) > 0)
+  );
+  if (vacio) {
+    return (
+      <p className="flex h-full items-center justify-center text-xs text-muted-foreground">
+        Sin datos por plazo en el rango
+      </p>
+    );
+  }
+
+  return (
+    <div className="h-full min-h-0 w-full overflow-hidden">
+      <ReactApexChart type="bar" height={height} series={series} options={options} />
+    </div>
+  );
+}
+
+/** Ranking horizontal: quien apoyo mas en tareas, apilado por plazo. */
+export function ApoyoRankingChart({
+  rows,
+  height = 260,
+}: {
+  rows: ApoyoDev[];
+  height?: number | string;
+}) {
+  const { theme } = useTheme();
+  const dark = theme === "dark";
+  const ink = dark ? "#a8a29e" : "#78716c";
+  const top = useMemo(() => [...rows].sort((a, b) => b.total - a.total).slice(0, 8).reverse(), [rows]);
+  const categories = useMemo(() => top.map((r) => shortName(r.Nombre)), [top]);
+  const series = useMemo(
+    () =>
+      (["Diaria", "Semanal", "Mensual", "Sin fechas"] as const).map((plazo) => ({
+        name: plazo,
+        data: top.map((r) => r.categorias[plazo] || 0),
+      })),
+    [top]
+  );
+
+  const options = useMemo<ApexOptions>(() => {
+    const base = baseChart(dark);
+    return {
+      ...base,
+      chart: { ...base.chart, type: "bar", stacked: true },
+      colors: [BRAND.sky, BRAND.violet, BRAND.emerald, BRAND.amber],
+      plotOptions: {
+        bar: {
+          horizontal: true,
+          borderRadius: 3,
+          borderRadiusApplication: "end",
+          barHeight: "62%",
+        },
+      },
+      xaxis: {
+        ...base.xaxis,
+        categories,
+        labels: { style: { fontSize: "10px", colors: ink } },
+      },
+      yaxis: {
+        labels: { style: { fontSize: "10px", colors: ink } },
+      },
+      legend: { show: true, position: "top", horizontalAlign: "right", fontSize: "10px" },
+      tooltip: { ...base.tooltip, shared: true, intersect: false },
+    };
+  }, [categories, dark, ink]);
+
+  if (!top.some((r) => r.total > 0)) {
+    return (
+      <p className="flex h-full items-center justify-center text-xs text-muted-foreground">
+        Aun no hay apoyos registrados en las tareas del rango
+      </p>
+    );
+  }
+
+  return (
+    <div className="h-full min-h-0 w-full overflow-hidden">
+      <ReactApexChart type="bar" height={height} series={series} options={options} />
     </div>
   );
 }
