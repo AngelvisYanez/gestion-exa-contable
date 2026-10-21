@@ -570,6 +570,7 @@ async function handle(req: NextRequest) {
         realizado,
         siguiente: pick(form, json, req, "siguiente"),
         bloqueos: pick(form, json, req, "bloqueos"),
+        standby: pick(form, json, req, "standby"),
         horas: pick(form, json, req, "horas"),
         adjuntos,
       };

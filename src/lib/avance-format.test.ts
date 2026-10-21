@@ -16,6 +16,7 @@ describe("apoyo en cada avance", () => {
       apoyo: "Pérez Ana",
       siguiente: "Revisar con el cliente",
       bloqueos: "",
+      standby: "",
       horas: null,
       enlaces: [],
       adjuntos: [],
@@ -26,6 +27,29 @@ describe("apoyo en cada avance", () => {
     const parsed = parseAvanceDescripcion("Trabajo previo\nHoras: 2");
     assert.equal(parsed.realizado, "Trabajo previo");
     assert.equal(parsed.apoyo, null);
+    assert.equal(parsed.standby, "");
     assert.equal(parsed.horas, 2);
+  });
+});
+
+describe("standby por feedback o validacion pendiente", () => {
+  it("guarda la nota de standby en una linea propia", () => {
+    const saved = buildAvanceDescripcion({
+      realizado: "Se armó el reporte.",
+      standby: "Falta la validación del cliente del reporte.",
+    });
+
+    assert.match(saved, /^Standby: Falta la validación del cliente del reporte\.$/m);
+    assert.equal(parseAvanceDescripcion(saved).standby, "Falta la validación del cliente del reporte.");
+  });
+
+  it("es opcional: sin nota no se escribe la linea", () => {
+    const saved = buildAvanceDescripcion({
+      realizado: "Se armó el reporte.",
+      standby: "   ",
+    });
+
+    assert.equal(saved, "Se armó el reporte.");
+    assert.equal(parseAvanceDescripcion(saved).standby, "");
   });
 });

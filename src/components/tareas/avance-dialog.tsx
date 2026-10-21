@@ -58,6 +58,7 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
   const [realizado, setRealizado] = useState("");
   const [siguiente, setSiguiente] = useState("");
   const [bloqueos, setBloqueos] = useState("");
+  const [standby, setStandby] = useState("");
   const [horas, setHoras] = useState("");
   const [apoyoPerCod, setApoyoPerCod] = useState("");
   const [apoyoError, setApoyoError] = useState("");
@@ -83,6 +84,7 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
     setRealizado("");
     setSiguiente("");
     setBloqueos("");
+    setStandby("");
     setHoras("");
     setEnlace("");
     setEnlaces([]);
@@ -226,6 +228,7 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
           realizado,
           siguiente,
           bloqueos,
+          standby: !esTicket ? standby : undefined,
           horas: horas ? Number(horas.replace(",", ".")) : null,
           apoyoPerCod: !esTicket && apoyoPerCod ? Number(apoyoPerCod) : undefined,
           enlaces: allLinks,
@@ -440,6 +443,25 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
               />
             </div>
           </div>
+
+          {!esTicket && (
+            <div className="space-y-2">
+              <Label htmlFor="avance-standby">
+                ¿La tarea quedó en standby por feedback o validación pendiente? (opcional)
+              </Label>
+              <Textarea
+                id="avance-standby"
+                rows={2}
+                placeholder="Ej.: Falta la validación del cliente del reporte para poder continuar."
+                value={standby}
+                onChange={(e) => setStandby(e.target.value)}
+                disabled={saving}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Queda registrado como parte del avance. No cambia el estado ni el porcentaje de la tarea.
+              </p>
+            </div>
+          )}
 
           <div className="grid gap-3 sm:grid-cols-[140px_1fr]">
             <div className="space-y-2">

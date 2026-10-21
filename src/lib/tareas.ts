@@ -927,6 +927,7 @@ export function descripcionAvanceDesdeBody(
     apoyo,
     siguiente: str(body.siguiente, 1000),
     bloqueos: str(body.bloqueos, 1000),
+    standby: str(body.standby, 1000),
     horas: Number.isFinite(horasNum) && horasNum > 0 ? Math.min(horasNum, 24) : null,
     enlaces,
     adjuntos,

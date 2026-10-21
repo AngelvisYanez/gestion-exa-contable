@@ -13,6 +13,7 @@ import {
   Link2,
   Loader2,
   Paperclip,
+  PauseCircle,
   Pencil,
   Sparkles,
   Ticket,
@@ -230,6 +231,7 @@ function textoParaCompartir(tarea: Tarea, detalle: TareaDetalle | null) {
       if (avance.apoyo) lineas.push(`  Ayudó: ${avance.apoyo}`);
       if (avance.siguiente) lineas.push(`  Siguiente: ${avance.siguiente}`);
       if (avance.bloqueos) lineas.push(`  Bloqueos: ${avance.bloqueos}`);
+      if (avance.standby) lineas.push(`  Standby: ${avance.standby}`);
       for (const enlace of avance.enlaces) lineas.push(`  Enlace: ${enlace}`);
       for (const archivo of avance.adjuntos) {
         lineas.push(`  Adjunto: ${archivo.nombre} (${new URL(archivo.url, window.location.origin).href})`);
@@ -755,6 +757,14 @@ export function TareaDetalleDialog({
                           <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
                           <span>
                             <strong>Bloqueos:</strong> {item.avance.bloqueos}
+                          </span>
+                        </p>
+                      )}
+                      {item.avance.standby && (
+                        <p className="mt-1 flex gap-1.5 text-xs text-violet-800">
+                          <PauseCircle className="mt-0.5 size-3.5 shrink-0" />
+                          <span>
+                            <strong>Standby:</strong> {item.avance.standby}
                           </span>
                         </p>
                       )}

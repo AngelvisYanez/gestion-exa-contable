@@ -12,6 +12,7 @@ import {
   FileText,
   Link2,
   Paperclip,
+  PauseCircle,
   Printer,
   TrendingUp,
 } from "lucide-react";
@@ -239,6 +240,12 @@ function ReportePreview({ data }: { data: ReporteData }) {
                             {a.bloqueos}
                           </p>
                         )}
+                        {a.standby && (
+                          <p className="mt-1 inline-flex items-start gap-1 text-[11px] font-medium text-violet-800">
+                            <PauseCircle className="mt-0.5 size-3 shrink-0" />
+                            {a.standby}
+                          </p>
+                        )}
                         {(a.enlaces.length > 0 || a.adjuntos.length > 0) && (
                           <div className="mt-2 flex flex-wrap gap-1.5">
                             {a.enlaces.map((e) => (
@@ -325,6 +332,7 @@ function buildPrintHtml(data: ReporteData) {
               if (a.apoyo) bits.push(`<p class="meta"><b>Ayudó:</b> ${escapeHtml(a.apoyo)}</p>`);
               if (a.siguiente) bits.push(`<p class="meta"><b>Siguiente:</b> ${escapeHtml(a.siguiente)}</p>`);
               if (a.bloqueos) bits.push(`<p class="warn"><b>Bloqueo:</b> ${escapeHtml(a.bloqueos)}</p>`);
+              if (a.standby) bits.push(`<p class="standby"><b>Standby:</b> ${escapeHtml(a.standby)}</p>`);
               for (const e of a.enlaces) bits.push(`<p class="link"><a href="${escapeHtml(e)}">${escapeHtml(e)}</a></p>`);
               for (const f of a.adjuntos)
                 bits.push(`<p class="link"><a href="${escapeHtml(f.url)}">${escapeHtml(f.nombre)}</a></p>`);
@@ -375,6 +383,7 @@ function buildPrintHtml(data: ReporteData) {
   .done{margin:0;font-size:12px}
   .meta{margin:4px 0 0;font-size:11px;color:#57534e}
   .warn{margin:4px 0 0;font-size:11px;color:#92400e}
+  .standby{margin:4px 0 0;font-size:11px;color:#5b21b6}
   .link{margin:3px 0 0;font-size:10px;word-break:break-all}
   .link a{color:#0369a1}
   .empty{color:#78716c;text-align:center;padding:24px;border:1px dashed #d6d3d1;border-radius:12px}

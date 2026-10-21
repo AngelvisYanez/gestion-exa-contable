@@ -17,6 +17,8 @@ export type AvanceActividad = {
   apoyo?: string | null;
   siguiente: string;
   bloqueos: string;
+  /** Espera por feedback o validacion: la tarea queda en standby. */
+  standby?: string;
   horas: number | null;
   enlaces: string[];
   adjuntos: Array<{ ruta: string; url: string; nombre: string; esImagen: boolean }>;
@@ -107,6 +109,7 @@ export function calcularMetricas(
   const conEvidencia = periodo.filter((a) => a.enlaces.length + a.adjuntos.length > 0).length;
   const horasReportadas = periodo.reduce((s, a) => s + (a.horas || 0), 0);
   const bloqueos = periodo.filter((a) => a.bloqueos.trim()).length;
+  const standby = periodo.filter((a) => (a.standby || "").trim()).length;
   const tareasTocadas = new Set(periodo.map((a) => a.Tar_Cod)).size;
 
   const minutosActivos = (actividad?.tiempo || [])
@@ -179,6 +182,7 @@ export function calcularMetricas(
     horasActivas: Math.round((minutosActivos / 60) * 10) / 10,
     horasEnTareas: Math.round((minutosEnTareas / 60) * 10) / 10,
     bloqueos,
+    standby,
     tareasTocadas,
     sinActualizar,
     finalizadasPeriodo,
@@ -312,6 +316,7 @@ export function buildReporte(opts: {
   L.push(`- Evidencias adjuntas: ${m.evidencias} (${m.coberturaEvidencia}% de los avances con evidencia)`);
   if (m.aTiempoPct != null) L.push(`- Cumplimiento a tiempo (historico): ${m.aTiempoPct}%`);
   if (m.bloqueos) L.push(`- Avances con bloqueos reportados: ${m.bloqueos}`);
+  if (m.standby) L.push(`- Avances en standby por feedback o validacion pendiente: ${m.standby}`);
   L.push("");
 
   L.push("## Detalle por tarea");
@@ -330,6 +335,7 @@ export function buildReporte(opts: {
       if (a.horas) L.push(`  - Tiempo invertido: ${a.horas} h`);
       if (a.siguiente) L.push(`  - Siguiente paso: ${a.siguiente}`);
       if (a.bloqueos) L.push(`  - Bloqueos: ${a.bloqueos}`);
+      if (a.standby) L.push(`  - Standby: ${a.standby}`);
       for (const e of a.enlaces) L.push(`  - Evidencia: ${e}`);
       for (const f of a.adjuntos) L.push(`  - Adjunto: ${f.nombre} — ${f.url}`);
     }

@@ -8,6 +8,8 @@ export type AvanceEstructurado = {
   apoyo: string | null;
   siguiente: string;
   bloqueos: string;
+  /** Espera por feedback o validacion: la tarea queda en standby. */
+  standby: string;
   horas: number | null;
   enlaces: string[];
   adjuntos: string[];
@@ -17,6 +19,7 @@ const PREFIJOS = {
   apoyo: "Apoyo:",
   siguiente: "Siguiente paso:",
   bloqueos: "Bloqueos:",
+  standby: "Standby:",
   horas: "Horas:",
   enlace: "Evidencia:",
   adjunto: "Adjunto:",
@@ -33,6 +36,7 @@ export function buildAvanceDescripcion(a: Partial<AvanceEstructurado>): string {
   if (a.apoyo?.trim()) lines.push(`${PREFIJOS.apoyo} ${oneLine(a.apoyo)}`);
   if (a.siguiente?.trim()) lines.push(`${PREFIJOS.siguiente} ${oneLine(a.siguiente)}`);
   if (a.bloqueos?.trim()) lines.push(`${PREFIJOS.bloqueos} ${oneLine(a.bloqueos)}`);
+  if (a.standby?.trim()) lines.push(`${PREFIJOS.standby} ${oneLine(a.standby)}`);
   if (a.horas != null && a.horas > 0) lines.push(`${PREFIJOS.horas} ${Math.round(a.horas * 100) / 100}`);
   for (const e of a.enlaces || []) if (e.trim()) lines.push(`${PREFIJOS.enlace} ${e.trim()}`);
   for (const f of a.adjuntos || []) if (f.trim()) lines.push(`${PREFIJOS.adjunto} ${f.trim()}`);
@@ -45,6 +49,7 @@ export function parseAvanceDescripcion(raw: string | null | undefined): AvanceEs
     apoyo: null,
     siguiente: "",
     bloqueos: "",
+    standby: "",
     horas: null,
     enlaces: [],
     adjuntos: [],
@@ -56,6 +61,7 @@ export function parseAvanceDescripcion(raw: string | null | undefined): AvanceEs
     if (l.startsWith(PREFIJOS.apoyo)) out.apoyo = l.slice(PREFIJOS.apoyo.length).trim() || null;
     else if (l.startsWith(PREFIJOS.siguiente)) out.siguiente = l.slice(PREFIJOS.siguiente.length).trim();
     else if (l.startsWith(PREFIJOS.bloqueos)) out.bloqueos = l.slice(PREFIJOS.bloqueos.length).trim();
+    else if (l.startsWith(PREFIJOS.standby)) out.standby = l.slice(PREFIJOS.standby.length).trim();
     else if (l.startsWith(PREFIJOS.horas)) {
       const n = parseFloat(l.slice(PREFIJOS.horas.length).replace(",", "."));
       out.horas = Number.isFinite(n) ? n : null;
