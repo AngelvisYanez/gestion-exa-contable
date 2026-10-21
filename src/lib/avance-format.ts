@@ -3,18 +3,16 @@
  * Se mantiene legible para el módulo PHP legacy: una sección por línea con prefijo fijo.
  */
 
-import { hoyFecha } from "./timezone";
-
 export type AvanceEstructurado = {
   realizado: string;
   apoyo: string | null;
   siguiente: string;
   bloqueos: string;
-  /** Espera por feedback o validacion: la tarea queda en standby. */
+  /** Espera por feedback o validacion: la tarea queda en standby (sin fecha de fin). */
   standby: string;
-  /** Plazo que tenia la tarea antes de mover la fecha por el standby. */
+  /** Plazo que tenia la tarea antes de quedar en standby. */
   plazoAnterior: string | null;
-  /** Fecha en la que se retoma la tarea (plazo nuevo). */
+  /** Formato anterior (ya no se escribe): la reanudacion se fijaba con fecha. */
   standbyHasta: string | null;
   horas: number | null;
   enlaces: string[];
@@ -46,7 +44,6 @@ export function buildAvanceDescripcion(a: Partial<AvanceEstructurado>): string {
   if (a.bloqueos?.trim()) lines.push(`${PREFIJOS.bloqueos} ${oneLine(a.bloqueos)}`);
   if (a.standby?.trim()) lines.push(`${PREFIJOS.standby} ${oneLine(a.standby)}`);
   if (a.plazoAnterior?.trim()) lines.push(`${PREFIJOS.plazoAnterior} ${oneLine(a.plazoAnterior)}`);
-  if (a.standbyHasta?.trim()) lines.push(`${PREFIJOS.standbyHasta} ${oneLine(a.standbyHasta)}`);
   if (a.horas != null && a.horas > 0) lines.push(`${PREFIJOS.horas} ${Math.round(a.horas * 100) / 100}`);
   for (const e of a.enlaces || []) if (e.trim()) lines.push(`${PREFIJOS.enlace} ${e.trim()}`);
   for (const f of a.adjuntos || []) if (f.trim()) lines.push(`${PREFIJOS.adjunto} ${f.trim()}`);
@@ -85,18 +82,6 @@ export function parseAvanceDescripcion(raw: string | null | undefined): AvanceEs
   }
   out.realizado = libres.join("\n").trim();
   return out;
-}
-
-/**
- * Standby: la tarea espera feedback o validacion y su plazo se mueve a la fecha
- * de reanudacion. Devuelve la fecha validada o lanza Error con el mensaje a mostrar.
- */
-export function fechaReanudacionStandby(v: unknown): string | null {
-  const s = String(v ?? "").trim();
-  if (!s) return null;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) throw new Error("Fecha de reanudación inválida.");
-  if (s < hoyFecha()) throw new Error("La fecha de reanudación no puede ser anterior a hoy.");
-  return s;
 }
 
 export function isImagePath(p: string) {

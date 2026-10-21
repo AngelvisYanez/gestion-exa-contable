@@ -909,14 +909,14 @@ export async function registrarAvance(
 
 /**
  * Arma Ava_Descripcion desde el body (campos estructurados o texto libre legacy).
- * `opciones` lleva los datos que dependen de la base de datos (plazo anterior,
- * fecha de reanudacion) y por eso no viajan del cliente.
+ * `opciones` lleva los datos que dependen de la base de datos (plazo anterior)
+ * y por eso no viajan del cliente.
  */
 export function descripcionAvanceDesdeBody(
   body: Record<string, unknown>,
   tarCod: number,
   apoyo: string | null = null,
-  opciones: { plazoAnterior?: string | null; standbyHasta?: string | null } = {}
+  opciones: { plazoAnterior?: string | null } = {}
 ): string {
   const str = (v: unknown, max: number) => String(v ?? "").slice(0, max);
   const list = (v: unknown) => (Array.isArray(v) ? v.map((x) => String(x ?? "").trim()).filter(Boolean) : []);
@@ -934,7 +934,6 @@ export function descripcionAvanceDesdeBody(
     bloqueos: str(body.bloqueos, 1000),
     standby: str(body.standby, 1000),
     plazoAnterior: opciones.plazoAnterior ?? null,
-    standbyHasta: opciones.standbyHasta ?? null,
     horas: Number.isFinite(horasNum) && horasNum > 0 ? Math.min(horasNum, 24) : null,
     enlaces,
     adjuntos,
@@ -952,12 +951,11 @@ export async function leerPlazoTarea(dbDis: string, tarCod: number): Promise<str
   return ymdCalendario(row.Tar_Fecha_Fin);
 }
 
-/** Mueve la fecha de fin de la tarea (plazo). */
-export async function moverPlazoTarea(dbDis: string, tarCod: number, fechaFin: string): Promise<void> {
+/** Quita la fecha de fin (plazo): la tarea queda sin fecha mientras esta en standby. */
+export async function quitarPlazoTarea(dbDis: string, tarCod: number): Promise<void> {
   const prisma = getPrisma(dbDis);
   await prisma.$executeRawUnsafe(
-    `UPDATE aud_tareas SET Tar_Fecha_Fin = ? WHERE Tar_Cod = ? AND Tar_Est = 'A'`,
-    new Date(fechaFin),
+    `UPDATE aud_tareas SET Tar_Fecha_Fin = NULL WHERE Tar_Cod = ? AND Tar_Est = 'A'`,
     tarCod
   );
 }

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { hasRolePermission } from "@/lib/auth/role-permissions";
-import { fechaReanudacionStandby } from "@/lib/avance-format";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { publishEvent } from "@/lib/events";
 import { tasksDbDis, tasksEmpCod } from "@/lib/empresa";
@@ -11,7 +10,7 @@ import {
   leerPlazoTarea,
   listAsignables,
   listTareas,
-  moverPlazoTarea,
+  quitarPlazoTarea,
   registrarAvance,
   telemetriaPersonal,
 } from "@/lib/tareas";
@@ -345,29 +344,14 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ success: false, message: "El apoyo debe ser un miembro del equipo autorizado." }, { status: 400 });
         }
       }
-      // Standby: la tarea espera feedback/validacion y su plazo se mueve a la fecha de reanudacion.
+      // Standby: la tarea espera feedback/validacion y se queda sin fecha de fin.
+      // El developer no fija fecha: solo escribe el motivo.
       const notaStandby = String(body.standby ?? "").trim();
-      let standbyHasta: string | null = null;
-      try {
-        standbyHasta = fechaReanudacionStandby(body.standbyHasta);
-      } catch (e) {
-        return NextResponse.json(
-          { success: false, message: e instanceof Error ? e.message : "Fecha inválida" },
-          { status: 400 }
-        );
-      }
-      if (standbyHasta && !notaStandby) {
-        return NextResponse.json(
-          { success: false, message: "Describe el motivo del standby para mover el plazo." },
-          { status: 400 }
-        );
-      }
-      // Si el avance cierra la tarea (100%) no se mueve el plazo: la tarea queda finalizada.
-      if (porcentaje >= 100) standbyHasta = null;
-      const plazoAnterior = standbyHasta ? await leerPlazoTarea(db, tarCod) : null;
+      // Si el avance cierra la tarea (100%) no se toca el plazo: la tarea queda finalizada.
+      const enStandby = notaStandby.length > 0 && porcentaje < 100;
+      const plazoAnterior = enStandby ? await leerPlazoTarea(db, tarCod) : null;
       const descripcion = descripcionAvanceDesdeBody(body, tarCod, apoyo, {
         plazoAnterior,
-        standbyHasta,
       });
       if (!descripcion.trim()) {
         return NextResponse.json(
@@ -381,16 +365,16 @@ export async function POST(req: NextRequest) {
         descripcion,
         usuCod: session.usuCod || undefined,
       });
-      if (standbyHasta) {
-        // Standby con traslado de plazo: la tarea deja de contar como atrasada.
-        await moverPlazoTarea(db, tarCod, standbyHasta);
+      if (enStandby) {
+        // Standby: la tarea queda sin fecha de fin hasta que se le fije un plazo nuevo.
+        await quitarPlazoTarea(db, tarCod);
       }
       publishEvent({
         type: "avance_registrado",
         title: "Avance registrado",
         message:
           `${session.name || "Usuario"} · #${tarCod} · ${res.porcentaje}%` +
-          (standbyHasta ? ` · standby hasta ${standbyHasta}` : ""),
+          (enStandby ? " · standby (sin fecha de fin)" : ""),
         db,
         tarCod,
         porcentaje: res.porcentaje,

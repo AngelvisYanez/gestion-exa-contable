@@ -19,11 +19,9 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
-import { DatePicker } from "@/components/ui/date-picker";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { plainTextFromHtml } from "@/components/ui/rich-text";
 import { isSafeUrl } from "@/lib/avance-format";
-import { hoyFecha } from "@/lib/timezone";
 import {
   EVIDENCIA_ACCEPT,
   EVIDENCIA_HELP,
@@ -35,13 +33,6 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 
 const MAX_FILES = 5;
-
-/** Fecha por defecto de reanudacion cuando la tarea entra en standby: hoy + 7 dias. */
-function reanudacionPorDefecto() {
-  const hoy = hoyFecha();
-  const [y, m, d] = hoy.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d + 7)).toISOString().slice(0, 10);
-}
 
 type Props = {
   tarea: Tarea | null;
@@ -68,7 +59,6 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
   const [siguiente, setSiguiente] = useState("");
   const [bloqueos, setBloqueos] = useState("");
   const [standby, setStandby] = useState("");
-  const [standbyHasta, setStandbyHasta] = useState("");
   const [horas, setHoras] = useState("");
   const [apoyoPerCod, setApoyoPerCod] = useState("");
   const [apoyoError, setApoyoError] = useState("");
@@ -95,7 +85,6 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
     setSiguiente("");
     setBloqueos("");
     setStandby("");
-    setStandbyHasta("");
     setHoras("");
     setEnlace("");
     setEnlaces([]);
@@ -240,7 +229,6 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
           siguiente,
           bloqueos,
           standby: !esTicket ? standby : undefined,
-          standbyHasta: !esTicket && standbyHasta && pct < 100 ? standbyHasta : undefined,
           horas: horas ? Number(horas.replace(",", ".")) : null,
           apoyoPerCod: !esTicket && apoyoPerCod ? Number(apoyoPerCod) : undefined,
           enlaces: allLinks,
@@ -466,40 +454,23 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
                 rows={2}
                 placeholder="Ej.: Falta la validación del cliente del reporte para poder continuar."
                 value={standby}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setStandby(v);
-                  // Al anotar el motivo se propone la nueva fecha de fin (hoy + 7 días).
-                  if (v.trim() && !standbyHasta) setStandbyHasta(reanudacionPorDefecto());
-                }}
+                onChange={(e) => setStandby(e.target.value)}
                 disabled={saving}
               />
               {standby.trim() && pct < 100 && (
-                <div className="space-y-2 rounded-lg border border-violet-200 bg-violet-50/60 p-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="avance-standby-hasta">Nueva fecha de fin (plazo)</Label>
-                    <DatePicker
-                      id="avance-standby-hasta"
-                      value={standbyHasta}
-                      onChange={setStandbyHasta}
-                      min={hoyFecha()}
-                      placeholder="Sin cambio de plazo"
-                      size="sm"
-                      allowClear
-                      disabled={saving}
-                    />
-                    <p className="text-[11px] text-muted-foreground">
-                      {standbyHasta
-                        ? `El plazo de la tarea pasa a ${standbyHasta}` +
-                          (tarea?.Tar_Fecha_Fin ? ` (antes ${String(tarea.Tar_Fecha_Fin).slice(0, 10)}).` : ".")
-                        : "Sin fecha, el plazo de la tarea no se mueve."}
-                    </p>
-                  </div>
+                <div className="space-y-1 rounded-lg border border-violet-200 bg-violet-50/60 p-3">
+                  <p className="text-xs font-medium text-violet-900">La tarea queda en standby</p>
+                  <p className="text-[11px] text-violet-900/80">
+                    Se queda <strong>sin fecha de fin</strong> mientras espera el feedback
+                    {tarea?.Tar_Fecha_Fin
+                      ? ` (plazo actual ${String(tarea.Tar_Fecha_Fin).slice(0, 10)})`
+                      : ""}
+                    . El plazo anterior queda registrado en el avance.
+                  </p>
                 </div>
               )}
               <p className="text-[11px] text-muted-foreground">
-                Queda registrado como parte del avance y no cambia el estado ni el porcentaje. Si eliges
-                una fecha de reanudación, el plazo de la tarea se mueve a esa fecha.
+                Queda registrado como parte del avance y no cambia el estado ni el porcentaje de la tarea.
               </p>
             </div>
           )}

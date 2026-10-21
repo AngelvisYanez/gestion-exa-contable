@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildAvanceDescripcion, fechaReanudacionStandby, parseAvanceDescripcion } from "./avance-format";
+import { buildAvanceDescripcion, parseAvanceDescripcion } from "./avance-format";
 
 describe("apoyo en cada avance", () => {
   it("conserva el nombre del apoyo junto al contenido del avance", () => {
@@ -57,34 +57,32 @@ describe("standby por feedback o validacion pendiente", () => {
     assert.equal(parseAvanceDescripcion(saved).standby, "");
   });
 
-  it("registra el traslado de plazo del standby", () => {
+  it("registra el plazo anterior que tenía la tarea", () => {
     const saved = buildAvanceDescripcion({
       realizado: "Se armó el reporte.",
       standby: "Falta la validación del cliente.",
       plazoAnterior: "2026-10-12",
-      standbyHasta: "2026-10-20",
     });
 
     assert.match(saved, /^Plazo anterior: 2026-10-12$/m);
-    assert.match(saved, /^Reanudo: 2026-10-20$/m);
+    // La tarea queda sin fecha de fin: no se escribe ninguna fecha de reanudacion.
+    assert.doesNotMatch(saved, /^Reanudo:/m);
     const parsed = parseAvanceDescripcion(saved);
     assert.equal(parsed.plazoAnterior, "2026-10-12");
-    assert.equal(parsed.standbyHasta, "2026-10-20");
-    // El texto principal no se contamination con las lineas nuevas.
+    assert.equal(parsed.standbyHasta, null);
+    // El texto principal no se contamina con las lineas nuevas.
     assert.equal(parsed.realizado, "Se armó el reporte.");
   });
-});
 
-describe("fecha de reanudacion del standby", () => {
-  it("acepta una fecha futura y rechaza el pasado o formatos invalidos", () => {
-    const hoy = new Date();
-    const manana = new Date(hoy.getTime() + 86400000).toISOString().slice(0, 10);
-    const ayer = new Date(hoy.getTime() - 86400000).toISOString().slice(0, 10);
+  it("entiende el formato anterior que fijaba la fecha de reanudacion", () => {
+    const parsed = parseAvanceDescripcion(
+      "Se armó el reporte.\nStandby: Falta la validación del cliente.\nPlazo anterior: 2026-10-12\nReanudo: 2026-10-20"
+    );
 
-    assert.equal(fechaReanudacionStandby(manana), manana);
-    assert.equal(fechaReanudacionStandby(""), null);
-    assert.equal(fechaReanudacionStandby(null), null);
-    assert.throws(() => fechaReanudacionStandby(ayer), /no puede ser anterior a hoy/);
-    assert.throws(() => fechaReanudacionStandby("20/10/2026"), /inválida/);
+    assert.equal(parsed.standby, "Falta la validación del cliente.");
+    assert.equal(parsed.plazoAnterior, "2026-10-12");
+    assert.equal(parsed.standbyHasta, "2026-10-20");
+    // La linea antigua no debe terminar pegada al texto principal.
+    assert.equal(parsed.realizado, "Se armó el reporte.");
   });
 });
