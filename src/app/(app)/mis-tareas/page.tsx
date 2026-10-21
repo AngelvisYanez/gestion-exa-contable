@@ -538,7 +538,7 @@ export default function MisTareasPage() {
                                   void moveEstado(t, "En Proceso");
                                 }}
                               >
-                                En proceso
+                                {t.Tar_Estado === "Standby" ? "Reanudar" : "En proceso"}
                               </Button>
                             )}
                             <Button
@@ -709,7 +709,7 @@ export default function MisTareasPage() {
                                         void moveEstado(t, "En Proceso");
                                       }}
                                     >
-                                      En proceso
+                                      {t.Tar_Estado === "Standby" ? "Reanudar" : "En proceso"}
                                     </Button>
                                   )}
                                   <Button

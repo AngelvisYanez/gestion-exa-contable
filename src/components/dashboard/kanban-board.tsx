@@ -29,6 +29,7 @@ export const KANBAN_COLUMNS = [
   { id: "Pendiente", label: "Pendiente", accent: "border-t-slate-400" },
   { id: "Asignado", label: "Asignado", accent: "border-t-violet-500" },
   { id: "En Proceso", label: "En Proceso", accent: "border-t-sky-500" },
+  { id: "Standby", label: "Standby", accent: "border-t-amber-500" },
   { id: "Finalizada", label: "Finalizada", accent: "border-t-emerald-500" },
 ] as const;
 
@@ -44,6 +45,7 @@ export function workItemKey(t: Tarea) {
 function columnFor(t: Tarea): KanbanEstado {
   const e = t.Tar_Estado || "Pendiente";
   if (e === "Finalizada" || (t.Ava_Porcentaje || 0) >= 100) return "Finalizada";
+  if (e === "Standby") return "Standby";
   if (e === "En Proceso") return "En Proceso";
   if (e === "Asignado") return "Asignado";
   if (COLUMN_IDS.has(e)) return e as KanbanEstado;
@@ -78,6 +80,10 @@ function columnRecency(t: Tarea, col: KanbanEstado) {
   }
   if (col === "En Proceso") {
     return Math.max(tsOf(t.Ava_Ultima_Fecha), tsOf(t.Tar_Fecha_Inicio), tsOf(t.Tar_Fecha_Fin));
+  }
+  if (col === "Standby") {
+    // En pausa: lo que manda es cuando se dejo el avance.
+    return Math.max(tsOf(t.Ava_Ultima_Fecha), tsOf(t.Tar_Fecha_Inicio));
   }
   // Pendiente / Asignado
   return Math.max(tsOf(t.Tar_Fecha_Inicio), tsOf(t.Ava_Ultima_Fecha), tsOf(t.Tar_Fecha_Fin));
@@ -250,6 +256,7 @@ function KanbanCardBody({
             <PlazoBadge
               inicio={t.Tar_Fecha_Inicio}
               fin={t.Tar_Fecha_Fin}
+              estado={t.Tar_Estado}
               className="px-1.5 py-0 text-[10px]"
             />
           </span>
@@ -303,7 +310,7 @@ function KanbanCardBody({
             onChange={(e) => onSelectEstado(t, e.target.value as KanbanEstado)}
           >
             {KANBAN_COLUMNS.filter((c) =>
-              !(esTicket && c.id === "Finalizada") &&
+              !(esTicket && (c.id === "Finalizada" || c.id === "Standby")) &&
               (c.id === estadoActual || !canMoveEstado || canMoveEstado(t, c.id))
             ).map((c) => (
               <option key={c.id} value={c.id}>
@@ -466,6 +473,7 @@ export function KanbanBoard({ tareas, loading, onAvance, canRegisterAvance, onMo
       Pendiente: [],
       Asignado: [],
       "En Proceso": [],
+      Standby: [],
       Finalizada: [],
     };
     for (const t of tareas) {
@@ -486,6 +494,8 @@ export function KanbanBoard({ tareas, loading, onAvance, canRegisterAvance, onMo
     if (columnFor(tarea) === estado) return;
     if (canMoveEstado && !canMoveEstado(tarea, estado)) return;
     if (tarea.tipo === "ticket" && estado === "Finalizada" && (tarea.Ava_Porcentaje || 0) < 100) return;
+    // Los tickets no tienen estado standby: solo las tareas.
+    if (tarea.tipo === "ticket" && estado === "Standby") return;
     const key = workItemKey(tarea);
     setMoving(key);
     try {

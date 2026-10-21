@@ -141,11 +141,13 @@ export function DevDashboard({ userName }: { userName?: string }) {
       Pendiente: 0,
       Asignado: 0,
       "En Proceso": 0,
+      Standby: 0,
       Finalizada: 0,
     };
     for (const t of items) {
       const e = t.Tar_Estado || "Pendiente";
       if (e === "Finalizada" || (t.Ava_Porcentaje || 0) >= 100) counts.Finalizada++;
+      else if (e === "Standby") counts.Standby++;
       else if (e === "En Proceso") counts["En Proceso"]++;
       else if (e === "Asignado") counts.Asignado++;
       else counts.Pendiente++;
@@ -154,6 +156,7 @@ export function DevDashboard({ userName }: { userName?: string }) {
       { label: "Pendiente", value: counts.Pendiente, color: "#94a3b8" },
       { label: "Asignado", value: counts.Asignado, color: "#8b5cf6" },
       { label: "En Proceso", value: counts["En Proceso"], color: "#0ea5e9" },
+      { label: "Standby", value: counts.Standby, color: "#f59e0b" },
       { label: "Finalizada", value: counts.Finalizada, color: "#10b981" },
     ].filter((s) => s.value > 0);
   }, [items]);

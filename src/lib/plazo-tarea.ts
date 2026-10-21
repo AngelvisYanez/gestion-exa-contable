@@ -55,8 +55,9 @@ export function fechaFinParaPlazo(inicio: unknown, plazo: CategoriaPlazo): strin
 
 /** Colores de badge por plazo (mismos tonos que las series del grafico del dashboard). */
 export function plazoVariant(
-  plazo: CategoriaPlazo
-): "info" | "violet" | "success" | "muted" {
+  plazo: CategoriaPlazo | "Standby"
+): "info" | "violet" | "success" | "muted" | "warning" {
+  if (plazo === "Standby") return "warning";
   if (plazo === "Diaria") return "info";
   if (plazo === "Mensual") return "success";
   if (plazo === "Sin fechas") return "muted";

@@ -459,7 +459,9 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
               />
               {standby.trim() && pct < 100 && (
                 <div className="space-y-1 rounded-lg border border-violet-200 bg-violet-50/60 p-3">
-                  <p className="text-xs font-medium text-violet-900">La tarea queda en standby</p>
+                  <p className="text-xs font-medium text-violet-900">
+                    La tarea pasa a estado Standby
+                  </p>
                   <p className="text-[11px] text-violet-900/80">
                     Se queda <strong>sin fecha de fin</strong> mientras espera el feedback
                     {tarea?.Tar_Fecha_Fin
@@ -470,7 +472,8 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
                 </div>
               )}
               <p className="text-[11px] text-muted-foreground">
-                Queda registrado como parte del avance y no cambia el estado ni el porcentaje de la tarea.
+                Queda registrado como parte del avance. La tarea no cambia de plazo: solo se marca
+                en standby y espera un nuevo avance para reanudarse.
               </p>
             </div>
           )}

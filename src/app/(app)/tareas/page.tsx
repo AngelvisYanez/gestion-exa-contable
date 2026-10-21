@@ -75,6 +75,7 @@ export default function TareasPage() {
   const [formPrio, setFormPrio] = useState("Media");
   const [formComplejidad, setFormComplejidad] = useState("Media");
   const [formFin, setFormFin] = useState("");
+  const [formStandby, setFormStandby] = useState(false);
   const [formPer, setFormPer] = useState("");
   const [formError, setFormError] = useState("");
   const [formSaving, setFormSaving] = useState(false);
@@ -156,6 +157,7 @@ export default function TareasPage() {
     setFormPrio("Media");
     setFormComplejidad("Media");
     setFormFin("");
+    setFormStandby(false);
     setFormPer("");
     setFormFotos([]);
     setFormError("");
@@ -214,6 +216,7 @@ export default function TareasPage() {
           prioridad: formPrio,
           complejidad: formComplejidad,
           fechaFin: formFin || null,
+          ...(formStandby ? { estado: "Standby" } : {}),
           ...(canAssign ? { perCodAsignar: formPer ? Number(formPer) : undefined } : {}),
         }),
       });
@@ -319,6 +322,7 @@ export default function TareasPage() {
             <option value="Pendiente">Pendiente</option>
             <option value="Asignado">Asignado</option>
             <option value="En Proceso">En Proceso</option>
+            <option value="Standby">Standby</option>
             <option value="Finalizada">Finalizada</option>
           </Select>
           <Select
@@ -344,6 +348,7 @@ export default function TareasPage() {
             <option value="Diaria">Diaria (1 día)</option>
             <option value="Semanal">Semanal (hasta 7 días)</option>
             <option value="Mensual">Mensual (+1 semana)</option>
+            <option value="Standby">Standby (en pausa)</option>
             <option value="Sin fechas">Sin fechas</option>
           </Select>
           <ViewModeToggle value={viewMode} onChange={setViewMode} withKanban />
@@ -423,7 +428,7 @@ export default function TareasPage() {
                         <TicketVinculadoChip tickets={t.Tickets_Vinculados} />
                       </span>
                       <span className="flex flex-wrap items-center gap-1.5">
-                        <PlazoBadge inicio={t.Tar_Fecha_Inicio} fin={t.Tar_Fecha_Fin} />
+                        <PlazoBadge inicio={t.Tar_Fecha_Inicio} fin={t.Tar_Fecha_Fin} estado={t.Tar_Estado} />
                         <PrioridadBadge prioridad={t.Tar_Prioridad} />
                       </span>
                     </div>
@@ -522,7 +527,7 @@ export default function TareasPage() {
                         <TableCell className="whitespace-nowrap">
                           <div className="flex flex-col items-start gap-1">
                             <PrioridadBadge prioridad={t.Tar_Prioridad} />
-                            <PlazoBadge inicio={t.Tar_Fecha_Inicio} fin={t.Tar_Fecha_Fin} />
+                            <PlazoBadge inicio={t.Tar_Fecha_Inicio} fin={t.Tar_Fecha_Fin} estado={t.Tar_Estado} />
                           </div>
                         </TableCell>
                         <TableCell className="whitespace-nowrap">
@@ -659,12 +664,19 @@ export default function TareasPage() {
                   inicio={hoyFecha()}
                   fechaFin={formFin}
                   disabled={formSaving}
-                  onSelect={(_plazo, fin) => setFormFin(fin)}
+                  onSelect={(plazo, fin) => {
+                    setFormFin(fin);
+                    // Standby: la tarea nace en pausa y sin fecha de fin.
+                    setFormStandby(plazo === "Standby");
+                  }}
                 />
                 <Label className="mt-2 block">Fecha fin</Label>
                 <DatePicker
                   value={formFin}
-                  onChange={setFormFin}
+                  onChange={(v) => {
+                    setFormFin(v);
+                    if (v) setFormStandby(false);
+                  }}
                   disabled={formSaving}
                   allowClear
                   placeholder="Sin fecha limite"
@@ -672,7 +684,7 @@ export default function TareasPage() {
                 {formFin && (
                   <div className="flex items-center gap-2">
                     <span className="text-[11px] text-muted-foreground">Plazo:</span>
-                    <PlazoBadge inicio={hoyFecha()} fin={formFin} />
+                    <PlazoBadge inicio={hoyFecha()} fin={formFin} estado={formStandby ? "Standby" : null} />
                   </div>
                 )}
               </div>

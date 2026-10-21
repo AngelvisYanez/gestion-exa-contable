@@ -9,6 +9,7 @@ export function estadoVariant(estado: string) {
     "En Proceso": "info",
     Asignado: "secondary",
     Pendiente: "muted",
+    Standby: "warning",
     Online: "success",
     Ausente: "warning",
     Desconectado: "muted",
@@ -45,22 +46,30 @@ export function ComplejidadBadge({ complejidad }: { complejidad?: string | null 
 /**
  * Plazo de la tarea (Diaria / Semanal / Mensual) segun su duracion inicio -> fin.
  * Mismo criterio que el widget "Comparativa de rendimiento" del dashboard.
+ * Una tarea en standby muestra su estado, no un plazo: no esta en Diaria/Semanal/Mensual.
  */
 export function PlazoBadge({
   inicio,
   fin,
+  estado,
   className,
 }: {
   inicio?: string | null;
   fin?: string | null;
+  estado?: string | null;
   className?: string;
 }) {
-  const plazo = plazoDesdeFechas(inicio, fin);
+  const enStandby = (estado || "").trim() === "Standby";
+  const plazo = enStandby ? "Standby" : plazoDesdeFechas(inicio, fin);
   return (
     <Badge
       variant={plazoVariant(plazo)}
       className={cn("gap-1", className)}
-      title="Plazo estimado por la duracion de la tarea (inicio a fin)"
+      title={
+        enStandby
+          ? "Tarea en standby: en pausa, sin fecha de fin"
+          : "Plazo estimado por la duracion de la tarea (inicio a fin)"
+      }
     >
       {plazo === "Sin fechas" ? "Sin fecha" : plazo}
     </Badge>

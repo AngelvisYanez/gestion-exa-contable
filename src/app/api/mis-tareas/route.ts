@@ -10,11 +10,13 @@ import {
   leerPlazoTarea,
   listAsignables,
   listTareas,
-  quitarPlazoTarea,
+  ponerTareaEnStandby,
   registrarAvance,
+  salirDeStandby,
   telemetriaPersonal,
 } from "@/lib/tareas";
 import { ticketScopeForSession } from "@/lib/ticket-scope";
+import { estadoTrasAvance } from "@/lib/standby";
 import {
   findTicketAsignado,
   kanbanToTicketEstado,
@@ -366,8 +368,11 @@ export async function POST(req: NextRequest) {
         usuCod: session.usuCod || undefined,
       });
       if (enStandby) {
-        // Standby: la tarea queda sin fecha de fin hasta que se le fije un plazo nuevo.
-        await quitarPlazoTarea(db, tarCod);
+        // Standby: la tarea pasa a estado Standby (en pausa) y se queda sin fecha de fin.
+        await ponerTareaEnStandby(db, tarCod);
+      } else {
+        // Un avance sin nota de standby reanuda la tarea (si estaba en pausa).
+        await salirDeStandby(db, tarCod);
       }
       publishEvent({
         type: "avance_registrado",
@@ -379,7 +384,7 @@ export async function POST(req: NextRequest) {
         tarCod,
         porcentaje: res.porcentaje,
         actor: session.name,
-        estado: res.porcentaje >= 100 ? "Finalizada" : "En Proceso",
+        estado: estadoTrasAvance({ porcentaje: res.porcentaje, enStandby }),
       });
       return NextResponse.json({ success: true, ...res });
     }

@@ -267,7 +267,11 @@ export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, on
                   inicio={fechaInicio}
                   fechaFin={fechaFin}
                   disabled={saving}
-                  onSelect={(_plazo, fin) => setFechaFin(fin)}
+                  onSelect={(plazo, fin) => {
+                    setFechaFin(fin);
+                    // Standby = la tarea queda en pausa (y sin fecha de fin).
+                    if (plazo === "Standby") setEstado("Standby");
+                  }}
                 />
                 <Label className="mt-2 block">Fecha fin</Label>
                 <DatePicker
@@ -280,16 +284,26 @@ export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, on
                 {fechaFin && (
                   <div className="flex items-center gap-2">
                     <span className="text-[11px] text-muted-foreground">Plazo:</span>
-                    <PlazoBadge inicio={fechaInicio} fin={fechaFin} />
+                    <PlazoBadge inicio={fechaInicio} fin={fechaFin} estado={estado} />
                   </div>
                 )}
               </div>
               {canAvance && <div className="space-y-2">
                 <Label>Estado</Label>
-                <Select value={estado} onChange={(e) => setEstado(e.target.value)} disabled={saving}>
+                <Select
+                  value={estado}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setEstado(v);
+                    // En standby la tarea no tiene fecha de fin.
+                    if (v === "Standby") setFechaFin("");
+                  }}
+                  disabled={saving}
+                >
                   <option>Pendiente</option>
                   {(!isDeveloper || perCod) && <option>Asignado</option>}
                   <option>En Proceso</option>
+                  <option>Standby</option>
                   <option>Finalizada</option>
                 </Select>
               </div>}

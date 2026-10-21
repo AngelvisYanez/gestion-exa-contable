@@ -286,11 +286,21 @@ export async function listTareas(dbDis: string, opts: {
     params.push(opts.perCod);
   }
   // Filtro por plazo (duración inicio -> fin): mismo criterio que plazoDesdeFechas()
-  if (opts.plazo && opts.plazo !== "todos" && CATEGORIAS_PLAZO.includes(opts.plazo as CategoriaPlazo)) {
+  if (opts.plazo === "Standby") {
+    // Standby: la tarea esta en pausa (espera feedback) y no tiene fecha de fin.
+    where.push("t.Tar_Estado = 'Standby'");
+  } else if (
+    opts.plazo &&
+    opts.plazo !== "todos" &&
+    CATEGORIAS_PLAZO.includes(opts.plazo as CategoriaPlazo)
+  ) {
     const diff = "DATEDIFF(DATE(t.Tar_Fecha_Fin), DATE(t.Tar_Fecha_Inicio))";
     const conFechas = "t.Tar_Fecha_Inicio IS NOT NULL AND t.Tar_Fecha_Fin IS NOT NULL";
     if (opts.plazo === "Sin fechas") {
-      where.push("NOT (t.Tar_Fecha_Inicio IS NOT NULL AND t.Tar_Fecha_Fin IS NOT NULL)");
+      // Sin fechas = nunca planificada. Las tareas en standby se filtran aparte.
+      where.push(
+        "NOT (t.Tar_Fecha_Inicio IS NOT NULL AND t.Tar_Fecha_Fin IS NOT NULL) AND t.Tar_Estado <> 'Standby'"
+      );
     } else if (opts.plazo === "Diaria") {
       where.push(`(${conFechas} AND ${diff} <= 0)`);
     } else if (opts.plazo === "Semanal") {
@@ -749,6 +759,15 @@ export async function updateTarea(
       );
       // Tarea finalizada al 100%: resuelve el ticket vinculado, si lo hay.
       await resolverTicketsDeTarea(tarCod);
+    } else if (patch.estado === "Standby") {
+      // Standby: la tarea queda en pausa y sin fecha de fin (invariante).
+      await prisma.$executeRawUnsafe(
+        `UPDATE aud_tareas
+         SET Tar_Estado = ?, Tar_Fecha_Fin = NULL, Tar_Fecha_Culminacion = NULL
+         WHERE Tar_Cod = ? AND Tar_Est = 'A'`,
+        patch.estado,
+        tarCod
+      );
     } else {
       await prisma.$executeRawUnsafe(
         `UPDATE aud_tareas
@@ -761,8 +780,11 @@ export async function updateTarea(
     return { Tar_Cod: tarCod, Tar_Estado: patch.estado };
   }
 
-  const [current] = await prisma.$queryRawUnsafe<Array<{ Tar_Descripcion: string | null }>>(
-    `SELECT CONVERT(Tar_Descripcion USING utf8mb4) AS Tar_Descripcion
+  const [current] = await prisma.$queryRawUnsafe<
+    Array<{ Tar_Descripcion: string | null; Tar_Estado: string | null }>
+  >(
+    `SELECT CONVERT(Tar_Descripcion USING utf8mb4) AS Tar_Descripcion,
+            CONVERT(Tar_Estado USING utf8mb4) AS Tar_Estado
      FROM aud_tareas WHERE Tar_Cod = ? AND Tar_Est = 'A' LIMIT 1`,
     tarCod
   );
@@ -823,6 +845,13 @@ export async function updateTarea(
     } else {
       sets.push("Tar_Fecha_Culminacion = NULL");
     }
+    if (patch.estado === "Standby") {
+      // Invariante: en standby la tarea no tiene fecha de fin.
+      sets.push("Tar_Fecha_Fin = NULL");
+    }
+  } else if (patch.fechaFin && current.Tar_Estado === "Standby") {
+    // Al fijar un plazo la tarea reanuda su trabajo: sale de standby.
+    sets.push("Tar_Estado = 'En Proceso'");
   }
 
   if (!sets.length) {
@@ -951,11 +980,29 @@ export async function leerPlazoTarea(dbDis: string, tarCod: number): Promise<str
   return ymdCalendario(row.Tar_Fecha_Fin);
 }
 
-/** Quita la fecha de fin (plazo): la tarea queda sin fecha mientras esta en standby. */
-export async function quitarPlazoTarea(dbDis: string, tarCod: number): Promise<void> {
+/**
+ * Pasa la tarea a standby: queda en pausa esperando feedback/validacion.
+ * Invariante: una tarea en standby nunca tiene fecha de fin (ni fecha de culminacion).
+ */
+export async function ponerTareaEnStandby(dbDis: string, tarCod: number): Promise<void> {
   const prisma = getPrisma(dbDis);
   await prisma.$executeRawUnsafe(
-    `UPDATE aud_tareas SET Tar_Fecha_Fin = NULL WHERE Tar_Cod = ? AND Tar_Est = 'A'`,
+    `UPDATE aud_tareas
+     SET Tar_Estado = 'Standby', Tar_Fecha_Fin = NULL, Tar_Fecha_Culminacion = NULL
+     WHERE Tar_Cod = ? AND Tar_Est = 'A'`,
+    tarCod
+  );
+}
+
+/**
+ * Saca la tarea de standby (se reanudo): vuelve a "En Proceso".
+ * Solo toca tareas que estaban en standby; no pisa estados finales.
+ */
+export async function salirDeStandby(dbDis: string, tarCod: number): Promise<void> {
+  const prisma = getPrisma(dbDis);
+  await prisma.$executeRawUnsafe(
+    `UPDATE aud_tareas SET Tar_Estado = 'En Proceso'
+     WHERE Tar_Cod = ? AND Tar_Est = 'A' AND Tar_Estado = 'Standby'`,
     tarCod
   );
 }

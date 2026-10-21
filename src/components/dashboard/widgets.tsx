@@ -296,6 +296,7 @@ export function FiltrosWidget({
         <option value="Pendiente">Pendiente</option>
         <option value="Asignado">Asignado</option>
         <option value="En Proceso">En Proceso</option>
+        <option value="Standby">Standby</option>
         <option value="Finalizada">Finalizada</option>
       </Select>
       <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
@@ -394,6 +395,7 @@ export function TareasWidget({
                   <PlazoBadge
                     inicio={t.Tar_Fecha_Inicio}
                     fin={t.Tar_Fecha_Fin}
+                    estado={t.Tar_Estado}
                     className="px-1.5 py-0 text-[10px]"
                   />
                 </div>

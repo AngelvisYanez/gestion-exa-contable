@@ -511,6 +511,7 @@ export function TareaDetalleDialog({
                     <PlazoBadge
                       inicio={t?.Tar_Fecha_Inicio ?? tarea?.Tar_Fecha_Inicio}
                       fin={t?.Tar_Fecha_Fin ?? tarea?.Tar_Fecha_Fin}
+                      estado={t?.Tar_Estado ?? tarea?.Tar_Estado}
                     />
                   </div>
                   {t?.Tar_Fecha_Culminacion && (

@@ -7,6 +7,7 @@ import { listOfsercontCatalogo } from "@/lib/brief/catalog";
 import { generateTareaBrief } from "@/lib/brief/generate";
 import { tasksDbDis, tasksEmpCod } from "@/lib/empresa";
 import { developerUpdatePermission } from "@/lib/tarea-permissions";
+import { estadoTrasAvance } from "@/lib/standby";
 import { hasRolePermission } from "@/lib/auth/role-permissions";
 import {
   AsignacionInvalidaError,
@@ -21,8 +22,9 @@ import {
   leerPlazoTarea,
   listAsignables,
   listTareas,
-  quitarPlazoTarea,
+  ponerTareaEnStandby,
   registrarAvance,
+  salirDeStandby,
   setTareaAsignados,
   updateTarea,
 } from "@/lib/tareas";
@@ -150,7 +152,12 @@ export async function POST(req: NextRequest) {
         complejidad: body.complejidad,
         fechaInicio: body.fechaInicio,
         fechaFin: body.fechaFin,
-        estado: session.role === "developer" ? "Pendiente" : body.estado,
+        estado:
+          body.estado === "Standby"
+            ? "Standby"
+            : session.role === "developer"
+              ? "Pendiente"
+              : body.estado,
         empCod,
         usuCreador: session.role === "developer" ? session.usuCod : body.usuCreador
           ? Number(body.usuCreador)
@@ -422,8 +429,11 @@ export async function POST(req: NextRequest) {
         usuCod: session?.usuCod || (body.usuCod ? Number(body.usuCod) : undefined),
       });
       if (enStandby) {
-        // Standby: la tarea queda sin fecha de fin hasta que se le fije un plazo nuevo.
-        await quitarPlazoTarea(db, tarCod);
+        // Standby: la tarea pasa a estado Standby (en pausa) y se queda sin fecha de fin.
+        await ponerTareaEnStandby(db, tarCod);
+      } else {
+        // Un avance sin nota de standby reanuda la tarea (si estaba en pausa).
+        await salirDeStandby(db, tarCod);
       }
       publishEvent({
         type: "avance_registrado",
@@ -435,7 +445,7 @@ export async function POST(req: NextRequest) {
         db,
         tarCod,
         porcentaje: res.porcentaje,
-        estado: res.porcentaje >= 100 ? "Finalizada" : "En Proceso",
+        estado: estadoTrasAvance({ porcentaje: res.porcentaje, enStandby }),
         actor: session?.name,
       });
       return NextResponse.json({ success: true, ...res });

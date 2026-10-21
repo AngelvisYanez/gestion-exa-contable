@@ -1055,7 +1055,8 @@ export function kanbanToTicketEstado(estado: string): TicketEstado {
   if (e === "Finalizada" || e === "Cerrado" || e === "Resuelto") return "Cerrado";
   if (e === "Pendiente" || e === "Nuevo") return "Nuevo";
   if (e === "Asignado") return "Asignado";
-  if (e === "En Proceso") return "En Proceso";
+  // Standby no existe en tickets: el ticket sigue abierto y en proceso.
+  if (e === "Standby" || e === "En Proceso") return "En Proceso";
   return "Asignado";
 }
 
