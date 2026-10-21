@@ -19,6 +19,10 @@ export type AvanceActividad = {
   bloqueos: string;
   /** Espera por feedback o validacion: la tarea queda en standby. */
   standby?: string;
+  /** Plazo que tenia la tarea antes de mover la fecha por el standby. */
+  plazoAnterior?: string | null;
+  /** Fecha en la que se retoma la tarea (plazo nuevo). */
+  standbyHasta?: string | null;
   horas: number | null;
   enlaces: string[];
   adjuntos: Array<{ ruta: string; url: string; nombre: string; esImagen: boolean }>;
@@ -336,6 +340,10 @@ export function buildReporte(opts: {
       if (a.siguiente) L.push(`  - Siguiente paso: ${a.siguiente}`);
       if (a.bloqueos) L.push(`  - Bloqueos: ${a.bloqueos}`);
       if (a.standby) L.push(`  - Standby: ${a.standby}`);
+      if (a.standbyHasta)
+        L.push(
+          `  - Reanudo: ${a.standbyHasta}` + (a.plazoAnterior ? ` (plazo anterior: ${a.plazoAnterior})` : "")
+        );
       for (const e of a.enlaces) L.push(`  - Evidencia: ${e}`);
       for (const f of a.adjuntos) L.push(`  - Adjunto: ${f.nombre} — ${f.url}`);
     }

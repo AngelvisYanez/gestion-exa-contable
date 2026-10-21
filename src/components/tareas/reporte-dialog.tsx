@@ -244,6 +244,7 @@ function ReportePreview({ data }: { data: ReporteData }) {
                           <p className="mt-1 inline-flex items-start gap-1 text-[11px] font-medium text-violet-800">
                             <PauseCircle className="mt-0.5 size-3 shrink-0" />
                             {a.standby}
+                            {a.standbyHasta ? ` · reanudo ${a.standbyHasta}` : ""}
                           </p>
                         )}
                         {(a.enlaces.length > 0 || a.adjuntos.length > 0) && (
@@ -333,6 +334,12 @@ function buildPrintHtml(data: ReporteData) {
               if (a.siguiente) bits.push(`<p class="meta"><b>Siguiente:</b> ${escapeHtml(a.siguiente)}</p>`);
               if (a.bloqueos) bits.push(`<p class="warn"><b>Bloqueo:</b> ${escapeHtml(a.bloqueos)}</p>`);
               if (a.standby) bits.push(`<p class="standby"><b>Standby:</b> ${escapeHtml(a.standby)}</p>`);
+              if (a.standbyHasta)
+                bits.push(
+                  `<p class="standby"><b>Reanudo:</b> ${escapeHtml(a.standbyHasta)}${
+                    a.plazoAnterior ? ` (plazo anterior: ${escapeHtml(a.plazoAnterior)})` : ""
+                  }</p>`
+                );
               for (const e of a.enlaces) bits.push(`<p class="link"><a href="${escapeHtml(e)}">${escapeHtml(e)}</a></p>`);
               for (const f of a.adjuntos)
                 bits.push(`<p class="link"><a href="${escapeHtml(f.url)}">${escapeHtml(f.nombre)}</a></p>`);

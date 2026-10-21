@@ -232,6 +232,8 @@ function textoParaCompartir(tarea: Tarea, detalle: TareaDetalle | null) {
       if (avance.siguiente) lineas.push(`  Siguiente: ${avance.siguiente}`);
       if (avance.bloqueos) lineas.push(`  Bloqueos: ${avance.bloqueos}`);
       if (avance.standby) lineas.push(`  Standby: ${avance.standby}`);
+      if (avance.standbyHasta) lineas.push(`  Reanudo: ${avance.standbyHasta}`);
+      if (avance.plazoAnterior) lineas.push(`  Plazo anterior: ${avance.plazoAnterior}`);
       for (const enlace of avance.enlaces) lineas.push(`  Enlace: ${enlace}`);
       for (const archivo of avance.adjuntos) {
         lineas.push(`  Adjunto: ${archivo.nombre} (${new URL(archivo.url, window.location.origin).href})`);
@@ -765,6 +767,8 @@ export function TareaDetalleDialog({
                           <PauseCircle className="mt-0.5 size-3.5 shrink-0" />
                           <span>
                             <strong>Standby:</strong> {item.avance.standby}
+                            {item.avance.standbyHasta ? ` · Reanudo: ${item.avance.standbyHasta}` : ""}
+                            {item.avance.plazoAnterior ? ` (plazo anterior: ${item.avance.plazoAnterior})` : ""}
                           </span>
                         </p>
                       )}

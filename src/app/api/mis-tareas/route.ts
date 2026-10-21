@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { hasRolePermission } from "@/lib/auth/role-permissions";
+import { fechaReanudacionStandby } from "@/lib/avance-format";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { publishEvent } from "@/lib/events";
 import { tasksDbDis, tasksEmpCod } from "@/lib/empresa";
@@ -7,8 +8,10 @@ import {
   actividadPersonal,
   descripcionAvanceDesdeBody,
   getTareaDetalle,
+  leerPlazoTarea,
   listAsignables,
   listTareas,
+  moverPlazoTarea,
   registrarAvance,
   telemetriaPersonal,
 } from "@/lib/tareas";
@@ -342,7 +345,30 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ success: false, message: "El apoyo debe ser un miembro del equipo autorizado." }, { status: 400 });
         }
       }
-      const descripcion = descripcionAvanceDesdeBody(body, tarCod, apoyo);
+      // Standby: la tarea espera feedback/validacion y su plazo se mueve a la fecha de reanudacion.
+      const notaStandby = String(body.standby ?? "").trim();
+      let standbyHasta: string | null = null;
+      try {
+        standbyHasta = fechaReanudacionStandby(body.standbyHasta);
+      } catch (e) {
+        return NextResponse.json(
+          { success: false, message: e instanceof Error ? e.message : "Fecha inválida" },
+          { status: 400 }
+        );
+      }
+      if (standbyHasta && !notaStandby) {
+        return NextResponse.json(
+          { success: false, message: "Describe el motivo del standby para mover el plazo." },
+          { status: 400 }
+        );
+      }
+      // Si el avance cierra la tarea (100%) no se mueve el plazo: la tarea queda finalizada.
+      if (porcentaje >= 100) standbyHasta = null;
+      const plazoAnterior = standbyHasta ? await leerPlazoTarea(db, tarCod) : null;
+      const descripcion = descripcionAvanceDesdeBody(body, tarCod, apoyo, {
+        plazoAnterior,
+        standbyHasta,
+      });
       if (!descripcion.trim()) {
         return NextResponse.json(
           { success: false, message: "Describe lo que avanzaste para registrar el avance." },
@@ -355,10 +381,16 @@ export async function POST(req: NextRequest) {
         descripcion,
         usuCod: session.usuCod || undefined,
       });
+      if (standbyHasta) {
+        // Standby con traslado de plazo: la tarea deja de contar como atrasada.
+        await moverPlazoTarea(db, tarCod, standbyHasta);
+      }
       publishEvent({
         type: "avance_registrado",
         title: "Avance registrado",
-        message: `${session.name || "Usuario"} · #${tarCod} · ${res.porcentaje}%`,
+        message:
+          `${session.name || "Usuario"} · #${tarCod} · ${res.porcentaje}%` +
+          (standbyHasta ? ` · standby hasta ${standbyHasta}` : ""),
         db,
         tarCod,
         porcentaje: res.porcentaje,

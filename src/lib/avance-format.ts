@@ -3,6 +3,8 @@
  * Se mantiene legible para el módulo PHP legacy: una sección por línea con prefijo fijo.
  */
 
+import { hoyFecha } from "./timezone";
+
 export type AvanceEstructurado = {
   realizado: string;
   apoyo: string | null;
@@ -10,6 +12,10 @@ export type AvanceEstructurado = {
   bloqueos: string;
   /** Espera por feedback o validacion: la tarea queda en standby. */
   standby: string;
+  /** Plazo que tenia la tarea antes de mover la fecha por el standby. */
+  plazoAnterior: string | null;
+  /** Fecha en la que se retoma la tarea (plazo nuevo). */
+  standbyHasta: string | null;
   horas: number | null;
   enlaces: string[];
   adjuntos: string[];
@@ -20,6 +26,8 @@ const PREFIJOS = {
   siguiente: "Siguiente paso:",
   bloqueos: "Bloqueos:",
   standby: "Standby:",
+  plazoAnterior: "Plazo anterior:",
+  standbyHasta: "Reanudo:",
   horas: "Horas:",
   enlace: "Evidencia:",
   adjunto: "Adjunto:",
@@ -37,6 +45,8 @@ export function buildAvanceDescripcion(a: Partial<AvanceEstructurado>): string {
   if (a.siguiente?.trim()) lines.push(`${PREFIJOS.siguiente} ${oneLine(a.siguiente)}`);
   if (a.bloqueos?.trim()) lines.push(`${PREFIJOS.bloqueos} ${oneLine(a.bloqueos)}`);
   if (a.standby?.trim()) lines.push(`${PREFIJOS.standby} ${oneLine(a.standby)}`);
+  if (a.plazoAnterior?.trim()) lines.push(`${PREFIJOS.plazoAnterior} ${oneLine(a.plazoAnterior)}`);
+  if (a.standbyHasta?.trim()) lines.push(`${PREFIJOS.standbyHasta} ${oneLine(a.standbyHasta)}`);
   if (a.horas != null && a.horas > 0) lines.push(`${PREFIJOS.horas} ${Math.round(a.horas * 100) / 100}`);
   for (const e of a.enlaces || []) if (e.trim()) lines.push(`${PREFIJOS.enlace} ${e.trim()}`);
   for (const f of a.adjuntos || []) if (f.trim()) lines.push(`${PREFIJOS.adjunto} ${f.trim()}`);
@@ -50,6 +60,8 @@ export function parseAvanceDescripcion(raw: string | null | undefined): AvanceEs
     siguiente: "",
     bloqueos: "",
     standby: "",
+    plazoAnterior: null,
+    standbyHasta: null,
     horas: null,
     enlaces: [],
     adjuntos: [],
@@ -62,6 +74,8 @@ export function parseAvanceDescripcion(raw: string | null | undefined): AvanceEs
     else if (l.startsWith(PREFIJOS.siguiente)) out.siguiente = l.slice(PREFIJOS.siguiente.length).trim();
     else if (l.startsWith(PREFIJOS.bloqueos)) out.bloqueos = l.slice(PREFIJOS.bloqueos.length).trim();
     else if (l.startsWith(PREFIJOS.standby)) out.standby = l.slice(PREFIJOS.standby.length).trim();
+    else if (l.startsWith(PREFIJOS.plazoAnterior)) out.plazoAnterior = l.slice(PREFIJOS.plazoAnterior.length).trim() || null;
+    else if (l.startsWith(PREFIJOS.standbyHasta)) out.standbyHasta = l.slice(PREFIJOS.standbyHasta.length).trim() || null;
     else if (l.startsWith(PREFIJOS.horas)) {
       const n = parseFloat(l.slice(PREFIJOS.horas.length).replace(",", "."));
       out.horas = Number.isFinite(n) ? n : null;
@@ -73,10 +87,21 @@ export function parseAvanceDescripcion(raw: string | null | undefined): AvanceEs
   return out;
 }
 
+/**
+ * Standby: la tarea espera feedback o validacion y su plazo se mueve a la fecha
+ * de reanudacion. Devuelve la fecha validada o lanza Error con el mensaje a mostrar.
+ */
+export function fechaReanudacionStandby(v: unknown): string | null {
+  const s = String(v ?? "").trim();
+  if (!s) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) throw new Error("Fecha de reanudación inválida.");
+  if (s < hoyFecha()) throw new Error("La fecha de reanudación no puede ser anterior a hoy.");
+  return s;
+}
+
 export function isImagePath(p: string) {
   return /\.(png|jpe?g|webp|gif)$/i.test(p);
 }
-
 export function isSafeUrl(u: string) {
   return /^https?:\/\//i.test(u.trim());
 }
