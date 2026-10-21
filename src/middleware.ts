@@ -75,6 +75,13 @@ export async function middleware(req: NextRequest) {
     return deny(req, "Solo el encargado puede ver monitoreo y configuracion.");
   }
 
+  // Listado del equipo: lo necesita todo rol que registre avances para elegir
+  // quien ayudo. El desarrollador no asigna tareas, pero si las avanza, asi que
+  // puede consultar el equipo y dejar el apoyo como dato opcional del avance.
+  if (devsAsignables && hasRolePermission(session, "tareas.avance")) {
+    return NextResponse.next();
+  }
+
   const devTickets =
     session.role === "developer" &&
     (pathname === "/tickets" || pathname.startsWith("/api/tickets"));

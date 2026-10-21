@@ -60,6 +60,7 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
   const [bloqueos, setBloqueos] = useState("");
   const [horas, setHoras] = useState("");
   const [apoyoPerCod, setApoyoPerCod] = useState("");
+  const [apoyoError, setApoyoError] = useState("");
   const [asignables, setAsignables] = useState<Array<{ Per_Cod: number; Nombre: string }>>([]);
   const [loadingApoyos, setLoadingApoyos] = useState(false);
   const [enlace, setEnlace] = useState("");
@@ -102,6 +103,7 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
     let cancelled = false;
     const apoyoInicial = tarea.Tar_Apoyo_Per_Cod ? String(tarea.Tar_Apoyo_Per_Cod) : "";
     setApoyoPerCod(apoyoInicial);
+    setApoyoError("");
     setAsignables([]);
     setLoadingApoyos(true);
     fetch(`/api/devs?view=colaboradores&asignables=1&Ses_Dat_Dis=${encodeURIComponent(apoyoDb)}`)
@@ -117,8 +119,13 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
       })
       .catch((err) => {
         if (cancelled) return;
+        // El apoyo es opcional: si no se lista el equipo, el avance se guarda igual.
         setApoyoPerCod("");
-        setError(err instanceof Error ? err.message : "No se pudo cargar el equipo.");
+        setApoyoError(
+          err instanceof Error
+            ? `${err.message} Puedes registrar el avance sin indicar el apoyo.`
+            : "No se pudo cargar el equipo. Puedes registrar el avance sin indicar el apoyo."
+        );
       })
       .finally(() => { if (!cancelled) setLoadingApoyos(false); });
     return () => { cancelled = true; };
@@ -390,7 +397,7 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
 
           {!esTicket && (
             <div className="space-y-2">
-              <Label htmlFor="avance-apoyo">¿Quién ayudó en este avance?</Label>
+              <Label htmlFor="avance-apoyo">¿Quién ayudó en este avance? (opcional)</Label>
               <Select
                 id="avance-apoyo"
                 value={apoyoPerCod}
@@ -405,6 +412,9 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
               <p className="text-[11px] text-muted-foreground">
                 Se guardará con este avance, aunque luego cambie el apoyo de la tarea.
               </p>
+              {apoyoError && (
+                <p className="text-[11px] text-amber-700">{apoyoError}</p>
+              )}
             </div>
           )}
 
@@ -547,7 +557,7 @@ export function AvanceDialog({ tarea, onClose, onSaved, endpoint, extraBody, req
               <Button type="button" variant="ghost" onClick={onClose} disabled={saving || pendingUploads > 0}>
                 Cancelar
               </Button>
-              <Button type="button" variant="success" onClick={() => void guardar()} disabled={saving || pendingUploads > 0 || (!esTicket && loadingApoyos)}>
+              <Button type="button" variant="success" onClick={() => void guardar()} disabled={saving || pendingUploads > 0}>
                 {saving ? (
                   <>
                     <Loader2 className="animate-spin" />

@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSessionFromRequest } from "@/lib/auth/session";
+import { hasRolePermission } from "@/lib/auth/role-permissions";
 import { sanitizeDbDis } from "@/lib/db";
 import {
   historialCapturas,
@@ -34,6 +36,18 @@ export async function GET(req: NextRequest) {
     if (view === "colaboradores") {
       const asignables = sp.get("asignables") === "1";
       if (asignables) {
+        // Lista de equipo: la consultan quienes registran avances para indicar
+        // el apoyo. No habilita asignar, solo deja elegir a quien ayudo.
+        const session = await getSessionFromRequest(req);
+        if (!session) {
+          return NextResponse.json({ success: false, message: "No autenticado" }, { status: 401 });
+        }
+        if (!hasRolePermission(session, "tareas.avance")) {
+          return NextResponse.json(
+            { success: false, message: "Tu rol no puede registrar avances." },
+            { status: 403 }
+          );
+        }
         const rows = await listAsignables(db);
         return NextResponse.json({ success: true, colaboradores: rows });
       }
