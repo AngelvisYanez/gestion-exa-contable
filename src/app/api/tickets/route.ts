@@ -9,6 +9,7 @@ import { createTarea, setTareaAsignados } from "@/lib/tareas";
 import { normalizePrioridad } from "@/lib/domain-constants";
 import { fechaFinPorPlazo } from "@/lib/plazo";
 import { linkTicketTarea } from "@/lib/ticket-tarea";
+import { asignacionSoloPropia } from "@/lib/ticket-assign";
 import { ticketScopeForSession } from "@/lib/ticket-scope";
 import {
   assignTicket,
@@ -154,7 +155,7 @@ export async function GET(req: NextRequest) {
           : vista === "todos"
             ? all
             : all.filter((t) => t.Tic_Estado !== "Cerrado");
-      return NextResponse.json({
+      const payload: Record<string, unknown> = {
         success: true,
         db,
         source: "tickets-mios",
@@ -164,7 +165,30 @@ export async function GET(req: NextRequest) {
         bandeja: vista,
         desde: desde || null,
         hasta: hasta || null,
-      });
+      };
+      if (withAssignees) {
+        // Un desarrollador solo puede asignarse tickets a si mismo: el dialogo
+        // muestra unicamente su ficha.
+        const propios = (await listTicketAssignees()).filter(
+          (a) =>
+            (a.Usu_Cod != null && scope.aseCodes.includes(a.Usu_Cod)) ||
+            (a.Per_Cod != null && a.Per_Cod > 0 && scope.perCodes.includes(a.Per_Cod))
+        );
+        payload.asignables = propios.length
+          ? propios
+          : scope.aseCodes.length
+            ? [
+                {
+                  Per_Cod: scope.perCodes[0] || 0,
+                  Usu_Cod: scope.aseCodes[0],
+                  Nombre: session.name,
+                  Cedula: session.cedula,
+                  Rol: "developer",
+                },
+              ]
+            : [];
+      }
+      return NextResponse.json(payload);
     }
 
     const bases = await resolveTicketDatabaseIds();
@@ -225,7 +249,11 @@ export async function POST(req: NextRequest) {
     }
 
     if (!canAssignWork(session?.role)) {
-      const devOk = session?.role === "developer" && (action === "estado" || action === "avance");
+      // El desarrollador puede moverse entre estados/avance y asignarse
+      // tickets a si mismo (la asignacion se valida mas abajo).
+      const devOk =
+        session?.role === "developer" &&
+        (action === "estado" || action === "avance" || action === "assign");
       if (!devOk) {
         return NextResponse.json(
           { success: false, message: "No tienes acceso a esa accion." },
@@ -374,15 +402,37 @@ export async function POST(req: NextRequest) {
     if (action === "assign") {
       const ticCod = Number(body.Tic_Cod || 0);
       const rawList = Array.isArray(body.asignados) ? body.asignados : [];
-      const asignados = rawList
+      let asignados = rawList
         .map((a: { Usu_Cod?: number; usuCod?: number; Per_Cod?: number; perCod?: number }) => ({
           usuCod: Number(a.Usu_Cod ?? a.usuCod ?? 0),
           perCod: Number(a.Per_Cod ?? a.perCod ?? 0) || undefined,
         }))
         .filter((a: { usuCod: number }) => a.usuCod > 0);
-      const usuCod = Number(body.Usu_Cod || 0);
-      const perCod = body.Per_Cod ? Number(body.Per_Cod) : undefined;
-      if (!ticCod || (!usuCod && !asignados.length)) {
+      let usuCod = Number(body.Usu_Cod || 0);
+      let perCod = body.Per_Cod ? Number(body.Per_Cod) : undefined;
+      if (!ticCod) {
+        return NextResponse.json(
+          { success: false, message: "Tic_Cod y al menos un desarrollador son requeridos" },
+          { status: 400 }
+        );
+      }
+      if (session.role === "developer") {
+        // Solo puede asignarse el ticket a si mismo (sin tocar a otros).
+        const scope = await ticketScopeForSession(session);
+        const destino = asignacionSoloPropia(
+          asignados.length ? asignados : usuCod ? [{ usuCod, perCod }] : [],
+          scope
+        );
+        if (!destino) {
+          return NextResponse.json(
+            { success: false, message: "Solo puedes asignarte el ticket a ti mismo." },
+            { status: 403 }
+          );
+        }
+        asignados = destino;
+        usuCod = destino[0].usuCod;
+        perCod = destino[0].perCod;
+      } else if (!usuCod && !asignados.length) {
         return NextResponse.json(
           { success: false, message: "Tic_Cod y al menos un desarrollador son requeridos" },
           { status: 400 }

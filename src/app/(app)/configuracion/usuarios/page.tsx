@@ -49,7 +49,7 @@ const PERMISOS: Array<{ modulo: string; accion: string; key?: RolePermissionKey;
   { modulo: "Tareas", accion: "Estado y avance", key: "tareas.avance", porRol: { developer: "Propias y asignadas", atencion: "Si", manager: "Si" } },
   { modulo: "Tickets", accion: "Ver", key: "tickets.ver", porRol: { developer: "Asignados", atencion: "Todos", manager: "Todos" } },
   { modulo: "Tickets", accion: "Crear", key: "tickets.crear", porRol: { developer: "No", atencion: "Si", manager: "Si" } },
-  { modulo: "Tickets", accion: "Asignar", key: "tickets.asignar", porRol: { developer: "No", atencion: "Si", manager: "Si" } },
+  { modulo: "Tickets", accion: "Asignar", key: "tickets.asignar", porRol: { developer: "Solo a sí mismo", atencion: "Si", manager: "Si" } },
   { modulo: "Tickets", accion: "Estado y avance", key: "tickets.avance", porRol: { developer: "Asignados", atencion: "Si", manager: "Si" } },
   { modulo: "Mis tareas", accion: "Ver asignadas", porRol: { developer: "Si", atencion: "Si", manager: "Si" } },
   { modulo: "Monitoreo", accion: "Ver", porRol: { developer: "No", atencion: "No", manager: "Si" } },

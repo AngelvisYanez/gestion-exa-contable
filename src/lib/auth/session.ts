@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { signPayload, unsignPayload } from "./crypto";
 import { ExaAuthUser } from "./exaLogin";
 import { decodeRole, encodeRole, UserRole } from "./users";
-import { decodeRolePermissions, encodeRolePermissions, type RolePermissions } from "./role-permissions";
+import { decodeRolePermissions, encodeRolePermissions, PERMISSIONS_VERSION, type RolePermissions } from "./role-permissions";
 
 export const SESSION_COOKIE = "exa_tar_sess";
 
@@ -34,6 +34,7 @@ type CompactSession = {
   emp: number;
   db: string;
   pm?: string;
+  pv?: number;
   e: number;
 };
 
@@ -53,6 +54,7 @@ function toCompact(user: ExaAuthUser): CompactSession {
     emp: user.empCod || 0,
     db: String(user.dbDis || "exa").slice(0, 32),
     pm: encodeRolePermissions(user.role, user.permissions),
+    pv: PERMISSIONS_VERSION,
     e: Date.now() + 1000 * 60 * 60 * 12,
   };
 }
@@ -74,7 +76,7 @@ function fromCompact(data: CompactSession | SessionData): SessionData | null {
       prsCod: c.prs || 0,
       empCod: c.emp || 0,
       dbDis: c.db || "exa",
-      permissions: decodeRolePermissions(decodeRole(c.r), c.pm),
+      permissions: decodeRolePermissions(decodeRole(c.r), c.pm, c.pv ?? 1),
       exp: c.e,
     };
   }
@@ -98,8 +100,12 @@ function fromCompact(data: CompactSession | SessionData): SessionData | null {
     empCod: legacy.empCod || 0,
     dbDis: legacy.dbDis || "exa",
     permissions: legacy.permissions
-      ? decodeRolePermissions(decodeRole(legacy.role), encodeRolePermissions(decodeRole(legacy.role), legacy.permissions))
-      : decodeRolePermissions(decodeRole(legacy.role)),
+      ? decodeRolePermissions(
+          decodeRole(legacy.role),
+          encodeRolePermissions(decodeRole(legacy.role), legacy.permissions),
+          1
+        )
+      : decodeRolePermissions(decodeRole(legacy.role), null, 1),
     exp: legacy.exp,
   };
 }

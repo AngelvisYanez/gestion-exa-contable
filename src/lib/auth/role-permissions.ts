@@ -16,6 +16,12 @@ export const ROLE_PERMISSION_KEYS = [
 export type RolePermissionKey = (typeof ROLE_PERMISSION_KEYS)[number];
 export type RolePermissions = Record<RolePermissionKey, boolean>;
 
+/**
+ * Version de los permisos por defecto. Se guarda en la cookie de sesion para
+ * no arrastrar valores viejos cuando cambian los limites de un rol.
+ */
+export const PERMISSIONS_VERSION = 2;
+
 export const ROLE_PERMISSION_LABELS: Record<RolePermissionKey, { modulo: string; accion: string }> = {
   "tareas.ver": { modulo: "Tareas", accion: "Ver" },
   "tareas.crear": { modulo: "Tareas", accion: "Crear" },
@@ -52,7 +58,8 @@ const DEFAULTS: Record<UserRole, RolePermissions> = {
     "tareas.avance": true,
     "tickets.ver": true,
     "tickets.crear": false,
-    "tickets.asignar": false,
+    // Puede asignarse tickets, pero solo a si mismo (se valida en la API).
+    "tickets.asignar": true,
     "tickets.avance": true,
   },
 };
@@ -81,14 +88,23 @@ export function encodeRolePermissions(role: UserRole, permissions?: Partial<Role
   return ROLE_PERMISSION_KEYS.map((key) => effective[key] ? "1" : "0").join("");
 }
 
-export function decodeRolePermissions(role: UserRole, encoded?: string | null): RolePermissions {
-  if (!encoded || encoded.length !== ROLE_PERMISSION_KEYS.length || /[^01]/.test(encoded)) {
-    return defaultRolePermissions(role);
+export function decodeRolePermissions(
+  role: UserRole,
+  encoded?: string | null,
+  version = PERMISSIONS_VERSION
+): RolePermissions {
+  const overrides = encoded && encoded.length === ROLE_PERMISSION_KEYS.length && !/[^01]/.test(encoded)
+    ? (Object.fromEntries(
+        ROLE_PERMISSION_KEYS.map((key, index) => [key, encoded[index] === "1"])
+      ) as RolePermissions)
+    : undefined;
+  const permissions = effectiveRolePermissions(role, overrides);
+  // Las cookies anteriores a la version 2 se firmaron cuando el desarrollador
+  // no podia asignar tickets, por eso guardan un 0 que ya no aplica.
+  if (version < PERMISSIONS_VERSION && role === "developer") {
+    permissions["tickets.asignar"] = DEFAULTS.developer["tickets.asignar"];
   }
-  const overrides = Object.fromEntries(
-    ROLE_PERMISSION_KEYS.map((key, index) => [key, encoded[index] === "1"])
-  ) as RolePermissions;
-  return effectiveRolePermissions(role, overrides);
+  return permissions;
 }
 
 export function hasRolePermission(

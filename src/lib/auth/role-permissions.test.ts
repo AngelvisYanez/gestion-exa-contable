@@ -15,6 +15,16 @@ describe("permisos por rol", () => {
     assert.equal(permissions["tareas.asignar"], false);
     assert.equal(permissions["tareas.eliminar"], false);
     assert.equal(permissions["tickets.crear"], false);
+    // Puede asignarse tickets, pero la API limita a su propio usuario.
+    assert.equal(permissions["tickets.asignar"], true);
+  });
+
+  it("ignora el 0 viejo de tickets.asignar en cookies del desarrollador", () => {
+    const viejo = "1001011001"; // cookie previa: tickets.asignar apagado
+    assert.equal(decodeRolePermissions("developer", viejo, 2)["tickets.asignar"], false);
+    assert.equal(decodeRolePermissions("developer", viejo, 1)["tickets.asignar"], true);
+    // Los demas roles conservan su valor.
+    assert.equal(decodeRolePermissions("atencion", "1001011011", 1)["tickets.asignar"], true);
   });
 
   it("permite restringir sin escalar privilegios", () => {

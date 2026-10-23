@@ -157,6 +157,8 @@ export default function TicketsPage() {
   const { db, user, loading: authLoading } = useAuth();
   const isDev = user?.role === "developer";
   const puedeAsignar = hasRolePermission(user, "tickets.asignar");
+  // El desarrollador puede asignarse tickets, pero solo a si mismo.
+  const soloAsignarme = user?.role === "developer";
   const puedeCrear = hasRolePermission(user, "tickets.crear");
   const puedeAvanzar = hasRolePermission(user, "tickets.avance");
   // Convertir ticket → tarea: lo determina atención al cliente o el encargado.
@@ -467,17 +469,27 @@ export default function TicketsPage() {
   };
 
   const asignar = async () => {
-    if (!assignOpen || assignUsus.length === 0) {
-      setAssignError("Selecciona al menos un desarrollador del equipo.");
+    const mio = asignables.find((a) => a.Usu_Cod === user?.usuCod) ?? asignables[0];
+    const asignados = soloAsignarme
+      ? (() => {
+          const usuCod = mio?.Usu_Cod ?? user?.usuCod ?? 0;
+          return usuCod > 0 ? [{ Usu_Cod: usuCod, Per_Cod: mio?.Per_Cod }] : [];
+        })()
+      : assignUsus.map((usu) => {
+          const chosen = asignables.find((a) => a.Usu_Cod === usu);
+          return { Usu_Cod: usu, Per_Cod: chosen?.Per_Cod };
+        });
+    if (!assignOpen || asignados.length === 0) {
+      setAssignError(
+        soloAsignarme
+          ? "No encontramos tu usuario EXA para asignarte el ticket."
+          : "Selecciona al menos un desarrollador del equipo."
+      );
       return;
     }
     setAssignSaving(true);
     setAssignError("");
     try {
-      const asignados = assignUsus.map((usu) => {
-        const chosen = asignables.find((a) => a.Usu_Cod === usu);
-        return { Usu_Cod: usu, Per_Cod: chosen?.Per_Cod };
-      });
       const res = await fetch("/api/tickets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -508,8 +520,13 @@ export default function TicketsPage() {
         : t.Asignado_Usu_Cod
           ? [t.Asignado_Usu_Cod]
           : [];
+    const miUsuCod =
+      asignables.find((a) => a.Usu_Cod === user?.usuCod)?.Usu_Cod ??
+      asignables[0]?.Usu_Cod ??
+      user?.usuCod ??
+      0;
     setAssignError("");
-    setAssignUsus(ids);
+    setAssignUsus(soloAsignarme ? (miUsuCod > 0 ? [miUsuCod] : []) : ids);
     setAssignOpen(t);
   };
 
@@ -757,7 +774,7 @@ export default function TicketsPage() {
                 placeholder="Buscar por #, tema, empresa..."
               />
             </div>
-            {puedeAsignar && (
+            {puedeAsignar && !soloAsignarme && (
               <Select
                 className="h-9 min-h-0 text-sm"
                 wrapperClassName="w-full min-w-[220px] sm:w-[260px]"
@@ -891,7 +908,7 @@ export default function TicketsPage() {
                           }}
                         >
                           <UserPlus className="size-3.5" />
-                          {t.Asignado_Usu_Cod ? "Reasignar" : "Asignar"}
+                          {soloAsignarme ? "Asignarme" : t.Asignado_Usu_Cod ? "Reasignar" : "Asignar"}
                         </Button>
                       )}
                       {puedeAvanzar && t.Tic_Estado === "Asignado" && (
@@ -1045,7 +1062,7 @@ export default function TicketsPage() {
                                 }}
                               >
                                 <UserPlus className="size-3.5" />
-                                {t.Asignado_Usu_Cod ? "Reasignar" : "Asignar"}
+                                {soloAsignarme ? "Asignarme" : t.Asignado_Usu_Cod ? "Reasignar" : "Asignar"}
                               </Button>
                             )}
                             {puedeAvanzar && t.Tic_Estado === "Asignado" && (
@@ -1456,16 +1473,18 @@ export default function TicketsPage() {
         <Dialog open={!!assignOpen} onOpenChange={(o) => !o && setAssignOpen(null)}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Asignar ticket</DialogTitle>
+              <DialogTitle>{soloAsignarme ? "Asignarme el ticket" : "Asignar ticket"}</DialogTitle>
               <DialogDescription>
-                #{assignOpen?.Tic_Cod} · {origenLabel(assignOpen?.Db_Origen)} · {assignOpen?.Tic_Titulo}.
-                Puedes marcar varios del equipo.
+                #{assignOpen?.Tic_Cod} · {origenLabel(assignOpen?.Db_Origen)} · {assignOpen?.Tic_Titulo}.{" "}
+                {soloAsignarme
+                  ? "Como desarrollador solo puedes asignarte el ticket a ti mismo."
+                  : "Puedes marcar varios del equipo."}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
               {assignError ? <Alert variant="destructive">{assignError}</Alert> : null}
               <div className="space-y-2">
-                <Label>Equipo ({assignUsus.length})</Label>
+                <Label>{soloAsignarme ? "Mi usuario" : `Equipo (${assignUsus.length})`}</Label>
                 <div className="max-h-64 space-y-1 overflow-y-auto rounded-lg border border-border/70 p-2">
                   {asignables.filter((a) => a.Usu_Cod).length === 0 ? (
                     <p className="px-2 py-3 text-sm text-muted-foreground">
@@ -1485,7 +1504,7 @@ export default function TicketsPage() {
                               type="checkbox"
                               className="size-4 accent-sky-700"
                               checked={checked}
-                              disabled={assignSaving}
+                              disabled={assignSaving || soloAsignarme}
                               onChange={() => {
                                 const id = a.Usu_Cod!;
                                 setAssignUsus((prev) =>
@@ -1495,7 +1514,8 @@ export default function TicketsPage() {
                             />
                             <span>
                               {a.Nombre}
-                              {a.Rol === "atencion" ? ` · ${roleLabel(a.Rol)}` : ""}
+                              {soloAsignarme ? " · tú" : ""}
+                              {!soloAsignarme && a.Rol === "atencion" ? ` · ${roleLabel(a.Rol)}` : ""}
                               {a.Cedula ? ` · ${a.Cedula}` : ""}
                             </span>
                           </label>
@@ -1511,7 +1531,7 @@ export default function TicketsPage() {
               </Button>
               <Button type="button" onClick={() => void asignar()} disabled={assignSaving}>
                 {assignSaving ? <Loader2 className="animate-spin" /> : <UserPlus />}
-                Asignar
+                {soloAsignarme ? "Asignarme" : "Asignar"}
               </Button>
             </DialogFooter>
           </DialogContent>
