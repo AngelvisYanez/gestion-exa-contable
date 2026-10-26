@@ -6,6 +6,8 @@ La versión vigente del código es `AGENT_VERSION` en `exa_agent.py`.
 
 | Versión | Ejecutable local | Qué cambió |
 | --- | --- | --- |
+| 2.13.0-flet | `dist/ExaMonitor.exe` | Avances con apoyo opcional; tareas identificadas y filtradas por plazo (diaria, semanal, mensual, standby); selección simultánea de tarea y ticket para telemetría. |
+| 2.12.2-flet | `dist/ExaMonitor.exe` | Replicados cambios de gestión: apoyo en avance, vínculo ticket-tarea, mejoras en dashboard y tickets. |
 | 2.12.1-flet | `dist/ExaMonitor.exe` | Barra de progreso al subir evidencias en la creación de tareas. |
 | 2.12.0-flet | `dist/ExaMonitor.exe` | Auto-actualización: detecta nuevas versiones en GitHub y permite actualizar desde la app. |
 | 2.11.2-flet | `dist/ExaMonitor-2.11.2.exe` | Muestra la versión en la ventana y la incluye en el nombre del ejecutable. |

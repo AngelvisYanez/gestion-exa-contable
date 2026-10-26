@@ -20,7 +20,7 @@ import flet as ft
 import requests
 import screen_capture  # noqa: F401  (PyInstaller debe empaquetar la captura)
 
-from bandeja import trabajos_activos, visible_trabajos
+from bandeja import plazo_tarea, trabajos_activos, visible_trabajos
 
 from win_shell import (
     clipboard_files,
@@ -31,7 +31,7 @@ from win_shell import (
     start_input_counter,
 )
 
-AGENT_VERSION = "2.12.1-flet"
+AGENT_VERSION = "2.13.0-flet"
 UPDATE_REPO = "AngelvisYanez/gestion-exa-contable"
 GITHUB_API_LATEST = f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest"
 
@@ -145,6 +145,12 @@ def get_mac() -> str:
         return ""
 
 
+def estado_etiqueta(estado: str) -> str:
+    """En la BD el estado en pausa es 'Pausada'; la app lo muestra como 'Standby'."""
+    valor = (estado or "").strip()
+    return "Standby" if valor == "Pausada" else valor
+
+
 def estado_style(estado: str) -> tuple[str, str]:
     # Igual que estadoVariant() del dashboard
     m = {
@@ -154,6 +160,7 @@ def estado_style(estado: str) -> tuple[str, str]:
         "Pendiente": (C["muted_badge_bg"], C["muted_badge_fg"]),
         "Por asignar": (C["warn_bg"], C["warn_fg"]),
         "Pausada": (C["warn_bg"], C["warn_fg"]),
+        "Standby": (C["warn_bg"], C["warn_fg"]),
         "Resuelto": (C["success_bg"], C["success_fg"]),
     }
     return m.get(estado or "", (C["muted_badge_bg"], C["muted_badge_fg"]))
@@ -349,8 +356,8 @@ class ExaMonitorApp:
         self.forzar_bandeja = 1
         self.permitir_salir = 0
         self.selected_tar_cod = 0
-        self.selected_tipo = ""
-        self.selected_db = ""
+        self.selected_tic_cod = 0
+        self.selected_tic_db = ""
         self._workers_started = False
         self._hb_lock = threading.Lock()
         self._act_lock = threading.Lock()
@@ -361,7 +368,9 @@ class ExaMonitorApp:
         self.tipo_filtro = "todos"
         self.bandeja_filtro = "asignados"
         self.estado_filtro = "todos"
+        self.plazo_filtro = "todos"
         self.asignables: list = []
+        self.equipo: list = []
         self.permisos_tarea: dict = {}
         self._pending_files: list[str] = []
         self._pending_uploaded_rutas: list[str] = []
@@ -435,7 +444,9 @@ class ExaMonitorApp:
             "authed": self.is_authenticated,
             "tipo": self.tipo_filtro,
             "estado": self.estado_filtro,
-            "active": self.dd_active.value,
+            "active_task": self.dd_active_task.value,
+            "active_ticket": self.dd_active_ticket.value,
+            "plazo": self.plazo_filtro,
         }
         self.theme_mode = "light" if self.theme_mode == "dark" else "dark"
         self.config["theme"] = self.theme_mode
@@ -448,15 +459,16 @@ class ExaMonitorApp:
         self.tf_pass.value = snap["password"]
         if snap["authed"]:
             self.estado_filtro = snap["estado"]
+            self.plazo_filtro = snap["plazo"]
             if not self._es_mesa() and snap["tipo"] in ("todos", "tarea", "ticket"):
                 self.tipo_filtro = snap["tipo"]
                 self.seg_tipo.selected = [snap["tipo"]]
-            if snap["active"]:
-                self.dd_active.value = snap["active"]
-                try:
-                    self.selected_tar_cod = int(snap["active"])
-                except (TypeError, ValueError):
-                    pass
+            self.dd_active_task.value = snap["active_task"]
+            self.dd_active_ticket.value = snap["active_ticket"]
+            self.selected_tar_cod = int(snap["active_task"] or 0)
+            if snap["active_ticket"]:
+                self.selected_tic_db, tic = snap["active_ticket"].rsplit(":", 1)
+                self.selected_tic_cod = int(tic)
             self._update_ui_after_login()
         else:
             self.login_error.value = snap["error"]
@@ -816,14 +828,22 @@ class ExaMonitorApp:
         )
         self.lbl_kpis = ft.Text("", size=12, color=C["text_muted"])
 
-        # Active task dropdown
-        self.dd_active = ft.Dropdown(
-            label="Tarea / ticket activo",
-            hint_text="Selecciona para telemetría",
+        self.dd_active_task = ft.Dropdown(
+            label="Tarea activa",
+            hint_text="Selecciona una tarea",
             options=[],
             border_color=C["border"],
             focused_border_color=C["primary"],
-            on_select=self._on_active_select,
+            on_select=self._on_active_task_select,
+            dense=True,
+        )
+        self.dd_active_ticket = ft.Dropdown(
+            label="Ticket activo",
+            hint_text="Selecciona un ticket",
+            options=[],
+            border_color=C["border"],
+            focused_border_color=C["primary"],
+            on_select=self._on_active_ticket_select,
             dense=True,
         )
 
@@ -862,18 +882,32 @@ class ExaMonitorApp:
             focused_border_color=C["primary"],
             on_select=self._on_estado_change,
         )
+        self.dd_plazo = ft.Dropdown(
+            label="Plazo de tarea",
+            value="todos",
+            options=[ft.DropdownOption(key=k, text=v) for k, v in (
+                ("todos", "Todos los plazos"), ("Diaria", "Diaria"),
+                ("Semanal", "Semanal"), ("Mensual", "Mensual"),
+                ("Standby", "Standby"), ("Sin fechas", "Sin fechas"),
+            )],
+            dense=True,
+            border_color=C["border"],
+            focused_border_color=C["primary"],
+            on_select=self._on_plazo_change,
+        )
 
         self.tasks_list_view = ft.ListView(expand=True, spacing=8, padding=0)
 
         self.lbl_activa_hint = ft.Text(
-            "Se usa para telemetría y seguimiento en vivo.",
+            "Puedes seleccionar una tarea y un ticket a la vez para telemetría.",
             size=11,
             color=C["text_muted"],
         )
         self.card_activa = self._card(
-            ft.Text("Tarea / ticket activo", size=13, weight=ft.FontWeight.W_700, color=C["text"]),
+            ft.Text("Trabajo activo", size=13, weight=ft.FontWeight.W_700, color=C["text"]),
             self.lbl_activa_hint,
-            self.dd_active,
+            self.dd_active_task,
+            self.dd_active_ticket,
         )
         self.lbl_lista_titulo = ft.Text("Mis tareas", size=15, weight=ft.FontWeight.BOLD, color=C["text"])
         self.lbl_lista_hint = ft.Text("Clic para marcar activa", size=11, color=C["text_muted"])
@@ -893,6 +927,7 @@ class ExaMonitorApp:
                     self.seg_bandeja,
                     self.seg_tipo,
                     self.dd_estado,
+                    self.dd_plazo,
                     ft.Container(content=self.tasks_list_view, height=340),
                     padding=14,
                 ),
@@ -965,6 +1000,7 @@ class ExaMonitorApp:
             tipo_filtro=self.tipo_filtro,
             es_encargado=self._es_encargado(),
             estado_filtro=self.estado_filtro,
+            plazo_filtro=self.plazo_filtro,
         )
 
     def _on_bandeja_change(self, e: ft.ControlEvent):
@@ -984,20 +1020,23 @@ class ExaMonitorApp:
         self.estado_filtro = str(e.control.value or "todos")
         self._refresh_tasks_ui()
 
-    def _on_active_select(self, e: ft.ControlEvent):
-        val = e.control.value
-        try:
-            self.selected_tar_cod = int(val) if val else 0
-        except Exception:
-            self.selected_tar_cod = 0
-        elegido = next(
-            (t for t in trabajos_activos(self.tasks_list, es_mesa=self._es_mesa())
-             if str(t.get("Tar_Cod")) == str(val or "")),
-            None,
-        )
-        if elegido:
-            self.selected_tipo = "ticket" if elegido.get("tipo") == "ticket" else "tarea"
-            self.selected_db = str(elegido.get("Db_Origen") or "")
+    def _on_plazo_change(self, e: ft.ControlEvent):
+        self.plazo_filtro = str(e.control.value or "todos")
+        self._refresh_tasks_ui()
+
+    def _on_active_task_select(self, e: ft.ControlEvent):
+        self.selected_tar_cod = int(e.control.value or 0)
+        self._refresh_tasks_ui()
+
+    def _on_active_ticket_select(self, e: ft.ControlEvent):
+        value = str(e.control.value or "")
+        if value:
+            self.selected_tic_db, tic = value.rsplit(":", 1)
+            self.selected_tic_cod = int(tic)
+        else:
+            self.selected_tic_cod = 0
+            self.selected_tic_db = ""
+        self._refresh_tasks_ui()
 
     def _task_row(self, t: dict) -> ft.Control:
         is_ticket = t.get("tipo") == "ticket"
@@ -1022,6 +1061,16 @@ class ExaMonitorApp:
         ]
         if origen_txt:
             top_left.append(badge(origen_txt, C["muted_bg"], C["text"]))
+        if not is_ticket:
+            plazo = plazo_tarea(t.get("Tar_Fecha_Inicio"), fin, estado)
+            plazo_colors = {
+                "Diaria": (C["info_bg"], C["info_fg"]),
+                "Semanal": (C["muted_bg"], C["text"]),
+                "Mensual": (C["success_bg"], C["success_fg"]),
+                "Standby": (C["warn_bg"], C["warn_fg"]),
+            }
+            plazo_bg, plazo_fg = plazo_colors.get(plazo, (C["muted_bg"], C["text_muted"]))
+            top_left.append(badge(plazo, plazo_bg, plazo_fg))
         top = ft.Row(
             [
                 ft.Row(top_left, spacing=6),
@@ -1034,7 +1083,7 @@ class ExaMonitorApp:
             ft.Text(plain, size=13, weight=ft.FontWeight.BOLD, color=C["text"]),
             ft.Row(
                 [
-                    badge(estado, ebg, efg),
+                    badge(estado_etiqueta(estado), ebg, efg),
                     ft.Text(
                         " · ".join(
                             p
@@ -1075,7 +1124,8 @@ class ExaMonitorApp:
                 )
             )
 
-        activo = self.selected_tar_cod == cod and self.selected_tipo == tipo
+        activo = (self.selected_tic_cod == cod and self.selected_tic_db == origen_raw
+                  if is_ticket else self.selected_tar_cod == cod)
         return ft.Container(
             content=ft.Column([top, *mid], spacing=8, tight=True),
             bgcolor=C["sky_hover"] if activo else C["card"],
@@ -1093,14 +1143,14 @@ class ExaMonitorApp:
         )
 
     def _activate_task(self, cod: int, tipo: str = "tarea", db: str = ""):
-        self.selected_tar_cod = int(cod or 0)
-        self.selected_tipo = tipo or "tarea"
-        self.selected_db = db or ""
-        try:
-            self.dd_active.value = str(self.selected_tar_cod)
-        except Exception:
-            pass
-        self._set_status(f"Trabajando en #{self.selected_tar_cod}", ok=True)
+        if tipo == "ticket":
+            self.selected_tic_cod = int(cod or 0)
+            self.selected_tic_db = db or ""
+            self.dd_active_ticket.value = f"{self.selected_tic_db}:{self.selected_tic_cod}"
+        else:
+            self.selected_tar_cod = int(cod or 0)
+            self.dd_active_task.value = str(self.selected_tar_cod)
+        self._set_status(f"Trabajando en #{cod}", ok=True)
         try:
             self.page.update()
         except Exception as err:
@@ -1532,11 +1582,14 @@ class ExaMonitorApp:
                 C["ticket_fg"] if tipo == "ticket" else C["tarea_fg"],
             ),
             ft.Text(f"#{cod}", size=12, color=C["text_muted"], font_family="Consolas"),
-            badge(estado or "-", ebg, efg),
+            badge(estado_etiqueta(estado) or "-", ebg, efg),
             badge(prio, pbg, pfg),
         ]
         if tipo == "ticket" and db_origen:
             badges.append(badge(origen_etiqueta(db_origen) or "EXA", C["muted_bg"], C["text"]))
+        if tipo == "tarea":
+            plazo = plazo_tarea(trabajo.get("Fecha_Inicio"), trabajo.get("Fecha_Fin"), estado)
+            badges.append(badge(plazo, C["info_bg"], C["info_fg"]))
         if trabajo.get("Complejidad"):
             cbg, cfg = complejidad_style(str(trabajo.get("Complejidad")))
             badges.append(badge(f"Complejidad: {trabajo.get('Complejidad')}", cbg, cfg))
@@ -1617,6 +1670,23 @@ class ExaMonitorApp:
             ]
             if rows:
                 body_cols.append(info_card(*rows))
+        else:
+            fecha_fin = str(trabajo.get("Fecha_Fin") or "")[:10]
+            rows = [
+                x
+                for x in [
+                    meta_row(ft.Icons.PERSON_OUTLINE, "Creada por", trabajo.get("Creador")),
+                    meta_row(ft.Icons.VOLUNTEER_ACTIVISM, "Apoyo", trabajo.get("Apoyo")),
+                    meta_row(
+                        ft.Icons.CALENDAR_TODAY,
+                        "Fecha de fin",
+                        "Sin fecha (Standby)" if estado == "Pausada" and not fecha_fin else fecha_fin or None,
+                    ),
+                ]
+                if x is not None
+            ]
+            if rows:
+                body_cols.append(info_card(*rows))
 
         body_cols.extend(
             [
@@ -1624,6 +1694,42 @@ class ExaMonitorApp:
                 desc_box(plain_text(trabajo.get("Descripcion"))),
             ]
         )
+
+        tickets_vinculados = payload.get("tickets_vinculados") or []
+        if tipo == "tarea" and tickets_vinculados:
+            body_cols.append(section_label("Tickets vinculados"))
+            body_cols.append(
+                info_card(
+                    *[
+                        ft.Row(
+                            [
+                                ft.Icon(ft.Icons.CONFIRMATION_NUMBER_ICON, size=16, color=C["ticket_fg"]),
+                                ft.Text(
+                                    f"#{t.get('Tic_Cod')}",
+                                    size=12,
+                                    weight=ft.FontWeight.W_700,
+                                    color=C["text"],
+                                    font_family="Consolas",
+                                ),
+                                ft.Text(
+                                    (t.get("Titulo") or "Sin título")[:80],
+                                    size=12,
+                                    color=C["text"],
+                                    expand=True,
+                                ),
+                                badge(
+                                    str(t.get("Estado") or "Sin estado"),
+                                    C["muted_bg"],
+                                    C["text"],
+                                ),
+                            ],
+                            spacing=8,
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        )
+                        for t in tickets_vinculados[:6]
+                    ]
+                )
+            )
 
         if evid_controls:
             body_cols.append(section_label("Evidencias"))
@@ -1981,6 +2087,28 @@ class ExaMonitorApp:
         self._pending_files = []
         self._pending_uploaded_rutas = []
 
+        apoyo_dd = None
+        tf_standby = None
+        if tipo == "tarea":
+            opciones_apoyo = []
+            for persona in (self.equipo or self.asignables or []):
+                pc = persona.get("Per_Cod")
+                if pc and str(pc) != str((self.dev_data or {}).get("Per_Cod") or ""):
+                    opciones_apoyo.append(ft.DropdownOption(key=str(pc), text=persona.get("Nombre") or "Sin nombre"))
+            if opciones_apoyo:
+                apoyo_dd = ft.Dropdown(
+                    label="¿Quién ayudó? (opcional)",
+                    value="",
+                    options=[ft.DropdownOption(key="", text="Ninguno")] + opciones_apoyo,
+                )
+            tf_standby = ft.TextField(
+                label="¿La tarea quedó en standby? (motivo, opcional)",
+                hint_text="Ej.: falta la validación del cliente para continuar.",
+                multiline=True,
+                min_lines=2,
+                max_lines=3,
+            )
+
         def refresh_files_label():
             if self._pending_files or self._pasted_rutas:
                 names = [Path(p).name for p in self._pending_files]
@@ -2125,17 +2253,32 @@ class ExaMonitorApp:
         )
 
         if puede_avance:
+            avance_controls = [
+                section_label("Registrar avance"),
+                barra_avance,
+                editor,
+            ]
+            if tipo == "tarea" and apoyo_dd is not None:
+                avance_controls.append(apoyo_dd)
+            if tipo == "tarea" and tf_standby is not None:
+                avance_controls.append(tf_standby)
+                avance_controls.append(
+                    ft.Text(
+                        "Si escribes un motivo, la tarea pasa a Standby y queda sin fecha de fin. "
+                        "Un avance posterior la reanuda.",
+                        size=11,
+                        color=C["text_muted"],
+                    )
+                )
+            avance_controls.extend([
+                fila_adjuntar,
+                lbl_avance_err,
+                ft.Row([btn_guardar], alignment=ft.MainAxisAlignment.END),
+            ])
             body_cols.append(
                 ft.Container(
                     content=ft.Column(
-                        [
-                            section_label("Registrar avance"),
-                            barra_avance,
-                            editor,
-                            fila_adjuntar,
-                            lbl_avance_err,
-                            ft.Row([btn_guardar], alignment=ft.MainAxisAlignment.END),
-                        ],
+                        avance_controls,
                         spacing=8,
                         tight=True,
                         horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
@@ -2218,6 +2361,11 @@ class ExaMonitorApp:
                 lbl_avance_err.visible = True
                 self.page.update()
                 return
+            if tipo == "tarea" and apoyo_dd is not None:
+                try:
+                    apoyo_dd.value = apoyo_dd.value or ""
+                except Exception:
+                    pass
             btn_guardar.disabled = True
             btn_guardar.text = "Guardando..."
             lbl_avance_err.visible = False
@@ -2229,7 +2377,11 @@ class ExaMonitorApp:
                 btn_pick.disabled = bool(self._pending_uploaded_rutas)
                 self.page.update()
             self.page.run_thread(
-                lambda: self._registrar_avance(cod, pct, realizado, files, close_dlg, tipo, db_origen, on_fail)
+                lambda: self._registrar_avance(
+                    cod, pct, realizado, files, close_dlg, tipo, db_origen, on_fail,
+                    apoyo_per_cod=(apoyo_dd.value or "") if tipo == "tarea" and apoyo_dd is not None else "",
+                    standby=(tf_standby.value or "").strip() if tipo == "tarea" and tf_standby is not None else "",
+                )
             )
 
         def do_ticket_estado(nuevo: str):
@@ -2552,6 +2704,8 @@ class ExaMonitorApp:
         tipo: str = "tarea",
         db: str = "",
         on_fail=None,
+        apoyo_per_cod: str = "",
+        standby: str = "",
     ):
         try:
             es_ticket = tipo == "ticket"
@@ -2579,6 +2733,10 @@ class ExaMonitorApp:
                     body["Db_Origen"] = db
             else:
                 body["Tar_Cod"] = str(tar_cod)
+                if apoyo_per_cod and str(apoyo_per_cod).strip():
+                    body["apoyoPerCod"] = str(apoyo_per_cod).strip()
+                if standby and str(standby).strip():
+                    body["standby"] = str(standby).strip()
             data = self._api_post(body)
             if data.get("status") != "ok":
                 self._show_info("Avance", data.get("mensaje") or "No se pudo registrar.")
@@ -2655,31 +2813,38 @@ class ExaMonitorApp:
             estados = sorted({str(t.get("Tar_Estado") or "").strip()
                               for t in self.tasks_list if t.get("Tar_Estado")})
             self.dd_estado.options = [ft.DropdownOption(key="todos", text="Todos los estados")] + [
-                ft.DropdownOption(key=estado, text=estado) for estado in estados
+                ft.DropdownOption(key=estado, text=estado_etiqueta(estado)) for estado in estados
             ]
             if self.estado_filtro not in estados:
                 self.estado_filtro = "todos"
             self.dd_estado.value = self.estado_filtro
             visible = self._visible_tasks()
-        self.dd_active.options = [
+        tareas_activas = [t for t in activos if t.get("tipo") != "ticket"]
+        tickets_activos = [t for t in activos if t.get("tipo") == "ticket"]
+        self.dd_active_task.options = [ft.DropdownOption(key="", text="Ninguna tarea")] + [
             ft.DropdownOption(
                 key=str(t.get("Tar_Cod")),
                 text=(t.get("label") or t.get("Tar_Titulo") or f"#{t.get('Tar_Cod')}")[:100],
-            )
-            for t in activos
+            ) for t in tareas_activas
         ]
-        if activos:
-            keys = {str(t.get("Tar_Cod")) for t in activos}
-            if not self.dd_active.value or str(self.dd_active.value) not in keys:
-                primero = activos[0]
-                self.dd_active.value = str(primero.get("Tar_Cod"))
-                self.selected_tar_cod = int(primero.get("Tar_Cod") or 0)
-                self.selected_tipo = "ticket" if primero.get("tipo") == "ticket" else "tarea"
-                self.selected_db = str(primero.get("Db_Origen") or "")
-        else:
-            self.dd_active.value = None
+        self.dd_active_ticket.options = [ft.DropdownOption(key="", text="Ningún ticket")] + [
+            ft.DropdownOption(
+                key=f"{t.get('Db_Origen') or ''}:{t.get('Tic_Cod') or t.get('Tar_Cod')}",
+                text=(t.get("label") or t.get("Tar_Titulo") or f"#{t.get('Tic_Cod')}")[:100],
+            ) for t in tickets_activos
+        ]
+        task_keys = {str(t.get("Tar_Cod")) for t in tareas_activas}
+        ticket_keys = {f"{t.get('Db_Origen') or ''}:{t.get('Tic_Cod') or t.get('Tar_Cod')}" for t in tickets_activos}
+        if str(self.selected_tar_cod) not in task_keys:
             self.selected_tar_cod = 0
-            self.selected_tipo = ""
+        if f"{self.selected_tic_db}:{self.selected_tic_cod}" not in ticket_keys:
+            self.selected_tic_cod = 0
+            self.selected_tic_db = ""
+        self.dd_active_task.value = str(self.selected_tar_cod) if self.selected_tar_cod else ""
+        self.dd_active_ticket.value = (
+            f"{self.selected_tic_db}:{self.selected_tic_cod}" if self.selected_tic_cod else ""
+        )
+        self.dd_plazo.value = self.plazo_filtro
 
         n_tar = sum(1 for t in self.tasks_list if t.get("tipo") != "ticket")
         n_tic = sum(1 for t in self.tasks_list if t.get("tipo") == "ticket")
@@ -2725,7 +2890,7 @@ class ExaMonitorApp:
         self.dd_estado.visible = self._es_encargado()
         if self._es_encargado():
             self.title_main.value = "Tareas del equipo"
-            self.lbl_activa_hint.value = "Solo aparecen las tareas asignadas personalmente a ti."
+            self.lbl_activa_hint.value = "Tarea y ticket asignados personalmente a ti; puedes elegir ambos."
             self.seg_bandeja.visible = True
             self.seg_tipo.visible = True
             self.card_activa.visible = True
@@ -2740,7 +2905,7 @@ class ExaMonitorApp:
             self.lbl_lista_hint.value = "Clic para abrir"
         elif self._es_mesa():
             self.title_main.value = "Bandeja"
-            self.lbl_activa_hint.value = "Solo aparecen las tareas asignadas personalmente a ti."
+            self.lbl_activa_hint.value = "Tarea y ticket asignados personalmente a ti; puedes elegir ambos."
             self.seg_bandeja.visible = True
             self.seg_tipo.visible = True
             self.card_activa.visible = True
@@ -2756,7 +2921,7 @@ class ExaMonitorApp:
                 self.lbl_lista_hint.value = "Clic para abrir"
         else:
             self.title_main.value = "Mis tareas"
-            self.lbl_activa_hint.value = "Se usa para telemetría y seguimiento en vivo."
+            self.lbl_activa_hint.value = "Puedes seleccionar una tarea y un ticket a la vez para telemetría."
             self.seg_bandeja.segments = [
                 ft.Segment(value="asignados", label=ft.Text("Asignadas"), icon=ft.Icon(ft.Icons.ASSIGNMENT_IND)),
                 ft.Segment(value="creadas", label=ft.Text("Creadas por mí"), icon=ft.Icon(ft.Icons.TASK_ALT)),
@@ -2832,6 +2997,7 @@ class ExaMonitorApp:
                 self.dev_data = dev
                 self.tasks_list = tasks
                 self.asignables = payload.get("asignables") or []
+                self.equipo = payload.get("equipo") or self.asignables or []
                 self.permisos_tarea = payload.get("permisos_tarea") or {}
                 self.is_authenticated = True
                 if dev.get("Db_Dis"):
@@ -2926,6 +3092,8 @@ class ExaMonitorApp:
                 self._apply_rol_ui()
             if payload.get("asignables") is not None:
                 self.asignables = payload.get("asignables") or []
+            if payload.get("equipo") is not None:
+                self.equipo = payload.get("equipo") or self.asignables or []
             notes = list(payload.get("notificaciones") or [])
             try:
                 self._apply_rol_ui()
@@ -2959,9 +3127,8 @@ class ExaMonitorApp:
             "accion": "subir_telemetria",
             "Per_Cod": str(per),
             "Tar_Cod": str(self.selected_tar_cod or ""),
-            "Tic_Cod": str(self.selected_tar_cod or "") if self.selected_tipo == "ticket" else "",
-            "tipo": self.selected_tipo or "",
-            "Db_Origen": self.selected_db or "",
+            "Tic_Cod": str(self.selected_tic_cod or ""),
+            "Db_Origen": self.selected_tic_db or "",
             "clicks": str(clicks),
             "teclas": str(teclas),
             "segundos_activos": str(max(30, int(self.interval_minutes) * 30)),

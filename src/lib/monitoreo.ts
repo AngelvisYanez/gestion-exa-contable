@@ -17,6 +17,7 @@ export type TrabajoMonitorItem = {
   Tar_Titulo_Plain: string;
   Tar_Prioridad: string;
   Tar_Estado: string;
+  Tar_Fecha_Inicio?: string | null;
   Tar_Fecha_Fin: string | null;
   Ava_Porcentaje: number;
   Ava_Ultima_Fecha: string | null;
@@ -306,6 +307,7 @@ export async function tareasActivasDev(
     Tar_Titulo: string | null;
     Tar_Prioridad: string | null;
     Tar_Estado: string | null;
+    Tar_Fecha_Inicio: Date | string | null;
     Tar_Fecha_Fin: Date | string | null;
     Ava_Porcentaje: number | null;
     Ava_Ultima_Fecha: Date | string | null;
@@ -316,6 +318,7 @@ export async function tareasActivasDev(
        CONVERT(t.Tar_Titulo USING utf8mb4) AS Tar_Titulo,
        CONVERT(t.Tar_Prioridad USING utf8mb4) AS Tar_Prioridad,
        CONVERT(t.Tar_Estado USING utf8mb4) AS Tar_Estado,
+       t.Tar_Fecha_Inicio,
        t.Tar_Fecha_Fin,
        (
          SELECT av.Ava_Porcentaje
@@ -349,6 +352,7 @@ export async function tareasActivasDev(
       Tar_Titulo_Plain: plain,
       Tar_Prioridad: r.Tar_Prioridad || "Media",
       Tar_Estado: estado,
+      Tar_Fecha_Inicio: formatFin(r.Tar_Fecha_Inicio),
       Tar_Fecha_Fin: fin,
       Ava_Porcentaje: pct,
       Ava_Ultima_Fecha: formatAvaFecha(r.Ava_Ultima_Fecha),

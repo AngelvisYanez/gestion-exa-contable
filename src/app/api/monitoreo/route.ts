@@ -33,9 +33,13 @@ import {
   descripcionAvanceDesdeBody,
   getTareaAccess,
   getTareaDetalle,
+  leerPlazoTarea,
+  ponerTareaEnStandby,
   registrarAvance,
+  salirDeStandby,
   setTareaAsignados,
 } from "@/lib/tareas";
+import { estadoTrasAvance } from "@/lib/standby";
 import { isImagePath } from "@/lib/avance-format";
 import {
   attachTicketEvidencias,
@@ -182,6 +186,9 @@ async function handle(req: NextRequest) {
       const mapped = await mapDevResponse(prismaUser, refreshed || row);
       const notificaciones = mapNotificaciones(row.Per_Cod, user.usuCod);
       const asignables = canAssignWork(rol) ? await asignablesMonitor() : [];
+      // Equipo completo para elegir "quién ayudó" en un avance (el desarrollador
+      // también puede registrar apoyo, aunque no pueda asignar trabajo).
+      const equipo = await asignablesMonitor();
       const permisos_tarea = await monitorTaskPermissions(prismaUser, row.Per_Cod, rol);
 
       return jsonRes("ok", "Desarrollador autenticado con exito.", {
@@ -197,6 +204,7 @@ async function handle(req: NextRequest) {
         tareas,
         mis_tareas: tareas,
         asignables,
+        equipo,
         permisos_tarea,
         notificaciones,
       });
@@ -224,6 +232,7 @@ async function handle(req: NextRequest) {
       const mapped = await mapDevResponse(prisma, row);
       const notificaciones = mapNotificaciones(perCod, usuCod || undefined);
       const asignables = canAssignWork(rol) ? await asignablesMonitor() : [];
+      const equipo = await asignablesMonitor();
       const permisos_tarea = await monitorTaskPermissions(prisma, perCod, rol);
 
       return jsonRes("ok", "Presencia y estado sincronizados.", {
@@ -236,6 +245,7 @@ async function handle(req: NextRequest) {
         tareas,
         mis_tareas: tareas,
         asignables,
+        equipo,
         permisos_tarea,
         notificaciones,
       });
@@ -434,7 +444,18 @@ async function handle(req: NextRequest) {
         if (!mesa && !mio) {
           return jsonRes("error", "Ticket no encontrado o no asignado a ti.");
         }
-        const asignables = mesa ? await asignablesMonitor() : [];
+        // El desarrollador puede asignarse un ticket libre a si mismo (solo su ficha).
+        const puedeAutoasignarse =
+          !mesa &&
+          sinAsignar &&
+          (await monitorHasPermission(prisma, perCod, "tickets.asignar"));
+        const asignables = mesa
+          ? await asignablesMonitor()
+          : puedeAutoasignarse
+            ? (await asignablesMonitor()).filter(
+                (a) => (a.Usu_Cod && aseCodes.includes(a.Usu_Cod)) || a.Per_Cod === perCod
+              )
+            : [];
         const avances = ticket.Db_Origen
           ? await listAvancesTicket(ticket.Db_Origen, ticket.Tic_Cod)
           : [];
@@ -459,7 +480,7 @@ async function handle(req: NextRequest) {
             puede_registrar_avance: mio && ticket.Tic_Estado !== "Cerrado",
             puede_cambiar_estado: mio && ticket.Tic_Estado !== "Cerrado" && ticket.Tic_Estado !== "En Proceso",
             puede_subir_evidencia: mio,
-            puede_asignar: mesa && sinAsignar,
+            puede_asignar: (mesa && sinAsignar) || puedeAutoasignarse,
             Enviado_Por: ticket.Enviado_Por || ticket.Creador_Nombre || null,
             Empresa: ticket.Emp_Nom || null,
             Telefono: ticket.Tic_Tel || null,
@@ -513,8 +534,14 @@ async function handle(req: NextRequest) {
           puede_subir_evidencia: mia || (creador && await monitorHasPermission(prisma, perCod, "tareas.editar")),
           es_creador: creador,
           puede_asignar: mesa && sinAsignar,
+          puede_standby: mia,
+          Tar_Apoyo_Per_Cod: detalle.tarea.Tar_Apoyo_Per_Cod ?? null,
+          Apoyo: detalle.tarea.Apoyo || null,
+          Creador: detalle.tarea.Creador || null,
+          Fecha_Inicio: detalle.tarea.Tar_Fecha_Inicio || null,
         },
         asignables: asignablesTarea,
+        tickets_vinculados: detalle.tickets_vinculados || [],
         evidencias: detalle.evidencias_iniciales || [],
         avances: (detalle.avances || []).slice(0, 8).map((a) => ({
           Ava_Porcentaje: a.Ava_Porcentaje,
@@ -566,37 +593,77 @@ async function handle(req: NextRequest) {
           adjuntos = rawAdj.split(",").map((s) => s.trim()).filter(Boolean);
         }
       }
+      let apoyo = pick(form, json, req, "apoyo") || pick(form, json, req, "apoyoNombre") || "";
+      const apoyoPerCodRaw = pick(form, json, req, "apoyoPerCod") || pick(form, json, req, "apoyo_per_cod") || "";
+      if (!apoyo.trim() && apoyoPerCodRaw.trim()) {
+        const ap = parseInt(apoyoPerCodRaw, 10);
+        if (ap > 0) {
+          try {
+            const rows = await prisma.$queryRawUnsafe<Array<{ Nombre: string | null }>>(
+              `SELECT CONVERT(TRIM(CONCAT(IFNULL(p.Prs_Ape,''), ' ', IFNULL(p.Prs_Nom,''))) USING utf8mb4) AS Nombre
+               FROM personal per
+               LEFT JOIN persona p ON p.Prs_Cod = per.Prs_Cod
+               WHERE per.Per_Cod = ? LIMIT 1`,
+              ap
+            );
+            apoyo = (rows[0]?.Nombre || "").trim();
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+      const notaStandby = pick(form, json, req, "standby").trim();
+      // Al 100% la tarea se finaliza: no aplica standby.
+      const enStandby = notaStandby.length > 0 && porcentaje < 100;
+      const plazoAnterior = enStandby ? await leerPlazoTarea(dbDis, tarCod) : null;
       const bodyAvance = {
         realizado,
         siguiente: pick(form, json, req, "siguiente"),
         bloqueos: pick(form, json, req, "bloqueos"),
-        standby: pick(form, json, req, "standby"),
+        standby: notaStandby,
         horas: pick(form, json, req, "horas"),
         adjuntos,
       };
-      const descripcion = descripcionAvanceDesdeBody(bodyAvance, tarCod);
+      const descripcion = descripcionAvanceDesdeBody(
+        bodyAvance,
+        tarCod,
+        apoyo.trim() || null,
+        { plazoAnterior }
+      );
       const res = await registrarAvance(dbDis, {
         tarCod,
         porcentaje,
         descripcion,
         usuCod: usuCod || undefined,
       });
+      // Mismas reglas que el panel: con nota de standby la tarea queda en pausa
+      // y sin fecha de fin; un avance normal la reanuda.
+      if (enStandby) {
+        await ponerTareaEnStandby(dbDis, tarCod);
+      } else {
+        await salirDeStandby(dbDis, tarCod);
+      }
+      const estadoFinal = estadoTrasAvance({ porcentaje: res.porcentaje, enStandby });
 
       publishEvent({
         type: "avance_registrado",
         title: "Avance registrado",
-        message: `ExaMonitor · #${tarCod} · ${res.porcentaje}%`,
+        message:
+          `ExaMonitor · #${tarCod} · ${res.porcentaje}%` +
+          (enStandby ? " · standby (sin fecha de fin)" : ""),
         db: dbDis,
         tarCod,
         porcentaje: res.porcentaje,
         actor: "ExaMonitor",
-        estado: res.porcentaje >= 100 ? "Finalizada" : "En Proceso",
+        estado: estadoFinal,
       });
 
       const { tareas } = await bandejaAgente(prisma, perCod, usuCod || undefined);
       return jsonRes("ok", "Avance registrado.", {
         porcentaje: res.porcentaje,
         Tar_Cod: tarCod,
+        estado: estadoFinal,
+        standby: enStandby,
         mis_tareas: tareas,
         tareas,
       });
@@ -755,8 +822,19 @@ async function handle(req: NextRequest) {
 
       const usuActor = await resolveUsuCodFromPer(prisma, perCod);
       const rol = (await resolvePanelRol(prisma, perCod, usuActor || undefined)) || "developer";
-      if (!canAssignWork(rol) || !(await monitorHasPermission(prisma, perCod, "tickets.asignar"))) {
-        return jsonRes("error", "Solo el encargado o atencion al cliente pueden asignar tickets desde ExaMonitor.");
+      const mesa = canAssignWork(rol);
+      if (!(await monitorHasPermission(prisma, perCod, "tickets.asignar"))) {
+        return jsonRes("error", "Tu rol no puede asignar tickets desde ExaMonitor.");
+      }
+      // El desarrollador solo puede asignarse el ticket a si mismo (igual que el panel).
+      let destinos = elegidos;
+      if (!mesa) {
+        const propios = await resolveUsuCodesFromPer(prisma, perCod);
+        if (usuActor && usuActor > 0 && !propios.includes(usuActor)) propios.unshift(usuActor);
+        if (!elegidos.every((e) => propios.includes(e.usuCod))) {
+          return jsonRes("error", "Solo puedes asignarte el ticket a ti mismo.");
+        }
+        destinos = elegidos.map((e) => ({ usuCod: e.usuCod, perCod }));
       }
 
       const preferDb = pick(form, json, req, "Db_Origen");
@@ -774,8 +852,11 @@ async function handle(req: NextRequest) {
         return jsonRes("error", "Este ticket ya fue asignado.");
       }
 
-      const asignables = await asignablesMonitor();
-      const equipo = elegidos.map((e) => {
+      const asignablesTodos = await asignablesMonitor();
+      const asignables = mesa
+        ? asignablesTodos
+        : asignablesTodos.filter((a) => destinos.some((d) => d.usuCod === a.Usu_Cod));
+      const equipo = destinos.map((e) => {
         const row = asignables.find((a) => a.Usu_Cod === e.usuCod);
         return row
           ? { usuCod: e.usuCod, perCod: e.perCod || row.Per_Cod, nombre: row.Nombre }

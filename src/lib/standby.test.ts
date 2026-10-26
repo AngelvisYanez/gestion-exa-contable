@@ -4,8 +4,8 @@ import { esStandby, estadoTrasAvance, ESTADO_STANDBY } from "./standby";
 
 describe("estadoTrasAvance", () => {
   it("deja la tarea en standby cuando el avance lleva nota de standby", () => {
-    assert.equal(estadoTrasAvance({ porcentaje: 40, enStandby: true }), "Standby");
-    assert.equal(estadoTrasAvance({ porcentaje: 0, enStandby: true }), "Standby");
+    assert.equal(estadoTrasAvance({ porcentaje: 40, enStandby: true }), ESTADO_STANDBY);
+    assert.equal(estadoTrasAvance({ porcentaje: 0, enStandby: true }), ESTADO_STANDBY);
   });
 
   it("reanuda la tarea cuando el avance no lleva nota de standby", () => {
@@ -23,7 +23,8 @@ describe("esStandby", () => {
   it("reconoce el estado de pausa", () => {
     assert.equal(esStandby("Standby"), true);
     assert.equal(esStandby(" Standby "), true);
-    assert.equal(ESTADO_STANDBY, "Standby");
+    assert.equal(esStandby("Pausada"), true);
+    assert.equal(ESTADO_STANDBY, "Pausada");
   });
 
   it("no confunde otros estados", () => {

@@ -7,8 +7,8 @@ export const TAR_ESTADOS = [
   "Pendiente",
   "Asignado",
   "En Proceso",
-  /** En pausa: espera feedback/validacion y no tiene fecha de fin. */
-  "Standby",
+  /** En pausa (standby): espera feedback/validacion y no tiene fecha de fin. */
+  "Pausada",
   "Finalizada",
 ] as const;
 

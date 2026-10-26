@@ -12,6 +12,7 @@ import { ensureMonitoreoSchema } from "./monitoreo-global";
 import { ticketTareaKey, ticketsDeTarea, ticketsDeTareas, resolverTicketsDeTarea } from "./ticket-tarea";
 import { resumenTickets, type TicketVinculoResumen } from "./tickets";
 import { CATEGORIAS_PLAZO, type CategoriaPlazo } from "./plazo-tarea";
+import { ESTADO_STANDBY } from "./standby";
 import {
   ensureHorarioSchema,
   estaEnAlmuerzo,
@@ -288,7 +289,7 @@ export async function listTareas(dbDis: string, opts: {
   // Filtro por plazo (duración inicio -> fin): mismo criterio que plazoDesdeFechas()
   if (opts.plazo === "Standby") {
     // Standby: la tarea esta en pausa (espera feedback) y no tiene fecha de fin.
-    where.push("t.Tar_Estado = 'Standby'");
+    where.push(`t.Tar_Estado = '${ESTADO_STANDBY}'`);
   } else if (
     opts.plazo &&
     opts.plazo !== "todos" &&
@@ -299,7 +300,7 @@ export async function listTareas(dbDis: string, opts: {
     if (opts.plazo === "Sin fechas") {
       // Sin fechas = nunca planificada. Las tareas en standby se filtran aparte.
       where.push(
-        "NOT (t.Tar_Fecha_Inicio IS NOT NULL AND t.Tar_Fecha_Fin IS NOT NULL) AND t.Tar_Estado <> 'Standby'"
+        `NOT (t.Tar_Fecha_Inicio IS NOT NULL AND t.Tar_Fecha_Fin IS NOT NULL) AND t.Tar_Estado <> '${ESTADO_STANDBY}'`
       );
     } else if (opts.plazo === "Diaria") {
       where.push(`(${conFechas} AND ${diff} <= 0)`);
@@ -759,7 +760,7 @@ export async function updateTarea(
       );
       // Tarea finalizada al 100%: resuelve el ticket vinculado, si lo hay.
       await resolverTicketsDeTarea(tarCod);
-    } else if (patch.estado === "Standby") {
+    } else if (patch.estado === ESTADO_STANDBY) {
       // Standby: la tarea queda en pausa y sin fecha de fin (invariante).
       await prisma.$executeRawUnsafe(
         `UPDATE aud_tareas
@@ -845,11 +846,11 @@ export async function updateTarea(
     } else {
       sets.push("Tar_Fecha_Culminacion = NULL");
     }
-    if (patch.estado === "Standby") {
+    if (patch.estado === ESTADO_STANDBY) {
       // Invariante: en standby la tarea no tiene fecha de fin.
       sets.push("Tar_Fecha_Fin = NULL");
     }
-  } else if (patch.fechaFin && current.Tar_Estado === "Standby") {
+  } else if (patch.fechaFin && current.Tar_Estado === ESTADO_STANDBY) {
     // Al fijar un plazo la tarea reanuda su trabajo: sale de standby.
     sets.push("Tar_Estado = 'En Proceso'");
   }
@@ -988,8 +989,9 @@ export async function ponerTareaEnStandby(dbDis: string, tarCod: number): Promis
   const prisma = getPrisma(dbDis);
   await prisma.$executeRawUnsafe(
     `UPDATE aud_tareas
-     SET Tar_Estado = 'Standby', Tar_Fecha_Fin = NULL, Tar_Fecha_Culminacion = NULL
+     SET Tar_Estado = ?, Tar_Fecha_Fin = NULL, Tar_Fecha_Culminacion = NULL
      WHERE Tar_Cod = ? AND Tar_Est = 'A'`,
+    ESTADO_STANDBY,
     tarCod
   );
 }
@@ -1002,8 +1004,9 @@ export async function salirDeStandby(dbDis: string, tarCod: number): Promise<voi
   const prisma = getPrisma(dbDis);
   await prisma.$executeRawUnsafe(
     `UPDATE aud_tareas SET Tar_Estado = 'En Proceso'
-     WHERE Tar_Cod = ? AND Tar_Est = 'A' AND Tar_Estado = 'Standby'`,
-    tarCod
+     WHERE Tar_Cod = ? AND Tar_Est = 'A' AND Tar_Estado = ?`,
+    tarCod,
+    ESTADO_STANDBY
   );
 }
 

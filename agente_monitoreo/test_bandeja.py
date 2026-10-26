@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import unittest
 
-from bandeja import trabajos_activos, visible_trabajos
+from bandeja import plazo_tarea, trabajos_activos, visible_trabajos
 
 
 ITEMS = [
@@ -66,6 +66,23 @@ class TestBandeja(unittest.TestCase):
         self.assertEqual([t["Tar_Cod"] for t in asignados], [1, 2, 3, 4])
         self.assertEqual([t["Tar_Cod"] for t in creadas], [5])
         self.assertNotIn(5, [t["Tar_Cod"] for t in trabajos_activos(items)])
+
+    def test_plazos_coinciden_con_gestion(self):
+        self.assertEqual(plazo_tarea("2026-10-20", "2026-10-20"), "Diaria")
+        self.assertEqual(plazo_tarea("2026-10-20", "2026-10-26"), "Semanal")
+        self.assertEqual(plazo_tarea("2026-10-20", "2026-10-27"), "Mensual")
+        self.assertEqual(plazo_tarea("2026-10-20", None, "Pausada"), "Standby")
+        self.assertEqual(plazo_tarea(None, None), "Sin fechas")
+
+    def test_filtro_de_plazo_solo_muestra_tareas_del_plazo(self):
+        items = [
+            {"Tar_Cod": 1, "tipo": "tarea", "Tar_Fecha_Inicio": "2026-10-20", "Tar_Fecha_Fin": "2026-10-20"},
+            {"Tar_Cod": 2, "tipo": "tarea", "Tar_Fecha_Inicio": "2026-10-20", "Tar_Fecha_Fin": "2026-10-26"},
+            {"Tar_Cod": 3, "tipo": "ticket"},
+        ]
+        out = visible_trabajos(items, es_mesa=False, bandeja="asignados",
+                               tipo_filtro="todos", plazo_filtro="Semanal")
+        self.assertEqual([t["Tar_Cod"] for t in out], [2])
 
 
 if __name__ == "__main__":
