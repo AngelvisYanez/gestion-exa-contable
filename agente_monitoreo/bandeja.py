@@ -2,7 +2,8 @@
 """Filtro de la bandeja de ExaMonitor, sin depender de Flet."""
 from __future__ import annotations
 
-from datetime import date
+from calendar import monthrange
+from datetime import date, timedelta
 
 
 def plazo_tarea(inicio: str | None, fin: str | None, estado: str = "") -> str:
@@ -18,6 +19,22 @@ def plazo_tarea(inicio: str | None, fin: str | None, estado: str = "") -> str:
     if dias <= 6:
         return "Semanal"
     return "Mensual"
+
+
+def fecha_fin_para_plazo(inicio: str, plazo: str) -> str:
+    """Fecha fin de Gestión: hoy, +6 días o mismo día del mes siguiente."""
+    base = date.fromisoformat(inicio)
+    if plazo == "Diaria":
+        fin = base
+    elif plazo == "Semanal":
+        fin = base + timedelta(days=6)
+    elif plazo == "Mensual":
+        anio = base.year + (base.month // 12)
+        mes = base.month % 12 + 1
+        fin = date(anio, mes, min(base.day, monthrange(anio, mes)[1]))
+    else:
+        raise ValueError("Plazo inválido")
+    return fin.isoformat()
 
 
 def visible_trabajos(tasks, *, es_mesa: bool, bandeja: str, tipo_filtro: str,

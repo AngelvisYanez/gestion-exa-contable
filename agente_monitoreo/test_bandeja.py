@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import unittest
 
-from bandeja import plazo_tarea, trabajos_activos, visible_trabajos
+from bandeja import fecha_fin_para_plazo, plazo_tarea, trabajos_activos, visible_trabajos
 
 
 ITEMS = [
@@ -83,6 +83,12 @@ class TestBandeja(unittest.TestCase):
         out = visible_trabajos(items, es_mesa=False, bandeja="asignados",
                                tipo_filtro="todos", plazo_filtro="Semanal")
         self.assertEqual([t["Tar_Cod"] for t in out], [2])
+
+    def test_fecha_fin_para_plazo(self):
+        self.assertEqual(fecha_fin_para_plazo("2026-10-20", "Diaria"), "2026-10-20")
+        self.assertEqual(fecha_fin_para_plazo("2026-10-20", "Semanal"), "2026-10-26")
+        self.assertEqual(fecha_fin_para_plazo("2026-01-31", "Mensual"), "2026-02-28")
+        self.assertEqual(fecha_fin_para_plazo("2026-12-15", "Mensual"), "2027-01-15")
 
 
 if __name__ == "__main__":

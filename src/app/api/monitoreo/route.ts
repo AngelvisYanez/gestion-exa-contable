@@ -266,6 +266,14 @@ async function handle(req: NextRequest) {
         return jsonRes("error", "Tu rol no puede asignar tareas.", null, 403);
       }
       const fechaFin = pick(form, json, req, "fechaFin").trim();
+      const fechaInicio = pick(form, json, req, "fechaInicio").trim();
+      const fechaValida = (value: string) =>
+        /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+        !Number.isNaN(Date.parse(value)) &&
+        new Date(value).toISOString().slice(0, 10) === value;
+      if (fechaInicio && !fechaValida(fechaInicio)) {
+        return jsonRes("error", "Fecha de inicio invalida.");
+      }
       if (fechaFin && (!/^\d{4}-\d{2}-\d{2}$/.test(fechaFin) ||
           Number.isNaN(Date.parse(fechaFin)) || new Date(fechaFin).toISOString().slice(0, 10) !== fechaFin)) {
         return jsonRes("error", "Fecha limite invalida.");
@@ -277,7 +285,9 @@ async function handle(req: NextRequest) {
           descripcion: pick(form, json, req, "descripcion"),
           prioridad: pick(form, json, req, "prioridad") || "Media",
           complejidad: pick(form, json, req, "complejidad") || "Media",
+          fechaInicio: fechaInicio || undefined,
           fechaFin: fechaFin || null,
+          estado: pick(form, json, req, "estado") === "Standby" ? "Standby" : undefined,
           empCod,
           usuCreador: usuCod,
           perCodAsignar: perCodAsignar || undefined,
