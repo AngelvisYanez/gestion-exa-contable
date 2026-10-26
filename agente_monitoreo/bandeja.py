@@ -52,8 +52,10 @@ def visible_trabajos(tasks, *, es_mesa: bool, bandeja: str, tipo_filtro: str,
             items = [t for t in items if not t.get("por_asignar")]
     elif bandeja == "creadas":
         items = [t for t in items if t.get("creada_por_mi")]
+    elif bandeja == "libres":
+        items = [t for t in items if t.get("por_asignar") and not t.get("creada_por_mi")]
     else:
-        items = [t for t in items if not t.get("creada_por_mi")]
+        items = [t for t in items if not t.get("creada_por_mi") and not t.get("por_asignar")]
     if tipo_filtro == "tarea":
         items = [t for t in items if t.get("tipo") != "ticket"]
     elif tipo_filtro == "ticket":

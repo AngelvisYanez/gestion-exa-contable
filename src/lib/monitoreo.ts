@@ -1,6 +1,8 @@
 import { PrismaClient } from "@prisma/client";
 import { altDatabase, getPrisma } from "./db";
-import { EMPRESA_TAREAS, tasksEmpCod } from "./empresa";
+import { EMPRESA_TAREAS, tasksDbDis, tasksEmpCod } from "./empresa";
+import { hasRolePermission } from "./auth/role-permissions";
+import { loadRolePermissions } from "./auth/role-permissions-db";
 import { findPanelActivo, ensurePanelUsuarios } from "./panel-usuarios";
 import { canAssignWork, normalizePanelRole, type UserRole } from "./auth/users";
 import { armarBandejaMesa, bandejaAsignadaDev } from "./monitoreo-bandeja";
@@ -413,8 +415,22 @@ export async function tareasActivasDev(
           empCod, usuCod
         )
       : [];
+    // Con permiso para asignar tickets, el desarrollador tambien ve la cola sin
+    // asignar para tomarse uno (la asignacion a otros la bloquea el servidor).
+    let ticketsLibres: TrabajoMonitorItem[] = [];
+    try {
+      const role = normalizePanelRole(rol);
+      const permissions = await loadRolePermissions(tasksDbDis(), role);
+      if (hasRolePermission({ role, permissions }, "tickets.asignar")) {
+        const raw = await listTicketsAsignados({ bandeja: "sin_asignar", limit: 500 });
+        ticketsLibres = raw.map((t) => mapTicket(t, true));
+      }
+    } catch (err) {
+      console.error("[monitoreo] tickets sin asignar:", err instanceof Error ? err.message : err);
+    }
     return [
       ...bandejaAsignadaDev([...tareas, ...tickets]),
+      ...ticketsLibres,
       ...creadas.map((row) => ({ ...mapTarea(row), por_asignar: true, creada_por_mi: true })),
     ];
   }

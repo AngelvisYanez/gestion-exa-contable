@@ -25,13 +25,16 @@ class TestBandeja(unittest.TestCase):
         tareas = visible_trabajos(ITEMS, es_mesa=True, bandeja="asignados", tipo_filtro="tarea")
         tickets = visible_trabajos(ITEMS, es_mesa=False, bandeja="asignados", tipo_filtro="ticket")
         self.assertEqual([t["Tar_Cod"] for t in tareas], [3])
-        self.assertEqual([t["Tar_Cod"] for t in tickets], [2, 4])
+        self.assertEqual([t["Tar_Cod"] for t in tickets], [4])
 
-    def test_desarrollador_ignora_la_pestana(self):
-        asignar = visible_trabajos(ITEMS, es_mesa=False, bandeja="asignar", tipo_filtro="todos")
-        asignados = visible_trabajos(ITEMS, es_mesa=False, bandeja="asignados", tipo_filtro="todos")
-        self.assertEqual([t["Tar_Cod"] for t in asignar], [1, 2, 3, 4])
-        self.assertEqual([t["Tar_Cod"] for t in asignados], [1, 2, 3, 4])
+    def test_desarrollador_separa_asignados_y_sin_asignar(self):
+        items = ITEMS + [{"Tar_Cod": 5, "tipo": "tarea", "por_asignar": True, "creada_por_mi": True}]
+        asignados = visible_trabajos(items, es_mesa=False, bandeja="asignados", tipo_filtro="todos")
+        libres = visible_trabajos(items, es_mesa=False, bandeja="libres", tipo_filtro="todos")
+        creadas = visible_trabajos(items, es_mesa=False, bandeja="creadas", tipo_filtro="todos")
+        self.assertEqual([t["Tar_Cod"] for t in asignados], [3, 4])
+        self.assertEqual([t["Tar_Cod"] for t in libres], [1, 2])
+        self.assertEqual([t["Tar_Cod"] for t in creadas], [5])
 
     def test_telemetria_no_ofrece_la_cola(self):
         out = trabajos_activos(ITEMS)
@@ -63,7 +66,7 @@ class TestBandeja(unittest.TestCase):
         items = ITEMS + [{"Tar_Cod": 5, "tipo": "tarea", "por_asignar": True, "creada_por_mi": True}]
         asignados = visible_trabajos(items, es_mesa=False, bandeja="asignados", tipo_filtro="todos")
         creadas = visible_trabajos(items, es_mesa=False, bandeja="creadas", tipo_filtro="todos")
-        self.assertEqual([t["Tar_Cod"] for t in asignados], [1, 2, 3, 4])
+        self.assertEqual([t["Tar_Cod"] for t in asignados], [3, 4])
         self.assertEqual([t["Tar_Cod"] for t in creadas], [5])
         self.assertNotIn(5, [t["Tar_Cod"] for t in trabajos_activos(items)])
 

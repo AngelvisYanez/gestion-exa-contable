@@ -6,6 +6,7 @@ La versión vigente del código es `AGENT_VERSION` en `exa_agent.py`.
 
 | Versión | Ejecutable local | Qué cambió |
 | --- | --- | --- |
+| 2.14.1-flet | `dist/ExaMonitor.exe` | Nueva tarea: los campos (título, descripción, listas desplegables, plazo) ocupan todo el ancho del cuadro. El desarrollador ve la pestaña Sin asignar con los tickets libres y puede asignárselos (solo a sí mismo). |
 | 2.14.0-flet | `dist/ExaMonitor.exe` | Nueva tarea rediseñada con formato de texto, selector de plazo (Diaria, Semanal, Mensual, Standby), calendario de fecha fin y gestión de adjuntos; layout ampliado. |
 | 2.13.0-flet | `dist/ExaMonitor.exe` | Avances con apoyo opcional; tareas identificadas y filtradas por plazo (diaria, semanal, mensual, standby); selección simultánea de tarea y ticket para telemetría. |
 | 2.12.2-flet | `dist/ExaMonitor.exe` | Replicados cambios de gestión: apoyo en avance, vínculo ticket-tarea, mejoras en dashboard y tickets. |

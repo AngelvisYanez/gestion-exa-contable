@@ -31,7 +31,7 @@ from win_shell import (
     start_input_counter,
 )
 
-AGENT_VERSION = "2.14.0-flet"
+AGENT_VERSION = "2.14.1-flet"
 UPDATE_REPO = "AngelvisYanez/gestion-exa-contable"
 GITHUB_API_LATEST = f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest"
 
@@ -1448,10 +1448,10 @@ class ExaMonitorApp:
             clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
             bgcolor=C["card"],
         )
-        prioridad = ft.Dropdown(label="Prioridad", value="Media", options=[
+        prioridad = ft.Dropdown(label="Prioridad", value="Media", expanded_insets=ft.Padding.all(0), options=[
             ft.DropdownOption(key=v, text=v) for v in ("Alta", "Media", "Baja")
         ])
-        complejidad = ft.Dropdown(label="Complejidad", value="Media", options=[
+        complejidad = ft.Dropdown(label="Complejidad", value="Media", expanded_insets=ft.Padding.all(0), options=[
             ft.DropdownOption(key=v, text=v) for v in ("Baja", "Media", "Alta", "Muy alta")
         ])
         fecha_fin = ft.TextField(label="Fecha fin", hint_text="AAAA-MM-DD · opcional",
@@ -1492,7 +1492,7 @@ class ExaMonitorApp:
         plazo.on_change = elegir_plazo
         fecha_fin.on_change = actualizar_plazo
         asignables = self.asignables if self.permisos_tarea.get("asignar") else []
-        asignar = ft.Dropdown(label="Asignar a", value="", options=[
+        asignar = ft.Dropdown(label="Asignar a", value="", expanded_insets=ft.Padding.all(0), options=[
             ft.DropdownOption(key="", text="Sin asignar"),
             *[
                 ft.DropdownOption(key=str(p.get("Per_Cod")), text=p.get("Nombre") or "Sin nombre")
@@ -1590,7 +1590,7 @@ class ExaMonitorApp:
                     error,
                 ],
                 width=620, height=490, scroll=ft.ScrollMode.AUTO,
-                spacing=10,
+                spacing=10, horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
             ),
             actions=[ft.TextButton("Cancelar", on_click=cerrar), guardar],
             actions_alignment=ft.MainAxisAlignment.END,
@@ -2403,7 +2403,10 @@ class ExaMonitorApp:
         checks_ase: list[tuple] = []
         btn_asignar = None
         lista_equipo = None
-        texto_asignar = "Asignar tarea" if tipo == "tarea" else "Asignar ticket"
+        # El desarrollador solo puede asignarse un ticket libre a si mismo.
+        solo_yo = not self._es_mesa()
+        texto_asignar = ("Asignarme el ticket" if solo_yo
+                         else "Asignar tarea" if tipo == "tarea" else "Asignar ticket")
         if puede_asignar:
             opciones = payload.get("asignables") or self.asignables or []
             filas = []
@@ -2415,7 +2418,8 @@ class ExaMonitorApp:
                     continue
                 cb = ft.Checkbox(
                     label=(persona.get("Nombre") or "Sin nombre")[:80],
-                    value=False,
+                    value=solo_yo,
+                    disabled=solo_yo,
                 )
                 checks_ase.append((cb, persona))
                 filas.append(cb)
@@ -2490,7 +2494,8 @@ class ExaMonitorApp:
                 info_card(
                     section_label("Asignar"),
                     ft.Text(
-                        "Puedes marcar varias personas del equipo.",
+                        "Como desarrollador solo puedes asignarte el ticket a ti mismo."
+                        if solo_yo else "Puedes marcar varias personas del equipo.",
                         size=12,
                         color=C["text_muted"],
                     ),
@@ -3055,8 +3060,14 @@ class ExaMonitorApp:
             else:
                 vacio = "No hay tareas ni tickets asignados al equipo."
         else:
-            self.lbl_kpis.value = f"{len(self.tasks_list)} Asignaciones | {n_tar} tareas | {n_tic} tickets"
-            vacio = "No hay tareas en este filtro."
+            propias = [t for t in self.tasks_list if not t.get("por_asignar")]
+            n_libres = sum(1 for t in self.tasks_list
+                           if t.get("por_asignar") and t.get("tipo") == "ticket")
+            n_tar_p = sum(1 for t in propias if t.get("tipo") != "ticket")
+            self.lbl_kpis.value = (f"{len(propias)} Asignaciones | {n_tar_p} tareas | "
+                                   f"{len(propias) - n_tar_p} tickets | {n_libres} sin asignar")
+            vacio = ("No hay tickets sin asignar." if self.bandeja_filtro == "libres"
+                     else "No hay tareas en este filtro.")
 
         self.tasks_list_view.controls = [self._task_row(t) for t in visible] or [
             ft.Container(
@@ -3121,11 +3132,20 @@ class ExaMonitorApp:
             self.lbl_activa_hint.value = "Puedes seleccionar una tarea y un ticket a la vez para telemetría."
             self.seg_bandeja.segments = [
                 ft.Segment(value="asignados", label=ft.Text("Asignadas"), icon=ft.Icon(ft.Icons.ASSIGNMENT_IND)),
+                ft.Segment(value="libres", label=ft.Text("Sin asignar"), icon=ft.Icon(ft.Icons.PERSON_ADD_ALT)),
                 ft.Segment(value="creadas", label=ft.Text("Creadas por mí"), icon=ft.Icon(ft.Icons.TASK_ALT)),
             ]
-            self.seg_bandeja.selected = [self.bandeja_filtro if self.bandeja_filtro in ("asignados", "creadas") else "asignados"]
-            self.lbl_lista_titulo.value = "Creadas por mí" if self.bandeja_filtro == "creadas" else "Mis tareas"
-            self.lbl_lista_hint.value = "Clic para abrir" if self.bandeja_filtro == "creadas" else "Clic para marcar activa"
+            if self.bandeja_filtro not in ("asignados", "libres", "creadas"):
+                self.bandeja_filtro = "asignados"
+            self.seg_bandeja.selected = [self.bandeja_filtro]
+            self.lbl_lista_titulo.value = {
+                "creadas": "Creadas por mí", "libres": "Tickets sin asignar",
+            }.get(self.bandeja_filtro, "Mis tareas")
+            self.lbl_lista_hint.value = (
+                "Clic para marcar activa" if self.bandeja_filtro == "asignados"
+                else "Clic para abrir y asignarte")
+            if self.bandeja_filtro == "creadas":
+                self.lbl_lista_hint.value = "Clic para abrir"
             self.card_activa.visible = True
             self.seg_bandeja.visible = True
             self.seg_tipo.visible = True

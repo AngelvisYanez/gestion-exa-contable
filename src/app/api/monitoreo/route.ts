@@ -446,19 +446,27 @@ async function handle(req: NextRequest) {
               perCodes: perCod > 0 ? [perCod] : [],
               preferDb,
             });
-        if (!ticket) {
+        // Un desarrollador tambien puede abrir un ticket sin asignar para tomarselo.
+        const libre =
+          !ticket && !mesa
+            ? pickTicketByOrigen(await listTicketsAsignados({ ticCod: cod, limit: 5 }), preferDb)
+            : null;
+        const detalleTicket =
+          ticket ||
+          (libre && !libre.Asignado_Usu_Cod && !(libre.Asignados || []).length ? libre : null);
+        if (!detalleTicket) {
           return jsonRes("error", "Ticket no encontrado o no asignado a ti.");
         }
-        const sinAsignar = !ticket.Asignado_Usu_Cod;
-        const mio = ticketPerteneceA(ticket, aseCodes, perCod);
-        if (!mesa && !mio) {
-          return jsonRes("error", "Ticket no encontrado o no asignado a ti.");
-        }
+        const sinAsignar = !detalleTicket.Asignado_Usu_Cod && !(detalleTicket.Asignados || []).length;
+        const mio = ticketPerteneceA(detalleTicket, aseCodes, perCod);
         // El desarrollador puede asignarse un ticket libre a si mismo (solo su ficha).
         const puedeAutoasignarse =
           !mesa &&
           sinAsignar &&
           (await monitorHasPermission(prisma, perCod, "tickets.asignar"));
+        if (!mesa && !mio && !puedeAutoasignarse) {
+          return jsonRes("error", "Ticket no encontrado o no asignado a ti.");
+        }
         const asignables = mesa
           ? await asignablesMonitor()
           : puedeAutoasignarse
@@ -466,39 +474,39 @@ async function handle(req: NextRequest) {
                 (a) => (a.Usu_Cod && aseCodes.includes(a.Usu_Cod)) || a.Per_Cod === perCod
               )
             : [];
-        const avances = ticket.Db_Origen
-          ? await listAvancesTicket(ticket.Db_Origen, ticket.Tic_Cod)
+        const avances = detalleTicket.Db_Origen
+          ? await listAvancesTicket(detalleTicket.Db_Origen, detalleTicket.Tic_Cod)
           : [];
         const pct =
-          ticket.Ava_Porcentaje != null
-            ? ticket.Ava_Porcentaje
-            : ticket.Tic_Estado === "Cerrado"
+          detalleTicket.Ava_Porcentaje != null
+            ? detalleTicket.Ava_Porcentaje
+            : detalleTicket.Tic_Estado === "Cerrado"
               ? 100
               : 0;
         return jsonRes("ok", "Detalle de ticket.", {
           tipo: "ticket",
           trabajo: {
-            Cod: ticket.Tic_Cod,
-            Titulo: ticket.Tic_Titulo,
-            Descripcion: ticket.Tic_Descripcion || "",
-            Prioridad: ticket.Tic_Prioridad || "Media",
+            Cod: detalleTicket.Tic_Cod,
+            Titulo: detalleTicket.Tic_Titulo,
+            Descripcion: detalleTicket.Tic_Descripcion || "",
+            Prioridad: detalleTicket.Tic_Prioridad || "Media",
             Complejidad: null,
-            Estado: mesa && sinAsignar ? "Por asignar" : ticketEstadoToKanban(ticket.Tic_Estado),
+            Estado: sinAsignar ? "Por asignar" : ticketEstadoToKanban(detalleTicket.Tic_Estado),
             Fecha_Fin: null,
-            Fecha_Asignacion: sinAsignar ? null : ticket.Fecha_Asignacion || null,
+            Fecha_Asignacion: sinAsignar ? null : detalleTicket.Fecha_Asignacion || null,
             Ava_Porcentaje: pct,
-            puede_registrar_avance: mio && ticket.Tic_Estado !== "Cerrado",
-            puede_cambiar_estado: mio && ticket.Tic_Estado !== "Cerrado" && ticket.Tic_Estado !== "En Proceso",
+            puede_registrar_avance: mio && detalleTicket.Tic_Estado !== "Cerrado",
+            puede_cambiar_estado: mio && detalleTicket.Tic_Estado !== "Cerrado" && detalleTicket.Tic_Estado !== "En Proceso",
             puede_subir_evidencia: mio,
             puede_asignar: (mesa && sinAsignar) || puedeAutoasignarse,
-            Enviado_Por: ticket.Enviado_Por || ticket.Creador_Nombre || null,
-            Empresa: ticket.Emp_Nom || null,
-            Telefono: ticket.Tic_Tel || null,
-            Proceso: ticket.Proceso || null,
-            Asignado_Nombre: ticket.Asignado_Nombre || null,
-            Db_Origen: ticket.Db_Origen || null,
+            Enviado_Por: detalleTicket.Enviado_Por || detalleTicket.Creador_Nombre || null,
+            Empresa: detalleTicket.Emp_Nom || null,
+            Telefono: detalleTicket.Tic_Tel || null,
+            Proceso: detalleTicket.Proceso || null,
+            Asignado_Nombre: detalleTicket.Asignado_Nombre || null,
+            Db_Origen: detalleTicket.Db_Origen || null,
           },
-          evidencias: ticket.Evidencias || [],
+          evidencias: detalleTicket.Evidencias || [],
           avances: avances.slice(0, 8).map((a) => ({
             Ava_Porcentaje: a.Ava_Porcentaje,
             Ava_Fecha: a.Ava_Fecha,

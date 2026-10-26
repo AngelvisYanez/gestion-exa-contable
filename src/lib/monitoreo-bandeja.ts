@@ -32,7 +32,7 @@ export function armarBandejaMesa(input: BandejaMesaInput): TrabajoMonitorItem[] 
   return [...porAsignar, ...mias];
 }
 
-/** El desarrollador solo ve lo suyo, nunca la cola por asignar. */
+/** Lo asignado al desarrollador; la cola sin asignar se agrega aparte, solo tickets. */
 export function bandejaAsignadaDev(items: TrabajoMonitorItem[]): TrabajoMonitorItem[] {
   return items
     .filter((t) => !t.por_asignar)
