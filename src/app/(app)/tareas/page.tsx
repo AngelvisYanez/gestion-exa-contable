@@ -14,6 +14,13 @@ import { roleLabel } from "@/lib/auth/users";
 import { useNotifications } from "@/contexts/NotificationsContext";
 import { usePagination } from "@/hooks/use-pagination";
 import { hoyFecha } from "@/lib/timezone";
+import {
+  DateRangeFilter,
+  TICKET_FECHA_PRESETS,
+  detectTicketFechaPreset,
+  rangoTicketsPreset,
+  type DateRangeValue,
+} from "@/components/date-range-filter";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -65,9 +72,11 @@ export default function TareasPage() {
   const [filtroUsuario, setFiltroUsuario] = useState("");
   const [filtroPlazo, setFiltroPlazo] = useState("todos");
   const [q, setQ] = useState("");
+  const [rango, setRango] = useState<DateRangeValue>(() => rangoTicketsPreset("hoy"));
+  const [todasLasFechas, setTodasLasFechas] = useState(true);
   const [viewMode, setViewMode] = useState<ListViewMode>("kanban");
   const displayMode = useResponsiveListView(viewMode);
-  const pager = usePagination(tareas, { resetKey: `${filtroEstado}|${filtroUsuario}|${filtroPlazo}|${q}` });
+  const pager = usePagination(tareas, { resetKey: `${filtroEstado}|${filtroUsuario}|${filtroPlazo}|${q}|${todasLasFechas ? "todas" : `${rango.desde}|${rango.hasta}`}` });
 
   const [formOpen, setFormOpen] = useState(false);
   const [formTitulo, setFormTitulo] = useState("");
@@ -129,7 +138,10 @@ export default function TareasPage() {
     setLoading(true);
     setError("");
     try {
-      const url = `/api/tareas?Ses_Dat_Dis=${encodeURIComponent(db)}&Emp_Cod=${empCod}&estado=${encodeURIComponent(filtroEstado)}&plazo=${encodeURIComponent(filtroPlazo)}&Per_Cod=${encodeURIComponent(filtroUsuario)}&q=${encodeURIComponent(q)}`;
+      const fechas = todasLasFechas
+        ? ""
+        : `&desde=${encodeURIComponent(rango.desde)}&hasta=${encodeURIComponent(rango.hasta)}`;
+      const url = `/api/tareas?Ses_Dat_Dis=${encodeURIComponent(db)}&Emp_Cod=${empCod}&estado=${encodeURIComponent(filtroEstado)}&plazo=${encodeURIComponent(filtroPlazo)}&Per_Cod=${encodeURIComponent(filtroUsuario)}&q=${encodeURIComponent(q)}${fechas}`;
       const res = await fetch(url);
       const j = await res.json();
       if (!j.success) throw new Error(j.message || "Error al cargar tareas");
@@ -139,7 +151,7 @@ export default function TareasPage() {
     } finally {
       if (request === loadRequest.current) setLoading(false);
     }
-  }, [db, empCod, filtroEstado, filtroPlazo, filtroUsuario, q]);
+  }, [db, empCod, filtroEstado, filtroPlazo, filtroUsuario, q, todasLasFechas, rango]);
 
   useEffect(() => {
     void loadTareas();
@@ -351,6 +363,45 @@ export default function TareasPage() {
             <option value="Standby">Standby (en pausa)</option>
             <option value="Sin fechas">Sin fechas</option>
           </Select>
+          <div className="flex h-9 max-w-full items-center gap-0.5 overflow-x-auto rounded-lg border border-border/70 bg-muted/40 px-1 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setTodasLasFechas(true)}
+              className={cn(
+                "min-h-11 whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-bold transition-colors sm:min-h-0",
+                todasLasFechas ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Todas
+            </button>
+            {TICKET_FECHA_PRESETS.map((p) => {
+              const activo = !todasLasFechas && detectTicketFechaPreset(rango) === p.id;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => {
+                    setTodasLasFechas(false);
+                    setRango(rangoTicketsPreset(p.id));
+                  }}
+                  className={cn(
+                    "min-h-11 whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-bold transition-colors sm:min-h-0",
+                    activo ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {p.label}
+                </button>
+              );
+            })}
+          </div>
+          <DateRangeFilter
+            compact
+            value={rango}
+            onChange={(next) => {
+              setTodasLasFechas(false);
+              setRango(next);
+            }}
+          />
           <ViewModeToggle value={viewMode} onChange={setViewMode} withKanban />
           <Button
             type="button"

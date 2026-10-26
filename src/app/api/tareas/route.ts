@@ -95,17 +95,19 @@ export async function GET(req: NextRequest) {
     const estado = sp.get("estado") || "todos";
     const plazo = sp.get("plazo") || "todos";
     const q = sp.get("q") || "";
+    const desde = sp.get("desde") || undefined;
+    const hasta = sp.get("hasta") || undefined;
     const withKpis = sp.get("kpis") === "1";
 
     const usuCreador = session.role === "developer" ? session.usuCod : undefined;
-    const tareas = await listTareas(db, { empCod, perCod, estado, plazo, q, usuCreador });
+    const tareas = await listTareas(db, { empCod, perCod, estado, plazo, q, usuCreador, desde, hasta });
     const payload: Record<string, unknown> = {
       success: true,
       db,
       Emp_Cod: empCod,
       tareas,
     };
-    if (withKpis) payload.kpis = await kpisTareas(db, empCod, { usuCreador });
+    if (withKpis) payload.kpis = await kpisTareas(db, empCod, { usuCreador, desde, hasta });
     return NextResponse.json(payload);
   } catch (err) {
     const mensaje = err instanceof Error ? err.message : "Error";
