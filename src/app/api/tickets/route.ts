@@ -60,7 +60,19 @@ export async function GET(req: NextRequest) {
             limit: 1,
             ...(scope ? { aseCodes: scope.aseCodes, perCodes: scope.perCodes } : {}),
           });
-      const ticket = tickets.find((t) => t.Tic_Cod === itemCod && t.Db_Origen === rawDb);
+      let ticket = tickets.find((t) => t.Tic_Cod === itemCod && t.Db_Origen === rawDb);
+      // Un desarrollador tambien puede abrir tickets sin asignar para tomarselos.
+      if (!ticket && scope) {
+        const candidatos = await listTicketsAsignados({ ticCod: itemCod, bases: [rawDb], limit: 1 });
+        const cand = candidatos.find(
+          (t) =>
+            t.Tic_Cod === itemCod &&
+            t.Db_Origen === rawDb &&
+            (t.Asignado_Usu_Cod ?? 0) === 0 &&
+            (!t.Asignados || t.Asignados.length === 0)
+        );
+        if (cand) ticket = cand;
+      }
       if (!ticket) {
         return NextResponse.json({ success: false, message: "Ticket no encontrado" }, { status: 404 });
       }
@@ -136,7 +148,7 @@ export async function GET(req: NextRequest) {
 
     if (session?.role === "developer") {
       const scope = await ticketScopeForSession(session);
-      const all =
+      const assigned =
         scope.aseCodes.length || scope.perCodes.length
           ? await listTicketsAsignados({
               aseCodes: scope.aseCodes,
@@ -147,14 +159,38 @@ export async function GET(req: NextRequest) {
               limit: Math.max(limit, 500),
             })
           : [];
-      const kpisMios = resumirTickets(all);
-      const vista = bandeja === "resueltos" ? "resueltos" : bandeja === "todos" ? "todos" : "asignados";
+      // Cola de tickets sin asignar para que el desarrollador pueda tomarse uno.
+      const unassigned = await listTicketsAsignados({
+        bandeja: "sin_asignar",
+        q: q || undefined,
+        desde: desde || undefined,
+        hasta: hasta || undefined,
+        limit: Math.max(limit, 500),
+      });
+      const seen = new Set(assigned.map((t) => `${t.Tic_Cod}|${t.Db_Origen}`));
+      const pool = [...assigned, ...unassigned.filter((t) => !seen.has(`${t.Tic_Cod}|${t.Db_Origen}`))];
+      const kpisMios = resumirTickets(pool);
+      kpisMios.sin_asignar = pool.filter(
+        (t) => (t.Asignado_Usu_Cod ?? 0) === 0 && (!t.Asignados || t.Asignados.length === 0) && t.Tic_Estado !== "Cerrado"
+      ).length;
+      const esSinAsignar = (t: (typeof pool)[number]) =>
+        (t.Asignado_Usu_Cod ?? 0) === 0 && (!t.Asignados || t.Asignados.length === 0);
+      const vista =
+        bandeja === "resueltos"
+          ? "resueltos"
+          : bandeja === "sin_asignar"
+            ? "sin_asignar"
+            : bandeja === "todos"
+              ? "todos"
+              : "asignados";
       const tickets =
         vista === "resueltos"
-          ? all.filter((t) => t.Tic_Estado === "Cerrado")
-          : vista === "todos"
-            ? all
-            : all.filter((t) => t.Tic_Estado !== "Cerrado");
+          ? pool.filter((t) => t.Tic_Estado === "Cerrado")
+          : vista === "sin_asignar"
+            ? pool.filter((t) => esSinAsignar(t) && t.Tic_Estado !== "Cerrado")
+            : vista === "todos"
+              ? pool
+              : pool.filter((t) => t.Tic_Estado !== "Cerrado" && !esSinAsignar(t));
       const payload: Record<string, unknown> = {
         success: true,
         db,

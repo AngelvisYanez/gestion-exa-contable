@@ -280,6 +280,7 @@ export default function TicketsPage() {
     : null);
   const bandejasVisibles = isDev
     ? [
+        { id: "sin_asignar" as Bandeja, label: "Sin asignar" },
         { id: "asignados" as Bandeja, label: "Abiertos" },
         { id: "resueltos" as Bandeja, label: "Resueltos" },
         { id: "todos" as Bandeja, label: "Todos" },
