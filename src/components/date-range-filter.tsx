@@ -167,6 +167,10 @@ type Props = {
    * `day-and-range`: filtros rapidos por dia + calendarios de rango.
    */
   variant?: "range" | "day" | "day-and-range";
+  showAll?: boolean;
+  allActive?: boolean;
+  onAll?: () => void;
+  allLabel?: string;
 };
 
 export function DateRangeFilter({

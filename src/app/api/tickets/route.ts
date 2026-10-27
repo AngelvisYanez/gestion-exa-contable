@@ -159,38 +159,19 @@ export async function GET(req: NextRequest) {
               limit: Math.max(limit, 500),
             })
           : [];
-      // Cola de tickets sin asignar para que el desarrollador pueda tomarse uno.
-      const unassigned = await listTicketsAsignados({
-        bandeja: "sin_asignar",
-        q: q || undefined,
-        desde: desde || undefined,
-        hasta: hasta || undefined,
-        limit: Math.max(limit, 500),
-      });
-      const seen = new Set(assigned.map((t) => `${t.Tic_Cod}|${t.Db_Origen}`));
-      const pool = [...assigned, ...unassigned.filter((t) => !seen.has(`${t.Tic_Cod}|${t.Db_Origen}`))];
-      const kpisMios = resumirTickets(pool);
-      kpisMios.sin_asignar = pool.filter(
-        (t) => (t.Asignado_Usu_Cod ?? 0) === 0 && (!t.Asignados || t.Asignados.length === 0) && t.Tic_Estado !== "Cerrado"
-      ).length;
-      const esSinAsignar = (t: (typeof pool)[number]) =>
-        (t.Asignado_Usu_Cod ?? 0) === 0 && (!t.Asignados || t.Asignados.length === 0);
+      const kpisMios = resumirTickets(assigned);
       const vista =
         bandeja === "resueltos"
           ? "resueltos"
-          : bandeja === "sin_asignar"
-            ? "sin_asignar"
-            : bandeja === "todos"
+          : bandeja === "todos"
               ? "todos"
               : "asignados";
       const tickets =
         vista === "resueltos"
-          ? pool.filter((t) => t.Tic_Estado === "Cerrado")
-          : vista === "sin_asignar"
-            ? pool.filter((t) => esSinAsignar(t) && t.Tic_Estado !== "Cerrado")
+          ? assigned.filter((t) => t.Tic_Estado === "Cerrado")
             : vista === "todos"
-              ? pool
-              : pool.filter((t) => t.Tic_Estado !== "Cerrado" && !esSinAsignar(t));
+              ? assigned
+              : assigned.filter((t) => t.Tic_Estado !== "Cerrado");
       const payload: Record<string, unknown> = {
         success: true,
         db,

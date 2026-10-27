@@ -259,27 +259,16 @@ export default function TicketsPage() {
   }, [asignables, tickets]);
 
   const ticketsVisibles = useMemo(() => {
-    let list = tickets;
-
-    if (isDev && user?.usuCod) {
-      const miUsuCod = Number(user.usuCod);
-      if (miUsuCod > 0) {
-        list = list.filter((t) => usuDeTicket(t).includes(miUsuCod));
-      }
-    } else if (puedeAsignar && filtroDev) {
+    if (isDev || !puedeAsignar || !filtroDev) return tickets;
       const ids = new Set(
         filtroDev
           .split(",")
           .map((n) => Number(n))
           .filter((n) => n > 0)
       );
-      if (ids.size) {
-        list = list.filter((t) => usuDeTicket(t).some((id) => ids.has(id)));
-      }
-    }
-
-    return list;
-  }, [tickets, filtroDev, puedeAsignar, isDev, user?.usuCod]);
+    if (!ids.size) return tickets;
+    return tickets.filter((t) => usuDeTicket(t).some((id) => ids.has(id)));
+  }, [tickets, filtroDev, puedeAsignar, isDev]);
 
   const conteoPorDev = useMemo(() => {
     const map = new Map<string, number>();
@@ -322,8 +311,8 @@ export default function TicketsPage() {
         const vb = b.Enviado_Por || b.Creador_Nombre || "";
         return va.localeCompare(vb, "es", { sensitivity: "base" }) * dir;
       }
-      const va = (a as any)[sort.key];
-      const vb = (b as any)[sort.key];
+      const va = a[sort.key];
+      const vb = b[sort.key];
       const sa = va == null ? "" : String(va);
       const sb = vb == null ? "" : String(vb);
       return sa.localeCompare(sb, "es", { sensitivity: "base" }) * dir;
@@ -358,7 +347,7 @@ export default function TicketsPage() {
     : null);
   const bandejasVisibles = isDev
     ? [
-        { id: "asignados" as Bandeja, label: "En proceso" },
+        { id: "asignados" as Bandeja, label: "Abiertos" },
         { id: "resueltos" as Bandeja, label: "Resueltos" },
         { id: "todos" as Bandeja, label: "Todos" },
       ]
