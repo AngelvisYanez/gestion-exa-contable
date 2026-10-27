@@ -51,7 +51,8 @@ export async function GET(req: NextRequest) {
       if (!Number.isSafeInteger(itemCod) || itemCod <= 0 || !bases.includes(rawDb)) {
         return NextResponse.json({ success: false, message: "Ticket no encontrado" }, { status: 404 });
       }
-      const scope = actor.role === "developer" ? await ticketScopeForSession(actor) : null;
+      const scope = actor.role === "developer" || sp.get("mios") === "1"
+        ? await ticketScopeForSession(actor) : null;
       const tickets = scope && !scope.aseCodes.length && !scope.perCodes.length
         ? []
         : await listTicketsAsignados({
@@ -62,7 +63,7 @@ export async function GET(req: NextRequest) {
           });
       let ticket = tickets.find((t) => t.Tic_Cod === itemCod && t.Db_Origen === rawDb);
       // Un desarrollador tambien puede abrir tickets sin asignar para tomarselos.
-      if (!ticket && scope) {
+      if (!ticket && scope && actor.role === "developer" && sp.get("mios") !== "1") {
         const candidatos = await listTicketsAsignados({ ticCod: itemCod, bases: [rawDb], limit: 1 });
         const cand = candidatos.find(
           (t) =>
@@ -144,9 +145,9 @@ export async function GET(req: NextRequest) {
     const withAssignees = sp.get("assignees") === "1";
     const limit = parseInt(sp.get("limit") || "500", 10) || 500;
     const db = sanitizeDbDis(sp.get("Ses_Dat_Dis"));
-    const session = await getSessionFromRequest(req);
+    const session = actor;
 
-    if (session?.role === "developer") {
+    if (session.role === "developer" || sp.get("mios") === "1") {
       const scope = await ticketScopeForSession(session);
       const assigned =
         scope.aseCodes.length || scope.perCodes.length
@@ -184,14 +185,14 @@ export async function GET(req: NextRequest) {
         hasta: hasta || null,
       };
       if (withAssignees) {
-        // Un desarrollador solo puede asignarse tickets a si mismo: el dialogo
-        // muestra unicamente su ficha.
-        const propios = (await listTicketAssignees()).filter(
+        const todos = await listTicketAssignees();
+        // Un desarrollador solo puede asignarse tickets a si mismo.
+        const propios = todos.filter(
           (a) =>
             (a.Usu_Cod != null && scope.aseCodes.includes(a.Usu_Cod)) ||
             (a.Per_Cod != null && a.Per_Cod > 0 && scope.perCodes.includes(a.Per_Cod))
         );
-        payload.asignables = propios.length
+        payload.asignables = session.role === "developer" ? (propios.length
           ? propios
           : scope.aseCodes.length
             ? [
@@ -203,7 +204,7 @@ export async function GET(req: NextRequest) {
                   Rol: "developer",
                 },
               ]
-            : [];
+            : []) : todos;
       }
       return NextResponse.json(payload);
     }
