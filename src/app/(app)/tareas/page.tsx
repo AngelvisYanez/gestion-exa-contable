@@ -714,6 +714,7 @@ export default function TareasPage() {
                 <PlazoSelector
                   inicio={hoyFecha()}
                   fechaFin={formFin}
+                  enStandby={formStandby}
                   disabled={formSaving}
                   onSelect={(plazo, fin) => {
                     setFormFin(fin);

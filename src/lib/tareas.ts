@@ -12,7 +12,7 @@ import { ensureMonitoreoSchema } from "./monitoreo-global";
 import { ticketTareaKey, ticketsDeTarea, ticketsDeTareas, resolverTicketsDeTarea } from "./ticket-tarea";
 import { resumenTickets, type TicketVinculoResumen } from "./tickets";
 import { CATEGORIAS_PLAZO, type CategoriaPlazo } from "./plazo-tarea";
-import { ESTADO_STANDBY } from "./standby";
+import { esStandby, estadoParaPersistir, etiquetaEstado, ESTADO_STANDBY, ETIQUETA_STANDBY } from "./standby";
 import {
   ensureHorarioSchema,
   estaEnAlmuerzo,
@@ -272,8 +272,13 @@ export async function listTareas(dbDis: string, opts: {
     params.push(opts.usuCreador);
   }
   if (opts.estado && opts.estado !== "todos") {
-    where.push("t.Tar_Estado = ?");
-    params.push(opts.estado);
+    if (esStandby(opts.estado)) {
+      where.push("t.Tar_Estado IN (?, ?)");
+      params.push(ESTADO_STANDBY, ETIQUETA_STANDBY);
+    } else {
+      where.push("t.Tar_Estado = ?");
+      params.push(opts.estado);
+    }
   }
   if (opts.q) {
     where.push("(t.Tar_Titulo LIKE ? OR CONVERT(t.Tar_Descripcion USING utf8mb4) LIKE ?)");
@@ -289,7 +294,7 @@ export async function listTareas(dbDis: string, opts: {
   // Filtro por plazo (duración inicio -> fin): mismo criterio que plazoDesdeFechas()
   if (opts.plazo === "Standby") {
     // Standby: la tarea esta en pausa (espera feedback) y no tiene fecha de fin.
-    where.push(`t.Tar_Estado = '${ESTADO_STANDBY}'`);
+    where.push(`t.Tar_Estado IN ('${ESTADO_STANDBY}', '${ETIQUETA_STANDBY}')`);
   } else if (
     opts.plazo &&
     opts.plazo !== "todos" &&
@@ -300,14 +305,14 @@ export async function listTareas(dbDis: string, opts: {
     if (opts.plazo === "Sin fechas") {
       // Sin fechas = nunca planificada. Las tareas en standby se filtran aparte.
       where.push(
-        `NOT (t.Tar_Fecha_Inicio IS NOT NULL AND t.Tar_Fecha_Fin IS NOT NULL) AND t.Tar_Estado <> '${ESTADO_STANDBY}'`
+        `NOT (t.Tar_Fecha_Inicio IS NOT NULL AND t.Tar_Fecha_Fin IS NOT NULL) AND t.Tar_Estado NOT IN ('${ESTADO_STANDBY}', '${ETIQUETA_STANDBY}')`
       );
     } else if (opts.plazo === "Diaria") {
-      where.push(`(${conFechas} AND ${diff} <= 0)`);
+      where.push(`(${conFechas} AND t.Tar_Estado NOT IN ('${ESTADO_STANDBY}', '${ETIQUETA_STANDBY}') AND ${diff} <= 0)`);
     } else if (opts.plazo === "Semanal") {
-      where.push(`(${conFechas} AND ${diff} BETWEEN 1 AND 6)`);
+      where.push(`(${conFechas} AND t.Tar_Estado NOT IN ('${ESTADO_STANDBY}', '${ETIQUETA_STANDBY}') AND ${diff} BETWEEN 1 AND 6)`);
     } else if (opts.plazo === "Mensual") {
-      where.push(`(${conFechas} AND ${diff} > 6)`);
+      where.push(`(${conFechas} AND t.Tar_Estado NOT IN ('${ESTADO_STANDBY}', '${ETIQUETA_STANDBY}') AND ${diff} > 6)`);
     }
   }
   // Operativa en rango: solapa [desde, hasta] con el periodo de la tarea
@@ -423,7 +428,7 @@ export async function listTareas(dbDis: string, opts: {
       Tar_Descripcion: parsed.texto || (t.Tar_Descripcion ? String(t.Tar_Descripcion) : null),
       Tar_Prioridad: t.Tar_Prioridad || "Media",
       Tar_Complejidad: normalizeComplejidad(t.Tar_Complejidad),
-      Tar_Estado: t.Tar_Estado || "",
+      Tar_Estado: etiquetaEstado(t.Tar_Estado),
       Tar_Fecha_Inicio: t.Tar_Fecha_Inicio,
       Tar_Fecha_Fin: t.Tar_Fecha_Fin,
       Tar_Fecha_Culminacion: t.Tar_Fecha_Culminacion,
@@ -551,8 +556,8 @@ export async function createTarea(
   const descripcion = buildTareaDescripcion(descripcionRaw, adjuntos) || null;
   const prioridad = data.prioridad || "Media";
   const fechaInicio = data.fechaInicio ? new Date(data.fechaInicio) : new Date();
-  const fechaFin = data.fechaFin ? new Date(data.fechaFin) : null;
-  const estado = data.estado || "Pendiente";
+  const estado = estadoParaPersistir(data.estado || "Pendiente");
+  const fechaFin = esStandby(estado) ? null : data.fechaFin ? new Date(data.fechaFin) : null;
   // BD EXA: Usu_Creador NOT NULL en la practica (schema Prisma lo marca opcional)
   const usuCreador = data.usuCreador && data.usuCreador > 0 ? data.usuCreador : 0;
 
@@ -609,11 +614,13 @@ export async function createTarea(
         tarCod,
         data.perCodAsignar
       );
-      await tx.$executeRawUnsafe(
-        `UPDATE aud_tareas SET Tar_Estado = 'Asignado' WHERE Tar_Cod = ? AND Tar_Est = 'A'`,
-        tarCod
-      );
-      estadoFinal = "Asignado";
+      if (!esStandby(estado)) {
+        await tx.$executeRawUnsafe(
+          `UPDATE aud_tareas SET Tar_Estado = 'Asignado' WHERE Tar_Cod = ? AND Tar_Est = 'A'`,
+          tarCod
+        );
+        estadoFinal = "Asignado";
+      }
     } else if (estado === "Asignado") {
       await tx.$executeRawUnsafe(
         `UPDATE aud_tareas SET Tar_Estado = 'Pendiente' WHERE Tar_Cod = ? AND Tar_Est = 'A'`,
@@ -633,7 +640,7 @@ export async function createTarea(
     Tar_Complejidad: complejidad,
     Tar_Fecha_Inicio: fechaInicio,
     Tar_Fecha_Fin: fechaFin,
-    Tar_Estado: estadoFinal,
+    Tar_Estado: etiquetaEstado(estadoFinal),
     Emp_Cod: empCod,
     Usu_Creador: usuCreador,
     Tar_Est: "A",
@@ -693,7 +700,7 @@ export async function setTareaAsignados(dbDis: string, tarCod: number, perCods: 
     estadoFinal = "Pendiente";
   }
 
-  return { Tar_Cod: tarCod, Tar_Estado: estadoFinal, Per_Cods: unique };
+  return { Tar_Cod: tarCod, Tar_Estado: etiquetaEstado(estadoFinal), Per_Cods: unique };
 }
 
 /** Adjunta evidencias a la descripción de una tarea ya creada. */
@@ -747,6 +754,7 @@ export async function updateTarea(
   const patch = Object.fromEntries(
     Object.entries(data).filter(([, v]) => v !== undefined)
   ) as typeof data;
+  if (patch.estado != null) patch.estado = estadoParaPersistir(patch.estado);
 
   // Solo estado → SQL corto
   if (patch.estado != null && Object.keys(patch).length === 1) {
@@ -778,7 +786,7 @@ export async function updateTarea(
         tarCod
       );
     }
-    return { Tar_Cod: tarCod, Tar_Estado: patch.estado };
+    return { Tar_Cod: tarCod, Tar_Estado: etiquetaEstado(patch.estado) };
   }
 
   const [current] = await prisma.$queryRawUnsafe<
@@ -834,7 +842,10 @@ export async function updateTarea(
     sets.push("Tar_Fecha_Inicio = ?");
     params.push(new Date(patch.fechaInicio));
   }
-  if (patch.fechaFin !== undefined) {
+  if (patch.estado === ESTADO_STANDBY) {
+    // Una pausa siempre elimina la fecha, aunque el formulario envie una.
+    sets.push("Tar_Fecha_Fin = NULL");
+  } else if (patch.fechaFin !== undefined) {
     sets.push("Tar_Fecha_Fin = ?");
     params.push(patch.fechaFin ? new Date(patch.fechaFin) : null);
   }
@@ -846,11 +857,7 @@ export async function updateTarea(
     } else {
       sets.push("Tar_Fecha_Culminacion = NULL");
     }
-    if (patch.estado === ESTADO_STANDBY) {
-      // Invariante: en standby la tarea no tiene fecha de fin.
-      sets.push("Tar_Fecha_Fin = NULL");
-    }
-  } else if (patch.fechaFin && current.Tar_Estado === ESTADO_STANDBY) {
+  } else if (patch.fechaFin && esStandby(current.Tar_Estado)) {
     // Al fijar un plazo la tarea reanuda su trabajo: sale de standby.
     sets.push("Tar_Estado = 'En Proceso'");
   }
@@ -872,7 +879,7 @@ export async function updateTarea(
   return {
     Tar_Cod: tarCod,
     ...(patch.titulo != null ? { Tar_Titulo: patch.titulo } : {}),
-    ...(patch.estado != null ? { Tar_Estado: patch.estado } : {}),
+    ...(patch.estado != null ? { Tar_Estado: etiquetaEstado(patch.estado) } : {}),
     ...(patch.complejidad != null ? { Tar_Complejidad: normalizeComplejidad(patch.complejidad) } : {}),
     ...(patch.apoyoPerCod !== undefined ? { Tar_Apoyo_Per_Cod: patch.apoyoPerCod } : {}),
   };
@@ -1259,7 +1266,7 @@ export async function getTareaDetalle(
       Tar_Descripcion: descParsed.texto || null,
       Tar_Prioridad: t.Tar_Prioridad || "Media",
       Tar_Complejidad: normalizeComplejidad(t.Tar_Complejidad),
-      Tar_Estado: t.Tar_Estado || "",
+      Tar_Estado: etiquetaEstado(t.Tar_Estado),
       Tar_Fecha_Inicio: toIso(t.Tar_Fecha_Inicio),
       Tar_Fecha_Fin: toIso(t.Tar_Fecha_Fin),
       Tar_Fecha_Culminacion: toIso(t.Tar_Fecha_Culminacion),

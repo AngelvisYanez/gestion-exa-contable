@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { esStandby, estadoTrasAvance, ESTADO_STANDBY } from "./standby";
+import { esStandby, estadoParaPersistir, estadoTrasAvance, etiquetaEstado, ESTADO_STANDBY } from "./standby";
 
 describe("estadoTrasAvance", () => {
   it("deja la tarea en standby cuando el avance lleva nota de standby", () => {
@@ -33,5 +33,19 @@ describe("esStandby", () => {
     assert.equal(esStandby("standby"), false);
     assert.equal(esStandby(null), false);
     assert.equal(esStandby(undefined), false);
+  });
+});
+
+describe("estado de pausa en API y BD", () => {
+  it("guarda la etiqueta de la interfaz como Pausada y la muestra como Standby", () => {
+    assert.equal(estadoParaPersistir("Standby"), ESTADO_STANDBY);
+    assert.equal(estadoParaPersistir("Pausada"), ESTADO_STANDBY);
+    assert.equal(etiquetaEstado("Pausada"), "Standby");
+    assert.equal(etiquetaEstado("Standby"), "Standby");
+  });
+
+  it("conserva los otros estados", () => {
+    assert.equal(estadoParaPersistir("En Proceso"), "En Proceso");
+    assert.equal(etiquetaEstado("Asignado"), "Asignado");
   });
 });

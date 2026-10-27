@@ -22,6 +22,7 @@ import { TicketVinculadoChip } from "@/components/tareas/ticket-vinculado-chip";
 import { Progress } from "@/components/ui/progress";
 import { hoyFecha, startOfDayZona } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
+import { esStandby } from "@/lib/standby";
 import { plainTextFromHtml } from "@/components/ui/rich-text";
 import type { Tarea } from "./types";
 
@@ -45,7 +46,7 @@ export function workItemKey(t: Tarea) {
 function columnFor(t: Tarea): KanbanEstado {
   const e = t.Tar_Estado || "Pendiente";
   if (e === "Finalizada" || (t.Ava_Porcentaje || 0) >= 100) return "Finalizada";
-  if (e === "Standby") return "Standby";
+  if (esStandby(e)) return "Standby";
   if (e === "En Proceso") return "En Proceso";
   if (e === "Asignado") return "Asignado";
   if (COLUMN_IDS.has(e)) return e as KanbanEstado;

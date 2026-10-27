@@ -1,6 +1,6 @@
 "use client";
 
-import { fechaFinParaPlazo, plazoDesdeFechas, type CategoriaPlazo } from "@/lib/plazo-tarea";
+import { fechaFinParaPlazo, plazoVisible, type CategoriaPlazo } from "@/lib/plazo-tarea";
 import { cn } from "@/lib/utils";
 
 export type PlazoSeleccion = Exclude<CategoriaPlazo, "Sin fechas"> | "Standby";
@@ -40,28 +40,28 @@ const OPCIONES: Array<{
 /**
  * Selector Diaria / Semanal / Mensual / Standby. Al elegir un plazo fija la
  * fecha fin calculada desde la fecha de inicio; Standby quita la fecha fin.
- * El plazo resaltado se deriva de las fechas actuales (se actualiza solo si
- * cambias la fecha fin a mano).
+ * El plazo resaltado se deriva de las fechas; Standby depende del estado.
  */
 export function PlazoSelector({
   inicio,
   fechaFin,
+  enStandby = false,
   onSelect,
   disabled,
   className,
 }: {
   inicio?: string | null;
   fechaFin?: string | null;
+  enStandby?: boolean;
   onSelect: (plazo: PlazoSeleccion, fechaFin: string) => void;
   disabled?: boolean;
   className?: string;
 }) {
-  const actual = plazoDesdeFechas(inicio, fechaFin);
-  const sinFin = !fechaFin;
+  const actual = plazoVisible(inicio, fechaFin, enStandby ? "Standby" : null);
   return (
     <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
       {OPCIONES.map(({ plazo, hint, activo, inactivo }) => {
-        const seleccionado = plazo === "Standby" ? sinFin : !sinFin && actual === plazo;
+        const seleccionado = actual === plazo;
         return (
           <button
             key={plazo}

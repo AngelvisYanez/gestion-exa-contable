@@ -2,9 +2,8 @@
  * Reglas del estado "Standby" (tarea en pausa esperando feedback/validacion).
  * Modulo puro: sin dependencias de base de datos para poder testearlo solo.
  *
- * En la BD `aud_tareas.Tar_Estado` es un ENUM:
- * ('Pendiente','Asignado','En Proceso','Pausada','Finalizada').
- * El valor de pausa del esquema es "Pausada"; la app lo muestra como "Standby".
+ * En la BD `aud_tareas.Tar_Estado` guarda "Pausada" para una tarea en pausa.
+ * La app lo muestra como "Standby" y reconoce registros antiguos con esa etiqueta.
  */
 
 /** Valor del enum Tar_Estado para una tarea en pausa (standby). */
@@ -24,6 +23,11 @@ export function etiquetaEstado(estado?: string | null): string {
   const e = (estado || "").trim();
   if (!e) return "";
   return esStandby(e) ? ETIQUETA_STANDBY : e;
+}
+
+/** Valor que se guarda en Tar_Estado; acepta la etiqueta usada por la UI. */
+export function estadoParaPersistir(estado: string): string {
+  return esStandby(estado) ? ESTADO_STANDBY : estado;
 }
 
 /**

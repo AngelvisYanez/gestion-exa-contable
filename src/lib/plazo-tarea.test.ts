@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { fechaFinParaPlazo, plazoDesdeFechas, plazoVariant } from "./plazo-tarea";
+import { fechaFinParaPlazo, plazoDesdeFechas, plazoVisible, plazoVariant } from "./plazo-tarea";
 
 describe("plazoDesdeFechas", () => {
   it("clasifica por duración entre inicio y fin", () => {
@@ -13,6 +13,18 @@ describe("plazoDesdeFechas", () => {
     assert.equal(plazoDesdeFechas("2026-10-20", null), "Sin fechas");
     assert.equal(plazoDesdeFechas(null, "2026-10-20"), "Sin fechas");
     assert.equal(plazoDesdeFechas(null, null), "Sin fechas");
+  });
+});
+
+describe("plazoVisible", () => {
+  it("muestra Standby cuando el estado es Pausada o Standby", () => {
+    assert.equal(plazoVisible("2026-10-20", null, "Pausada"), "Standby");
+    assert.equal(plazoVisible("2026-10-20", "2026-10-26", "Standby"), "Standby");
+  });
+
+  it("una tarea sin fecha de fin no se considera en pausa", () => {
+    assert.equal(plazoVisible("2026-10-20", null, "Pendiente"), "Sin fechas");
+    assert.equal(plazoVisible("2026-10-20", "2026-10-26", "En Proceso"), "Semanal");
   });
 });
 

@@ -1,4 +1,5 @@
 import { toCalendarYmd } from "./timezone";
+import { esStandby } from "./standby";
 
 export type CategoriaPlazo = "Diaria" | "Semanal" | "Mensual" | "Sin fechas";
 
@@ -26,6 +27,11 @@ export function plazoDesdeFechas(inicio: unknown, fin: unknown): CategoriaPlazo 
   if (dias <= 0) return "Diaria";
   if (dias <= 6) return "Semanal";
   return "Mensual";
+}
+
+/** Plazo visible: una pausa prevalece sobre las fechas de la tarea. */
+export function plazoVisible(inicio: unknown, fin: unknown, estado?: string | null): CategoriaPlazo | "Standby" {
+  return esStandby(estado) ? "Standby" : plazoDesdeFechas(inicio, fin);
 }
 
 /**

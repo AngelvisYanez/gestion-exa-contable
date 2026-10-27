@@ -1,7 +1,8 @@
 import { Badge } from "@/components/ui/badge";
 import { hoyFecha } from "@/lib/timezone";
-import { plazoDesdeFechas, plazoVariant } from "@/lib/plazo-tarea";
+import { plazoVisible, plazoVariant } from "@/lib/plazo-tarea";
 import { cn } from "@/lib/utils";
+import { etiquetaEstado } from "@/lib/standby";
 
 export function estadoVariant(estado: string) {
   const map: Record<string, "success" | "info" | "secondary" | "muted" | "warning" | "danger"> = {
@@ -31,7 +32,8 @@ export function complejidadVariant(complejidad: string) {
 }
 
 export function EstadoBadge({ estado }: { estado: string }) {
-  return <Badge variant={estadoVariant(estado)}>{estado}</Badge>;
+  const etiqueta = etiquetaEstado(estado);
+  return <Badge variant={estadoVariant(etiqueta)}>{etiqueta}</Badge>;
 }
 
 export function PrioridadBadge({ prioridad }: { prioridad: string }) {
@@ -59,8 +61,8 @@ export function PlazoBadge({
   estado?: string | null;
   className?: string;
 }) {
-  const enStandby = (estado || "").trim() === "Standby";
-  const plazo = enStandby ? "Standby" : plazoDesdeFechas(inicio, fin);
+  const plazo = plazoVisible(inicio, fin, estado);
+  const enStandby = plazo === "Standby";
   return (
     <Badge
       variant={plazoVariant(plazo)}

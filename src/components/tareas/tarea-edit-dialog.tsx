@@ -24,6 +24,7 @@ import { roleLabel } from "@/lib/auth/users";
 import type { TareaDetalle } from "@/lib/tareas";
 import { PlazoBadge } from "@/components/status-badges";
 import { PlazoSelector } from "@/components/tareas/plazo-selector";
+import { esStandby, etiquetaEstado } from "@/lib/standby";
 import {
   EVIDENCIA_ACCEPT,
   EVIDENCIA_HELP,
@@ -104,7 +105,7 @@ export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, on
         setComplejidad(t?.Tar_Complejidad || tarea?.Tar_Complejidad || "Media");
         setFechaInicio(String(t?.Tar_Fecha_Inicio || tarea?.Tar_Fecha_Inicio || "").slice(0, 10));
         setFechaFin(String(t?.Tar_Fecha_Fin || tarea?.Tar_Fecha_Fin || "").slice(0, 10));
-        setEstado(t?.Tar_Estado || tarea?.Tar_Estado || "Pendiente");
+        setEstado(etiquetaEstado(t?.Tar_Estado || tarea?.Tar_Estado || "Pendiente"));
         setEvidencias(d.evidencias_iniciales || []);
         const first = d.asignados?.[0];
         setPerCod(first?.Per_Cod ? String(first.Per_Cod) : "");
@@ -266,17 +267,22 @@ export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, on
                 <PlazoSelector
                   inicio={fechaInicio}
                   fechaFin={fechaFin}
+                  enStandby={esStandby(estado)}
                   disabled={saving}
                   onSelect={(plazo, fin) => {
                     setFechaFin(fin);
                     // Standby = la tarea queda en pausa (y sin fecha de fin).
                     if (plazo === "Standby") setEstado("Standby");
+                    else if (esStandby(estado)) setEstado("En Proceso");
                   }}
                 />
                 <Label className="mt-2 block">Fecha fin</Label>
                 <DatePicker
                   value={fechaFin}
-                  onChange={setFechaFin}
+                  onChange={(v) => {
+                    setFechaFin(v);
+                    if (v && esStandby(estado)) setEstado("En Proceso");
+                  }}
                   disabled={saving}
                   allowClear
                   placeholder="Sin fecha limite"
