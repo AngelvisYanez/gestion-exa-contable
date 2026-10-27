@@ -21,6 +21,7 @@ import requests
 import screen_capture  # noqa: F401  (PyInstaller debe empaquetar la captura)
 
 from bandeja import fecha_fin_para_plazo, plazo_tarea, trabajos_activos, visible_trabajos
+from updater import download_executable, write_update_script
 
 from win_shell import (
     clipboard_files,
@@ -31,7 +32,7 @@ from win_shell import (
     start_input_counter,
 )
 
-AGENT_VERSION = "2.14.1-flet"
+AGENT_VERSION = "2.14.2-flet"
 UPDATE_REPO = "AngelvisYanez/gestion-exa-contable"
 GITHUB_API_LATEST = f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest"
 
@@ -3423,14 +3424,14 @@ class ExaMonitorApp:
             self._set_update_error("No se encontr\u00f3 el archivo de descarga.")
             return
         try:
-            import tempfile, subprocess, sys, os
+            import subprocess
             if not getattr(sys, "frozen", False):
                 import webbrowser
                 webbrowser.open(url)
                 self._set_update_error("Modo desarrollo: abriendo descarga en el navegador.")
                 return
-            tmpdir = tempfile.gettempdir()
-            new_path = os.path.join(tmpdir, "ExaMonitor.new.exe")
+            tmpdir = Path(tempfile.mkdtemp(prefix="examonitor-update-"))
+            new_path = tmpdir / "ExaMonitor.new.exe"
             with requests.get(
                 url,
                 stream=True,
@@ -3438,38 +3439,22 @@ class ExaMonitorApp:
                 headers={"User-Agent": f"ExaMonitor/{_clean_version(AGENT_VERSION)}"},
             ) as r:
                 r.raise_for_status()
-                total = int(r.headers.get("content-length", 0))
-                downloaded = 0
-                with open(new_path, "wb") as f:
-                    for chunk in r.iter_content(chunk_size=1024 * 256):
-                        if not chunk:
-                            continue
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        if total > 0 and getattr(self, "_upd_progress", None) is not None:
-                            self._upd_progress.value = min(1.0, downloaded / total)
-                            try:
-                                self.page.update()
-                            except Exception:
-                                pass
-            exe_path = sys.executable
-            bat_path = os.path.join(tmpdir, "exa_updater.bat")
-            bat = (
-                "@echo off\r\n"
-                "chcp 65001 > nul\r\n"
-                "timeout /t 2 /nobreak > nul\r\n"
-                "copy /Y \"" + new_path + "\" \"" + exe_path + "\"\r\n"
-                "start \"\" \"" + exe_path + "\"\r\n"
-                "del \"%~f0\"\r\n"
+                def progress(value):
+                    if getattr(self, "_upd_progress", None) is not None:
+                        self._upd_progress.value = value
+                        try:
+                            self.page.update()
+                        except Exception:
+                            pass
+
+                sha256 = download_executable(r, new_path, progress)
+            script = write_update_script(tmpdir, Path(sys.executable), new_path, sha256, os.getpid())
+            subprocess.Popen(
+                ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)],
+                creationflags=subprocess.CREATE_NO_WINDOW,
             )
-            with open(bat_path, "w", encoding="utf-8") as f:
-                f.write(bat)
-            subprocess.Popen([bat_path], shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
-            try:
-                self.page.window.destroy()
-            except Exception:
-                pass
-            sys.exit(0)
+            self._quit_app()
+            os._exit(0)
         except Exception as ex:
             self._set_update_error(f"Error al actualizar: {ex}")
 
@@ -3493,15 +3478,9 @@ class ExaMonitorApp:
                 url_d = None
                 for a in assets:
                     n = (a.get("name") or "").lower()
-                    if n.endswith(".exe"):
+                    if n.endswith(".exe") and "examonitor" in n:
                         url_d = a.get("browser_download_url")
-                        if "examonitor" in n:
-                            break
-                if not url_d:
-                    for a in assets:
-                        if (a.get("name") or "").lower().endswith(".exe"):
-                            url_d = a.get("browser_download_url")
-                            break
+                        break
                 if not url_d:
                     return
                 self._show_update_dialog({"version": _clean_version(tag), "download_url": url_d})

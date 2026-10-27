@@ -1,0 +1,116 @@
+<div id="exa-role-preview">
+  <style>
+    #exa-role-preview { color-scheme: light dark; }
+    #exa-role-preview .exa-screen { --exa-bg: light-dark(#f5f5f3,#111312); --exa-card: light-dark(#ffffff,#1a1d1c); --exa-text: light-dark(#1a1a18,#f1f2ef); --exa-muted: light-dark(#666663,#acb2ad); --exa-border: light-dark(#dbdbd7,#363b37); --exa-soft: light-dark(#eeeee9,#292d2a); --exa-red: light-dark(#9e2525,#c45a5a); --exa-red-text: #fff; margin-top:12px; width:100%; min-height:600px; background:var(--exa-bg); color:var(--exa-text); border:1px solid var(--exa-border); border-radius:12px; overflow:hidden; font-family:'Segoe UI',Arial,sans-serif; }
+    #exa-role-preview .exa-top { display:flex; align-items:center; justify-content:space-between; padding:12px 18px; background:var(--exa-card); border-bottom:1px solid var(--exa-border); }
+    #exa-role-preview .exa-brand { display:flex; align-items:center; gap:12px; }
+    #exa-role-preview .exa-logo { display:grid; place-items:center; width:33px; height:33px; border-radius:9px; background:var(--exa-red); color:#fff; font-weight:500; }
+    #exa-role-preview .exa-brand strong { display:block; font-size:15px; font-weight:500; }
+    #exa-role-preview .exa-brand small { display:block; color:var(--exa-muted); font-size:11px; }
+    #exa-role-preview .exa-status { background:light-dark(#d1fae5,#123b2c); color:light-dark(#065f46,#a8e6cc); padding:5px 10px; border-radius:8px; font-size:11px; }
+    #exa-role-preview .exa-main { max-width:790px; margin:auto; padding:24px; display:grid; gap:13px; }
+    #exa-role-preview .exa-tools { display:flex; align-items:center; flex-wrap:wrap; gap:9px; }
+    #exa-role-preview .exa-tools .exa-kpi { margin-left:auto; color:var(--exa-muted); font-size:12px; }
+    #exa-role-preview .exa-button { border:1px solid var(--exa-border); color:var(--exa-text); background:var(--exa-card); border-radius:9px; padding:9px 13px; font:inherit; font-size:12px; }
+    #exa-role-preview .exa-button-primary { background:var(--exa-red); border-color:var(--exa-red); color:var(--exa-red-text); }
+    #exa-role-preview .exa-card { background:var(--exa-card); border:1px solid var(--exa-border); border-radius:12px; padding:15px; }
+    #exa-role-preview .exa-card h3 { margin:0 0 6px; font-size:14px; font-weight:500; }
+    #exa-role-preview .exa-card p { margin:0 0 12px; color:var(--exa-muted); font-size:11px; }
+    #exa-role-preview .exa-select { display:block; width:100%; box-sizing:border-box; background:var(--exa-card); color:var(--exa-text); border:1px solid var(--exa-border); border-radius:8px; padding:10px; font:inherit; font-size:12px; }
+    #exa-role-preview .exa-list-head { display:flex; justify-content:space-between; align-items:baseline; gap:8px; margin-bottom:12px; }
+    #exa-role-preview .exa-list-head h3 { margin:0; }
+    #exa-role-preview .exa-list-head span { color:var(--exa-muted); font-size:11px; }
+    #exa-role-preview .exa-segments { display:flex; flex-wrap:wrap; gap:5px; margin:9px 0; }
+    #exa-role-preview .exa-segments button { border:1px solid var(--exa-border); background:var(--exa-card); color:var(--exa-text); padding:7px 11px; border-radius:8px; font:inherit; font-size:12px; }
+    #exa-role-preview .exa-segments button[aria-pressed="true"] { background:var(--exa-soft); border-color:var(--exa-red); }
+    #exa-role-preview .exa-task { width:100%; text-align:left; display:grid; gap:7px; margin-top:8px; background:var(--exa-card); color:var(--exa-text); border:1px solid var(--exa-border); border-radius:10px; padding:12px; font:inherit; }
+    #exa-role-preview .exa-task .exa-row { display:flex; justify-content:space-between; gap:8px; align-items:center; }
+    #exa-role-preview .exa-task .exa-title { font-size:13px; font-weight:500; }
+    #exa-role-preview .exa-task .exa-detail { color:var(--exa-muted); font-size:11px; }
+    #exa-role-preview .exa-badge { display:inline-block; background:light-dark(#e0f2fe,#12354a); color:light-dark(#075985,#bae6fd); padding:3px 7px; border-radius:6px; font-size:11px; }
+    #exa-role-preview .exa-ticket { background:light-dark(#fef3c7,#473610); color:light-dark(#92400e,#f9dd94); }
+    #exa-role-preview .exa-track { height:6px; background:var(--exa-soft); border-radius:10px; overflow:hidden; }
+    #exa-role-preview .exa-track span { display:block; height:100%; background:var(--exa-red); }
+    #exa-role-preview .exa-overlay { position:fixed; inset:0; z-index:30; background:rgba(0,0,0,.38); display:grid; place-items:center; padding:15px; }
+    #exa-role-preview .exa-modal { width:min(500px,100%); max-height:85vh; overflow:auto; background:var(--exa-card); color:var(--exa-text); border:1px solid var(--exa-border); border-radius:12px; padding:20px; display:grid; gap:12px; }
+    #exa-role-preview .exa-modal h3 { margin:0; font-size:18px; font-weight:500; }
+    #exa-role-preview .exa-modal label { display:grid; gap:5px; font-size:12px; }
+    #exa-role-preview .exa-modal input, #exa-role-preview .exa-modal textarea, #exa-role-preview .exa-modal select { width:100%; box-sizing:border-box; background:var(--exa-card); color:var(--exa-text); border:1px solid var(--exa-border); border-radius:8px; padding:9px; font:inherit; font-size:12px; }
+    #exa-role-preview .exa-modal textarea { min-height:74px; }
+    #exa-role-preview .exa-modal-actions { display:flex; justify-content:flex-end; gap:8px; }
+    #exa-role-preview [hidden] { display:none!important; }
+    @media (max-width:600px) { #exa-role-preview .exa-screen { min-height:620px; } #exa-role-preview .exa-main { padding:14px; } #exa-role-preview .exa-tools .exa-kpi { width:100%; margin-left:0; } }
+  </style>
+  <div class="nav nav-pills" role="tablist" aria-label="Rol de ExaMonitor">
+    <button class="nav-link active" id="exa-manager-tab" role="tab" aria-controls="exa-manager-panel" aria-selected="true" type="button">Encargado</button>
+    <button class="nav-link" id="exa-atencion-tab" role="tab" aria-controls="exa-atencion-panel" aria-selected="false" type="button">Atención al cliente</button>
+    <button class="nav-link" id="exa-developer-tab" role="tab" aria-controls="exa-developer-panel" aria-selected="false" type="button">Desarrollador</button>
+  </div>
+  <section id="exa-manager-panel" role="tabpanel" aria-labelledby="exa-manager-tab">
+    <div class="exa-screen" data-role="manager">
+      <div class="exa-top"><div class="exa-brand"><span class="exa-logo">E</span><div><strong>Bandeja</strong><small>Encargado</small></div></div><span class="exa-status">Conectado</span></div>
+      <div class="exa-main">
+        <div class="exa-tools"><button class="exa-button" type="button">Actualizar</button><button class="exa-button exa-button-primary exa-newtask" type="button">＋ Nueva tarea</button><span class="exa-kpi">2 por asignar | 2 asignados al equipo</span></div>
+        <div class="exa-card"><h3>Tarea / ticket activo</h3><p>Se usa para telemetría y seguimiento en vivo.</p><select class="exa-select" aria-label="Trabajo activo"><option>#128 · Reporte de ventas · Asignado · 20%</option></select></div>
+        <div class="exa-card exa-work"><div class="exa-list-head"><h3>Asignar</h3><span>Clic para asignar</span></div><div class="exa-segments exa-bandeja"><button type="button" data-group="assign" aria-pressed="true">Asignar</button><button type="button" data-group="assigned" aria-pressed="false">Asignados</button></div><div class="exa-segments exa-filter"><button type="button" data-kind="todos" aria-pressed="true">Todos</button><button type="button" data-kind="tarea" aria-pressed="false">Tareas</button><button type="button" data-kind="ticket" aria-pressed="false">Tickets</button></div>
+          <button class="exa-task" type="button" data-group="assign" data-kind="tarea"><div class="exa-row"><span class="exa-badge">Tarea #142</span><span class="exa-detail">Alta</span></div><span class="exa-title">Revisar conciliación de pagos</span><span class="exa-detail">Por asignar · Fin 2026-10-20</span><div class="exa-track"><span style="width:0%"></span></div></button>
+          <button class="exa-task" type="button" data-group="assign" data-kind="ticket"><div class="exa-row"><span class="exa-badge exa-ticket">Ticket #91</span><span class="exa-detail">Media</span></div><span class="exa-title">EXA · Error al cargar factura</span><span class="exa-detail">Por asignar · EXA</span><div class="exa-track"><span style="width:0%"></span></div></button>
+          <button class="exa-task" type="button" data-group="assigned" data-kind="tarea" hidden><div class="exa-row"><span class="exa-badge">Tarea #128</span><span class="exa-detail">Media</span></div><span class="exa-title">Reporte de ventas</span><span class="exa-detail">Asignado a José Ortiz</span><div class="exa-track"><span style="width:20%"></span></div></button>
+          <button class="exa-task" type="button" data-group="assigned" data-kind="ticket" hidden><div class="exa-row"><span class="exa-badge exa-ticket">Ticket #88</span><span class="exa-detail">Alta</span></div><span class="exa-title">Servicios · Actualizar contrato</span><span class="exa-detail">Asignado a Nathaly Requelme</span><div class="exa-track"><span style="width:45%"></span></div></button>
+        </div>
+      </div>
+      <div class="exa-overlay" hidden><div class="exa-modal" role="dialog" aria-modal="true" aria-label="Nueva tarea"><h3>Nueva tarea</h3><label>Título *<input placeholder="Título de la tarea"></label><label>Descripción<textarea placeholder="Describe la tarea"></textarea></label><label>Prioridad<select><option>Media</option><option>Alta</option><option>Baja</option></select></label><label>Complejidad<select><option>Media</option><option>Baja</option><option>Alta</option><option>Muy alta</option></select></label><label>Fecha límite (AAAA-MM-DD)<input placeholder="Opcional"></label><label>Asignar a<select><option>Sin asignar</option><option>José Ortiz</option><option>Nathaly Requelme</option></select></label><button class="exa-button" type="button">Adjuntar archivos</button><div class="exa-modal-actions"><button class="exa-button exa-close" type="button">Cerrar</button><button class="exa-button exa-button-primary exa-close" type="button">Crear tarea</button></div></div></div>
+    </div>
+  </section>
+  <section id="exa-atencion-panel" role="tabpanel" aria-labelledby="exa-atencion-tab" hidden>
+    <div class="exa-screen" data-role="atencion">
+      <div class="exa-top"><div class="exa-brand"><span class="exa-logo">E</span><div><strong>Bandeja</strong><small>Atención al cliente</small></div></div><span class="exa-status">Conectado</span></div>
+      <div class="exa-main">
+        <div class="exa-tools"><button class="exa-button" type="button">Actualizar</button><button class="exa-button exa-button-primary exa-newtask" type="button">＋ Nueva tarea</button><span class="exa-kpi">1 por asignar | 2 asignados al equipo</span></div>
+        <div class="exa-card"><h3>Tarea / ticket activo</h3><p>Se usa para telemetría y seguimiento en vivo.</p><select class="exa-select" aria-label="Trabajo activo"><option>Selecciona para telemetría</option></select></div>
+        <div class="exa-card exa-work"><div class="exa-list-head"><h3>Asignar</h3><span>Clic para asignar</span></div><div class="exa-segments exa-bandeja"><button type="button" data-group="assign" aria-pressed="true">Asignar</button><button type="button" data-group="assigned" aria-pressed="false">Asignados</button></div><div class="exa-segments exa-filter"><button type="button" data-kind="todos" aria-pressed="true">Todos</button><button type="button" data-kind="tarea" aria-pressed="false">Tareas</button><button type="button" data-kind="ticket" aria-pressed="false">Tickets</button></div>
+          <button class="exa-task" type="button" data-group="assign" data-kind="ticket"><div class="exa-row"><span class="exa-badge exa-ticket">Ticket #93</span><span class="exa-detail">Alta</span></div><span class="exa-title">Cliente solicita corrección de factura</span><span class="exa-detail">Por asignar · EXA</span><div class="exa-track"><span style="width:0%"></span></div></button>
+          <button class="exa-task" type="button" data-group="assigned" data-kind="tarea" hidden><div class="exa-row"><span class="exa-badge">Tarea #128</span><span class="exa-detail">Media</span></div><span class="exa-title">Reporte de ventas</span><span class="exa-detail">Asignado a José Ortiz</span><div class="exa-track"><span style="width:20%"></span></div></button>
+          <button class="exa-task" type="button" data-group="assigned" data-kind="ticket" hidden><div class="exa-row"><span class="exa-badge exa-ticket">Ticket #88</span><span class="exa-detail">Alta</span></div><span class="exa-title">Servicios · Actualizar contrato</span><span class="exa-detail">Asignado a Nathaly Requelme</span><div class="exa-track"><span style="width:45%"></span></div></button>
+        </div>
+      </div>
+      <div class="exa-overlay" hidden><div class="exa-modal" role="dialog" aria-modal="true" aria-label="Nueva tarea"><h3>Nueva tarea</h3><label>Título *<input placeholder="Título de la tarea"></label><label>Descripción<textarea placeholder="Describe la tarea"></textarea></label><label>Prioridad<select><option>Media</option><option>Alta</option><option>Baja</option></select></label><label>Complejidad<select><option>Media</option><option>Baja</option><option>Alta</option><option>Muy alta</option></select></label><label>Fecha límite (AAAA-MM-DD)<input placeholder="Opcional"></label><label>Asignar a<select><option>Sin asignar</option><option>José Ortiz</option><option>Nathaly Requelme</option></select></label><button class="exa-button" type="button">Adjuntar archivos</button><div class="exa-modal-actions"><button class="exa-button exa-close" type="button">Cerrar</button><button class="exa-button exa-button-primary exa-close" type="button">Crear tarea</button></div></div></div>
+    </div>
+  </section>
+  <section id="exa-developer-panel" role="tabpanel" aria-labelledby="exa-developer-tab" hidden>
+    <div class="exa-screen" data-role="developer">
+      <div class="exa-top"><div class="exa-brand"><span class="exa-logo">E</span><div><strong>Mis tareas</strong><small>Desarrollador</small></div></div><span class="exa-status">Conectado</span></div>
+      <div class="exa-main">
+        <div class="exa-tools"><button class="exa-button" type="button">Actualizar</button><button class="exa-button exa-button-primary exa-newtask" type="button">＋ Nueva tarea</button><span class="exa-kpi">2 asignaciones | 2 tareas | 0 tickets</span></div>
+        <div class="exa-card"><h3>Tarea / ticket activo</h3><p>Se usa para telemetría y seguimiento en vivo.</p><select class="exa-select" aria-label="Trabajo activo"><option>#128 · Reporte de ventas · 20%</option></select></div>
+        <div class="exa-card exa-work"><div class="exa-list-head"><h3>Mis tareas</h3><span>Clic para marcar activa</span></div><div class="exa-segments exa-bandeja"><button type="button" data-group="assigned" aria-pressed="true">Asignadas</button><button type="button" data-group="created" aria-pressed="false">Creadas por mí</button></div><div class="exa-segments exa-filter"><button type="button" data-kind="todos" aria-pressed="true">Todos</button><button type="button" data-kind="tarea" aria-pressed="false">Tareas</button><button type="button" data-kind="ticket" aria-pressed="false">Tickets</button></div>
+          <button class="exa-task" type="button" data-group="assigned" data-kind="tarea"><div class="exa-row"><span class="exa-badge">Tarea #128</span><span class="exa-detail">Media</span></div><span class="exa-title">Reporte de ventas</span><span class="exa-detail">Asignado · Fin 2026-10-21</span><div class="exa-track"><span style="width:20%"></span></div></button>
+          <button class="exa-task" type="button" data-group="created" data-kind="tarea" hidden><div class="exa-row"><span class="exa-badge">Tarea #145</span><span class="exa-detail">Media</span></div><span class="exa-title">Preparar validación de importación</span><span class="exa-detail">Pendiente · Sin asignar</span><div class="exa-track"><span style="width:0%"></span></div></button>
+        </div>
+      </div>
+      <div class="exa-overlay" hidden><div class="exa-modal" role="dialog" aria-modal="true" aria-label="Nueva tarea"><h3>Nueva tarea</h3><label>Título *<input placeholder="Título de la tarea"></label><label>Descripción<textarea placeholder="Describe la tarea"></textarea></label><label>Prioridad<select><option>Media</option><option>Alta</option><option>Baja</option></select></label><label>Complejidad<select><option>Media</option><option>Baja</option><option>Alta</option><option>Muy alta</option></select></label><label>Fecha límite (AAAA-MM-DD)<input placeholder="Opcional"></label><button class="exa-button" type="button">Adjuntar archivos</button><div class="exa-modal-actions"><button class="exa-button exa-close" type="button">Cerrar</button><button class="exa-button exa-button-primary exa-close" type="button">Crear tarea</button></div></div></div>
+    </div>
+  </section>
+  <script>
+    const exaRoot = document.getElementById('exa-role-preview');
+    exaRoot.addEventListener('click', event => {
+      const button = event.target.closest('button');
+      if (!button || !exaRoot.contains(button)) return;
+      const screen = button.closest('.exa-screen');
+      if (!screen) return;
+      if (button.classList.contains('exa-newtask')) { screen.querySelector('.exa-overlay').hidden = false; return; }
+      if (button.classList.contains('exa-close')) { screen.querySelector('.exa-overlay').hidden = true; return; }
+      if (button.matches('.exa-bandeja button, .exa-filter button')) {
+        const row = button.closest('.exa-segments');
+        row.querySelectorAll('button').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+        const group = screen.querySelector('.exa-bandeja button[aria-pressed="true"]').dataset.group;
+        const kind = screen.querySelector('.exa-filter button[aria-pressed="true"]').dataset.kind;
+        screen.querySelectorAll('.exa-task').forEach(item => { item.hidden = item.dataset.group !== group || (kind !== 'todos' && item.dataset.kind !== kind); });
+        const title = screen.querySelector('.exa-list-head h3');
+        const hint = screen.querySelector('.exa-list-head span');
+        title.textContent = screen.dataset.role === 'developer' ? (group === 'created' ? 'Creadas por mí' : 'Mis tareas') : (group === 'assign' ? 'Asignar' : 'Asignados');
+        hint.textContent = group === 'assign' ? 'Clic para asignar' : group === 'created' ? 'Clic para abrir' : 'Clic para marcar activa';
+      }
+    });
+  </script>
+</div>

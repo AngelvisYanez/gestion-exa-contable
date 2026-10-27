@@ -180,6 +180,10 @@ export function DateRangeFilter({
   compact,
   showPresets,
   variant = "range",
+  showAll = false,
+  allActive = false,
+  onAll,
+  allLabel = "Todas",
 }: Props) {
   const hoy = hoyFecha();
   const isDayOnly = variant === "day";
@@ -225,6 +229,20 @@ export function DateRangeFilter({
     </div>
   ) : null;
 
+  const allButton = showAll && onAll ? (
+    <Button
+      type="button"
+      variant={allActive ? "secondary" : "outline"}
+      size="sm"
+      className="h-8 px-3"
+      disabled={disabled}
+      onClick={onAll}
+      title="Mostrar todas las fechas"
+    >
+      {allLabel}
+    </Button>
+  ) : null;
+
   const maxButton = onResetMax ? (
     <Button
       type="button"
@@ -254,12 +272,13 @@ export function DateRangeFilter({
             value={diaActivo}
             min={min}
             max={max}
-            disabled={disabled}
+            disabled={disabled || allActive}
             onChange={(dia) => {
               const d = clampFecha(dia, min, max);
               onChange({ desde: d, hasta: d });
             }}
           />
+          {allButton}
           {maxButton}
         </div>
       </div>
@@ -307,7 +326,7 @@ export function DateRangeFilter({
           value={value.desde}
           min={min}
           max={value.hasta || max}
-          disabled={disabled}
+          disabled={disabled || allActive}
           onChange={(desde) => onChange({ ...value, desde })}
         />
         <Label htmlFor="rango-hasta" className="mb-0 normal-case tracking-normal">
@@ -320,9 +339,10 @@ export function DateRangeFilter({
           value={value.hasta}
           min={value.desde || min}
           max={max}
-          disabled={disabled}
+          disabled={disabled || allActive}
           onChange={(hasta) => onChange({ ...value, hasta })}
         />
+        {allButton}
         {maxButton}
       </div>
     </div>

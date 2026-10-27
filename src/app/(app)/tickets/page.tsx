@@ -175,6 +175,19 @@ export default function TicketsPage() {
   const [bandeja, setBandeja] = useState<Bandeja>("todos");
   const [rango, setRango] = useState<DateRangeValue>(() => rangoTicketsPreset("hoy"));
   const [todasLasFechas, setTodasLasFechas] = useState(false);
+  type SortKey =
+    | "Tic_Cod"
+    | "Tic_Titulo"
+    | "Tic_Estado"
+    | "Tic_Prioridad"
+    | "Emp_Nom"
+    | "Contacto"
+    | "Asignado_Nombre"
+    | "Tic_Fecha_Llegada";
+  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({
+    key: "Tic_Fecha_Llegada",
+    dir: "desc",
+  });
   const [vistaLista, setVistaLista] = useState(false);
   const [q, setQ] = useState("");
   const [filtroDev, setFiltroDev] = useState("");
@@ -246,16 +259,27 @@ export default function TicketsPage() {
   }, [asignables, tickets]);
 
   const ticketsVisibles = useMemo(() => {
-    if (!puedeAsignar || !filtroDev) return tickets;
-    const ids = new Set(
-      filtroDev
-        .split(",")
-        .map((n) => Number(n))
-        .filter((n) => n > 0)
-    );
-    if (!ids.size) return tickets;
-    return tickets.filter((t) => usuDeTicket(t).some((id) => ids.has(id)));
-  }, [tickets, filtroDev, puedeAsignar]);
+    let list = tickets;
+
+    if (isDev && user?.usuCod) {
+      const miUsuCod = Number(user.usuCod);
+      if (miUsuCod > 0) {
+        list = list.filter((t) => usuDeTicket(t).includes(miUsuCod));
+      }
+    } else if (puedeAsignar && filtroDev) {
+      const ids = new Set(
+        filtroDev
+          .split(",")
+          .map((n) => Number(n))
+          .filter((n) => n > 0)
+      );
+      if (ids.size) {
+        list = list.filter((t) => usuDeTicket(t).some((id) => ids.has(id)));
+      }
+    }
+
+    return list;
+  }, [tickets, filtroDev, puedeAsignar, isDev, user?.usuCod]);
 
   const conteoPorDev = useMemo(() => {
     const map = new Map<string, number>();
@@ -270,9 +294,63 @@ export default function TicketsPage() {
     return map;
   }, [opcionesDev, tickets]);
 
-  const pager = usePagination(ticketsVisibles, {
-    resetKey: `${bandeja}|${q}|${rango.desde}|${rango.hasta}|${filtroDev}`,
+  const prioridadPeso = useCallback((p?: string | null) => {
+    const v = String(p || "").toLowerCase();
+    if (v === "alta") return 3;
+    if (v === "media") return 2;
+    if (v === "baja") return 1;
+    return 0;
+  }, []);
+
+  const ticketsOrdenados = useMemo(() => {
+    const arr = [...ticketsVisibles];
+    const dir = sort.dir === "asc" ? 1 : -1;
+    arr.sort((a, b) => {
+      if (sort.key === "Tic_Cod") {
+        return (Number(a.Tic_Cod || 0) - Number(b.Tic_Cod || 0)) * dir;
+      }
+      if (sort.key === "Tic_Fecha_Llegada") {
+        const ta = a.Tic_Fecha_Llegada ? new Date(a.Tic_Fecha_Llegada).getTime() : 0;
+        const tb = b.Tic_Fecha_Llegada ? new Date(b.Tic_Fecha_Llegada).getTime() : 0;
+        return (ta - tb) * dir;
+      }
+      if (sort.key === "Tic_Prioridad") {
+        return (prioridadPeso(a.Tic_Prioridad) - prioridadPeso(b.Tic_Prioridad)) * dir;
+      }
+      if (sort.key === "Contacto") {
+        const va = a.Enviado_Por || a.Creador_Nombre || "";
+        const vb = b.Enviado_Por || b.Creador_Nombre || "";
+        return va.localeCompare(vb, "es", { sensitivity: "base" }) * dir;
+      }
+      const va = (a as any)[sort.key];
+      const vb = (b as any)[sort.key];
+      const sa = va == null ? "" : String(va);
+      const sb = vb == null ? "" : String(vb);
+      return sa.localeCompare(sb, "es", { sensitivity: "base" }) * dir;
+    });
+    return arr;
+  }, [ticketsVisibles, sort, prioridadPeso]);
+
+  const pager = usePagination(ticketsOrdenados, {
+    resetKey: `${bandeja}|${q}|${rango.desde}|${rango.hasta}|${filtroDev}|${sort.key}|${sort.dir}|${todasLasFechas ? "all" : "range"}`,
   });
+
+  const toggleSort = useCallback((key: SortKey) => {
+    setSort((prev) => {
+      if (prev.key === key) {
+        return { key, dir: prev.dir === "asc" ? "desc" : "asc" };
+      }
+      return { key, dir: "asc" };
+    });
+  }, []);
+
+  const sortIcon = useCallback(
+    (key: SortKey) => {
+      if (sort.key !== key) return <span className="ml-1 text-muted-foreground/60">↕</span>;
+      return <span className="ml-1">{sort.dir === "asc" ? "↑" : "↓"}</span>;
+    },
+    [sort]
+  );
   const linkedDetalle = linkedTicket?.Tic_Cod === detalleCod && linkedTicket.Db_Origen === detalleDb
     ? linkedTicket : null;
   const detalleTicket = linkedDetalle ?? (detalleCod != null
@@ -280,8 +358,7 @@ export default function TicketsPage() {
     : null);
   const bandejasVisibles = isDev
     ? [
-        { id: "sin_asignar" as Bandeja, label: "Sin asignar" },
-        { id: "asignados" as Bandeja, label: "Abiertos" },
+        { id: "asignados" as Bandeja, label: "En proceso" },
         { id: "resueltos" as Bandeja, label: "Resueltos" },
         { id: "todos" as Bandeja, label: "Todos" },
       ]
@@ -609,7 +686,7 @@ export default function TicketsPage() {
   const kanbanItems = useMemo(() => ticketsVisibles.map(ticketAsTarea), [ticketsVisibles]);
 
   const vacioMsg = isDev
-    ? "No tienes tickets asignados en este filtro."
+    ? "No tienes tickets asignados o que hayas tomado en este filtro."
     : filtroDev
       ? "Ningún ticket de este periodo está asignado a esa persona."
       : todasLasFechas
@@ -745,6 +822,12 @@ export default function TicketsPage() {
               onChange={(next) => {
                 setTodasLasFechas(false);
                 setRango(next);
+              }}
+              showAll
+              allActive={todasLasFechas}
+              allLabel="Todas"
+              onAll={() => {
+                setTodasLasFechas(true);
               }}
             />
             <Button type="button" variant="secondary" className="h-9" onClick={() => void load()} disabled={loading}>
@@ -977,14 +1060,54 @@ export default function TicketsPage() {
                 <Table className="min-w-[1180px]">
                   <TableHeader className="bg-muted [&_th]:text-muted-foreground">
                     <TableRow className="border-border hover:bg-muted">
-                      <TableHead className="w-16 whitespace-nowrap">#</TableHead>
-                      <TableHead className="min-w-[240px]">Ticket</TableHead>
-                      <TableHead className="w-[110px] whitespace-nowrap">Estado</TableHead>
-                      <TableHead className="w-[100px] whitespace-nowrap">Prioridad</TableHead>
-                      <TableHead className="min-w-[160px]">Empresa</TableHead>
-                      <TableHead className="min-w-[160px]">Contacto</TableHead>
-                      <TableHead className="min-w-[140px]">Desarrollador</TableHead>
-                      <TableHead className="min-w-[210px] whitespace-nowrap">Llegada</TableHead>
+                      <TableHead
+                        className="w-16 cursor-pointer whitespace-nowrap select-none"
+                        onClick={() => toggleSort("Tic_Cod")}
+                      >
+                        # {sortIcon("Tic_Cod")}
+                      </TableHead>
+                      <TableHead
+                        className="min-w-[240px] cursor-pointer select-none"
+                        onClick={() => toggleSort("Tic_Titulo")}
+                      >
+                        Ticket {sortIcon("Tic_Titulo")}
+                      </TableHead>
+                      <TableHead
+                        className="w-[110px] cursor-pointer whitespace-nowrap select-none"
+                        onClick={() => toggleSort("Tic_Estado")}
+                      >
+                        Estado {sortIcon("Tic_Estado")}
+                      </TableHead>
+                      <TableHead
+                        className="w-[100px] cursor-pointer whitespace-nowrap select-none"
+                        onClick={() => toggleSort("Tic_Prioridad")}
+                      >
+                        Prioridad {sortIcon("Tic_Prioridad")}
+                      </TableHead>
+                      <TableHead
+                        className="min-w-[160px] cursor-pointer select-none"
+                        onClick={() => toggleSort("Emp_Nom")}
+                      >
+                        Empresa {sortIcon("Emp_Nom")}
+                      </TableHead>
+                      <TableHead
+                        className="min-w-[160px] cursor-pointer select-none"
+                        onClick={() => toggleSort("Contacto")}
+                      >
+                        Contacto {sortIcon("Contacto")}
+                      </TableHead>
+                      <TableHead
+                        className="min-w-[140px] cursor-pointer select-none"
+                        onClick={() => toggleSort("Asignado_Nombre")}
+                      >
+                        Desarrollador {sortIcon("Asignado_Nombre")}
+                      </TableHead>
+                      <TableHead
+                        className="min-w-[210px] cursor-pointer whitespace-nowrap select-none"
+                        onClick={() => toggleSort("Tic_Fecha_Llegada")}
+                      >
+                        Llegada {sortIcon("Tic_Fecha_Llegada")}
+                      </TableHead>
                       <TableHead className="w-[280px] whitespace-nowrap text-right">
                         Acciones
                       </TableHead>
