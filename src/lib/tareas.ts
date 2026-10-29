@@ -9,6 +9,7 @@ import {
 } from "./avance-format";
 import { endOfDayZona, fechaEnZona, fmtFechaHoraZona, hoyFecha, startOfDayZona, toCalendarYmd } from "./timezone";
 import { ensureMonitoreoSchema } from "./monitoreo-global";
+import { conexionesDiarias } from "./monitoreo-conexiones";
 import { ticketTareaKey, ticketsDeTarea, ticketsDeTareas, resolverTicketsDeTarea } from "./ticket-tarea";
 import { resumenTickets, type TicketVinculoResumen } from "./tickets";
 import { CATEGORIAS_PLAZO, type CategoriaPlazo } from "./plazo-tarea";
@@ -1098,10 +1099,18 @@ export async function getTareaDetalle(
   const prisma = getPrisma(dbDis);
   await ensureMonitoreoSchema(prisma);
   const includeCapturas = opts?.includeCapturas !== false;
-  const capturasDias = Math.max(1, Math.min(365, opts?.capturasDias ?? 7));
-  const capturasLimit = Math.max(1, Math.min(200, opts?.capturasLimit ?? 80));
-  const desdeCustom = opts?.capturasDesde?.slice(0, 10) || null;
-  const hastaCustom = opts?.capturasHasta?.slice(0, 10) || null;
+  const diasSolicitados = opts?.capturasDias ?? 7;
+  const limiteSolicitado = opts?.capturasLimit ?? 80;
+  const capturasDias = Number.isFinite(diasSolicitados) ? Math.max(1, Math.min(365, Math.trunc(diasSolicitados))) : 7;
+  const capturasLimit = Number.isFinite(limiteSolicitado) ? Math.max(1, Math.min(200, Math.trunc(limiteSolicitado))) : 80;
+  const fechaCapturaValida = (value?: string | null): string | null => {
+    const fecha = value?.slice(0, 10);
+    if (!fecha || !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return null;
+    const parsed = new Date(`${fecha}T00:00:00Z`);
+    return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== fecha ? null : fecha;
+  };
+  const desdeCustom = fechaCapturaValida(opts?.capturasDesde);
+  const hastaCustom = fechaCapturaValida(opts?.capturasHasta);
 
   type TarRow = {
     Tar_Cod: number;
@@ -1664,6 +1673,10 @@ async function mapDevs(
   const hastaDt = endOfDay(rango.hasta);
 
   for (const p of personal) {
+    const conexiones = await conexionesDiarias(prisma, p.Per_Cod, rango.desde, rango.hasta);
+    const conexionHoy = rango.desde <= hoyFecha() && rango.hasta >= hoyFecha()
+      ? conexiones.find((c) => c.Fecha === hoyFecha())?.Primera_Conexion || null
+      : null;
     const lastTel = await prisma.aud_dev_telemetria.findFirst({
       where: { Per_Cod: p.Per_Cod },
       orderBy: { Tel_Cod: "desc" },
@@ -1757,6 +1770,8 @@ async function mapDevs(
         : null,
       Mon_Mac_Address: p.config?.Mon_Mac_Address || "",
       Ultima_Conexion: ultima,
+      Primera_Conexion_Hoy: conexionHoy,
+      Conexiones_Diarias: conexiones,
       Ultima_Ventana: p.config?.Mon_Ventana_Activa || lastTel?.Tel_Ventana_Activa || "",
       Ultimo_Proceso: p.config?.Mon_Proceso_Activo || lastTel?.Tel_Proceso_Activo || "",
       Ultimo_Porcentaje: Number(lastTel?.Tel_Porc_Actividad || 0),
@@ -1956,11 +1971,18 @@ export async function historialCapturas(
     Total_Capturas: Number(f.Total_Capturas),
   }));
 
-  const minDisponible =
-    fechas_disponibles.length > 0
-      ? fechas_disponibles[fechas_disponibles.length - 1].Fecha
-      : fecha;
-  const maxDisponible = fechas_disponibles.length > 0 ? fechas_disponibles[0].Fecha : fecha;
+  const conexionBounds = await prisma.$queryRawUnsafe<Array<{ minFecha: Date | null; maxFecha: Date | null }>>(
+    `SELECT MIN(Fecha) AS minFecha, MAX(Fecha) AS maxFecha
+     FROM aud_dev_conexion_diaria WHERE Per_Cod = ?`, perCod
+  );
+  const fechasConDatos = [
+    ...fechas_disponibles.map((f) => f.Fecha),
+    conexionBounds[0]?.minFecha ? ymdCalendario(conexionBounds[0].minFecha) : "",
+    conexionBounds[0]?.maxFecha ? ymdCalendario(conexionBounds[0].maxFecha) : "",
+  ].filter(Boolean).sort();
+
+  const minDisponible = fechasConDatos[0] || fecha;
+  const maxDisponible = fechasConDatos[fechasConDatos.length - 1] || fecha;
 
   const usaRango =
     !!rango?.maximo ||

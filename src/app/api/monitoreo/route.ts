@@ -19,6 +19,7 @@ import {
   upsertPresencia,
 } from "@/lib/monitoreo";
 import { ensureMonitoreoSchema } from "@/lib/monitoreo-global";
+import { registrarConexionDiaria } from "@/lib/monitoreo-conexiones";
 import { parseAsignadosTicket, parsePerCodsTarea } from "@/lib/monitoreo-asignacion";
 import {
   TicketAvanceError,
@@ -180,6 +181,7 @@ async function handle(req: NextRequest) {
         mac,
         version,
       });
+      await registrarConexionDiaria(prismaUser, row.Per_Cod);
 
       const { rol, tareas } = await bandejaAgente(prismaUser, row.Per_Cod, user.usuCod, user.role);
       const refreshed = await findDesarrollador(prismaUser, String(row.Per_Cod));
@@ -222,10 +224,10 @@ async function handle(req: NextRequest) {
 
       const presencia = { perCod, ventana, proceso, esIde, mac, version };
       await upsertPresencia(prisma, presencia);
-      await syncPresenciaAlt(dbDis, presencia);
-
       const row = await findDesarrollador(prisma, String(perCod));
       if (!row) return jsonRes("error", "Desarrollador no encontrado.");
+      await registrarConexionDiaria(prisma, perCod);
+      await syncPresenciaAlt(dbDis, presencia);
 
       const usuCod = await resolveUsuCodFromPer(prisma, perCod);
       const { rol, tareas } = await bandejaAgente(prisma, perCod, usuCod || undefined);

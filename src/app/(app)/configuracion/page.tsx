@@ -59,7 +59,7 @@ export default function ConfiguracionPage() {
   return (
     <>
       <Topbar title="Configuracion" subtitle="Administracion" />
-      <main className="mx-auto w-full min-w-0 max-w-5xl animate-fade-in px-4 py-6 sm:px-6">
+      <main className="mx-auto w-full min-w-0 max-w-5xl lg:max-w-none animate-fade-in px-4 py-6 sm:px-6">
         <p className="mb-5 max-w-2xl text-sm text-brand-gray-600">
           Centro de administracion del panel: alcance del proyecto, equipo, alertas, incidencias y
           politicas de ExaMonitor.

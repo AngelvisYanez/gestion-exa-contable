@@ -313,7 +313,7 @@ export default function TareasPage() {
     <>
       <Topbar title="Tareas" subtitle={isDeveloper ? "Creadas por ti" : "Asignaciones y seguimiento"} showDbSelector={false} />
       <main className="flex min-h-[calc(100dvh-3.5rem)] w-full min-w-0 flex-col sm:h-[calc(100dvh-3.5rem)] sm:min-h-0 sm:overflow-hidden">
-        <div className="mx-auto flex min-h-0 w-full min-w-0 max-w-[1400px] flex-1 flex-col px-4 py-3 sm:px-6 sm:py-4">
+        <div className="mx-auto flex min-h-0 w-full min-w-0 max-w-[1400px] lg:max-w-none flex-1 flex-col px-4 py-3 sm:px-6 sm:py-4">
         <FilterBar className="mb-3">
           <div className="relative w-full min-w-0 sm:w-[240px]">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />

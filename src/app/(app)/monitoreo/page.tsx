@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { History, Keyboard, Loader2, MousePointerClick, RefreshCw, Timer } from "lucide-react";
+import { History, Keyboard, Loader2, MousePointerClick, RefreshCw, Timer, Search } from "lucide-react";
 import Topbar from "@/components/layout/Topbar";
 import { DateRangeFilter, rangoDesdePreset, type DateRangeValue } from "@/components/date-range-filter";
 import { PaginationBar, FilterBar, ViewModeToggle, useResponsiveListView, type ListViewMode } from "@/components/list-controls";
@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 type HistItem = {
@@ -103,12 +104,18 @@ export default function MonitoreoPage() {
   const { db } = useAuth();
   const hoy = fechaLocal();
   const [devs, setDevs] = useState<Dev[]>([]);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("Todos");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [viewMode, setViewMode] = useState<ListViewMode>("lista");
   const displayMode = useResponsiveListView(viewMode);
   const [rango, setRango] = useState<DateRangeValue>({ desde: hoy, hasta: hoy });
-  const pager = usePagination(devs, { resetKey: `${rango.desde}|${rango.hasta}` });
+  const filteredDevs = useMemo(() => devs.filter((d) =>
+    (statusFilter === "Todos" || d.Estado_Conexion === statusFilter) &&
+    `${d.Nombre} ${d.Cedula}`.toLocaleLowerCase().includes(search.toLocaleLowerCase())
+  ), [devs, search, statusFilter]);
+  const pager = usePagination(filteredDevs, { resetKey: `${rango.desde}|${rango.hasta}|${search}|${statusFilter}` });
   const [histOpen, setHistOpen] = useState(false);
   const [histNombre, setHistNombre] = useState("");
   const [histPer, setHistPer] = useState(0);
@@ -118,6 +125,7 @@ export default function MonitoreoPage() {
   });
   const [histBounds, setHistBounds] = useState<{ min: string; max: string } | null>(null);
   const [histItems, setHistItems] = useState<HistItem[]>([]);
+  const [histConexiones, setHistConexiones] = useState<Dev["Conexiones_Diarias"]>([]);
   const histPager = usePagination(histItems, {
     resetKey: `${histPer}|${histRango.desde}|${histRango.hasta}`,
   });
@@ -165,7 +173,9 @@ export default function MonitoreoPage() {
   };
 
   const patchDev = async (d: Dev, patch: Record<string, number>) => {
-    await fetch("/api/devs", {
+    setError("");
+    try {
+    const res = await fetch("/api/devs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -177,7 +187,10 @@ export default function MonitoreoPage() {
         ...patch,
       }),
     });
+    const j = await res.json();
+    if (!res.ok || !j.success) throw new Error(j.message || "No se pudo guardar la configuración");
     await loadDevs();
+    } catch (e) { setError(e instanceof Error ? e.message : "Error al guardar"); }
   };
 
   const totales = useMemo(() => {
@@ -241,6 +254,7 @@ export default function MonitoreoPage() {
         hasta: (j.hasta as string) || rangoH.hasta,
       });
       setHistItems(j.historial || []);
+      setHistConexiones(j.conexiones_diarias || []);
       setHistTotal(j.total_registros || (j.historial || []).length);
       applyHistHint(j.fechas_disponibles);
     } catch (e) {
@@ -256,6 +270,7 @@ export default function MonitoreoPage() {
     setHistNombre(d.Nombre);
     setHistOpen(true);
     setHistItems([]);
+    setHistConexiones([]);
     setHistHint("");
     setHistTotal(0);
     setLoading(true);
@@ -279,6 +294,7 @@ export default function MonitoreoPage() {
         hasta: (j.hasta as string) || bounds?.max || fechaLocal(),
       });
       setHistItems(j.historial || []);
+      setHistConexiones(j.conexiones_diarias || []);
       setHistTotal(j.total_registros || (j.historial || []).length);
       applyHistHint(j.fechas_disponibles);
     } catch (e) {
@@ -303,11 +319,13 @@ export default function MonitoreoPage() {
   };
 
   const online = devs.filter((d) => d.Estado_Conexion === "Online").length;
+  const ausentes = devs.filter((d) => d.Estado_Conexion === "Ausente").length;
+  const desconectados = devs.filter((d) => d.Estado_Conexion === "Desconectado").length;
 
   return (
     <>
       <Topbar title="Monitoreo" subtitle="ExaMonitor en vivo" />
-      <main className="mx-auto w-full min-w-0 max-w-[1400px] animate-fade-in space-y-4 px-4 py-6 sm:px-6">
+      <main className="mx-auto w-full min-w-0 max-w-[1400px] lg:max-w-none animate-fade-in space-y-4 px-4 py-6 sm:px-6">
         <FilterBar>
           <Button type="button" variant="secondary" className="h-9" onClick={() => void loadDevs()} disabled={loading}>
             <RefreshCw className={loading ? "animate-spin" : ""} />
@@ -315,6 +333,8 @@ export default function MonitoreoPage() {
           </Button>
           <ViewModeToggle value={viewMode} onChange={setViewMode} />
           <Badge variant="success" className="h-9">{online} online</Badge>
+          <Badge variant="muted" className="h-9">{ausentes} ausentes</Badge>
+          <Badge variant="muted" className="h-9">{desconectados} desconectados</Badge>
           <Badge variant="muted" className="h-9">{devs.length} total</Badge>
           <DateRangeFilter
             value={rango}
@@ -323,6 +343,12 @@ export default function MonitoreoPage() {
             compact
             showPresets
           />
+        </FilterBar>
+        <FilterBar>
+          <div className="relative w-full sm:w-64"><Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" /><Input className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Nombre o cédula" aria-label="Buscar colaborador" /></div>
+          <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Filtrar por conexión" className="w-44">
+            {["Todos", "Online", "Ausente", "Desconectado"].map((s) => <option key={s} value={s}>{s}</option>)}
+          </Select>
         </FilterBar>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -380,7 +406,8 @@ export default function MonitoreoPage() {
                   <div className="truncate text-xs font-medium">{d.Ultima_Ventana || "—"}</div>
                   <div className="truncate text-[11px] text-muted-foreground">{d.Ultimo_Proceso || ""}</div>
                   <div className="mt-2 text-[11px] text-muted-foreground">
-                    {d.Ultima_Conexion ? horaLocal(d.Ultima_Conexion) : "Sin conexion"}
+                    Primera conexión hoy: {d.Primera_Conexion_Hoy ? horaLocal(d.Primera_Conexion_Hoy) : "Sin registro"}<br />
+                    Última conexión: {d.Ultima_Conexion ? horaLocal(d.Ultima_Conexion) : "Sin conexión"}
                   </div>
                   <div className="mt-1 text-[11px] font-medium text-foreground">{horarioLabel(d)}</div>
                   <div className="mt-2">
@@ -467,6 +494,7 @@ export default function MonitoreoPage() {
                 <TableRow className="border-border hover:bg-muted">
                   <TableHead>Desarrollador</TableHead>
                   <TableHead>Estado</TableHead>
+                  <TableHead>Primera conexión hoy</TableHead>
                   <TableHead>Ventana</TableHead>
                   <TableHead>
                     <span className="inline-flex items-center gap-1">
@@ -507,6 +535,7 @@ export default function MonitoreoPage() {
                       </div>
                       <div className="mt-0.5 text-[11px] font-medium">{horarioLabel(d)}</div>
                     </TableCell>
+                    <TableCell className="text-xs">{d.Primera_Conexion_Hoy ? horaLocal(d.Primera_Conexion_Hoy) : "Sin registro"}</TableCell>
                     <TableCell className="max-w-[220px]">
                       <div className="truncate text-xs font-medium">{d.Ultima_Ventana || "—"}</div>
                       <div className="truncate text-[11px] text-muted-foreground">{d.Ultimo_Proceso || ""}</div>
@@ -557,7 +586,7 @@ export default function MonitoreoPage() {
                 ))}
                 {!loading && devs.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={9} className="py-10 text-center text-muted-foreground">
+                    <TableCell colSpan={10} className="py-10 text-center text-muted-foreground">
                       Sin desarrolladores con monitoreo.
                     </TableCell>
                   </TableRow>
@@ -606,6 +635,10 @@ export default function MonitoreoPage() {
               />
             </FilterBar>
             {histHint && <p className="truncate text-xs text-muted-foreground">{histHint}</p>}
+            <section className="rounded-lg border p-3">
+              <h3 className="mb-2 text-sm font-semibold">Primera conexión por día · Guayaquil</h3>
+              {histConexiones.length ? <div className="max-h-40 overflow-y-auto text-xs">{histConexiones.map((c) => <div key={c.Fecha} className="flex justify-between border-b py-1"><span>{c.Fecha}</span><span>{horaLocal(c.Primera_Conexion)}</span></div>)}</div> : <p className="text-xs text-muted-foreground">Sin conexiones verificadas en este rango.</p>}
+            </section>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {histPager.slice.map((it) => (
                 <Card key={it.Tel_Cod} className="overflow-hidden">

@@ -77,6 +77,8 @@ export type Dev = {
   Mon_Permitir_Salir: number;
   Mon_Mac_Address: string;
   Ultima_Conexion: string | null;
+  Primera_Conexion_Hoy: string | null;
+  Conexiones_Diarias: Array<{ Fecha: string; Primera_Conexion: string }>;
   Ultima_Ventana: string;
   Ultimo_Proceso: string;
   Ultimo_Porcentaje: number;

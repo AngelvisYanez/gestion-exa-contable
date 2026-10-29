@@ -285,7 +285,7 @@ export default function MisTareasPage() {
   return (
     <>
       <Topbar title="Mis tareas" subtitle={user?.name || "Asignadas a ti"} />
-      <main className="mx-auto w-full min-w-0 max-w-[1400px] animate-fade-in px-4 py-6 sm:px-6">
+      <main className="mx-auto w-full min-w-0 max-w-[1400px] lg:max-w-none animate-fade-in px-4 py-6 sm:px-6">
         <FilterBar className="mb-4">
           <Button type="button" variant="secondary" className="h-9" onClick={() => void loadTareas("exa")} disabled={loading}>
             <RefreshCw className={loading ? "animate-spin" : ""} />

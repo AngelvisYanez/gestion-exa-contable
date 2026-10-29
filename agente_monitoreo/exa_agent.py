@@ -32,7 +32,7 @@ from win_shell import (
     start_input_counter,
 )
 
-AGENT_VERSION = "2.14.4-flet"
+AGENT_VERSION = "2.14.5-flet"
 UPDATE_REPO = "AngelvisYanez/gestion-exa-contable"
 GITHUB_API_LATEST = f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest"
 
@@ -136,6 +136,15 @@ def build_api_url(server: str, api_path: str | None) -> str:
     if not path.startswith("/"):
         path = "/" + path
     return server + path
+
+
+def dialog_content_width(window_width: int | float | None, preferred: int) -> int:
+    """Deja espacio para los margenes y el padding de AlertDialog."""
+    try:
+        available = int(window_width or 850) - 96
+    except (TypeError, ValueError):
+        available = 754
+    return max(320, min(preferred, available))
 
 
 def get_mac() -> str:
@@ -1276,7 +1285,7 @@ class ExaMonitorApp:
             ),
             content=ft.Container(
                 content=ft.Image(src=url, fit=ft.BoxFit.CONTAIN),
-                width=640,
+                width=dialog_content_width(self.page.window.width, 640),
                 height=420,
                 bgcolor=C["muted_bg"],
                 border_radius=10,
@@ -1590,7 +1599,9 @@ class ExaMonitorApp:
                     estado_upload,
                     error,
                 ],
-                width=620, height=490, scroll=ft.ScrollMode.AUTO,
+                width=dialog_content_width(self.page.window.width, 620),
+                height=max(300, min(490, int(self.page.window.height or 860) - 180)),
+                scroll=ft.ScrollMode.AUTO,
                 spacing=10, horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
             ),
             actions=[ft.TextButton("Cancelar", on_click=cerrar), guardar],
@@ -1839,7 +1850,7 @@ class ExaMonitorApp:
             )
         header = ft.Container(
             content=ft.Column(header_bits, spacing=8, tight=True),
-            width=620,
+            width=dialog_content_width(self.page.window.width, 620),
             padding=ft.Padding.only(bottom=4),
             border=ft.Border.only(bottom=ft.BorderSide(1, C["border_soft"])),
         )
@@ -2526,7 +2537,7 @@ class ExaMonitorApp:
             body_cols,
             spacing=14,
             scroll=ft.ScrollMode.AUTO,
-            width=620,
+            width=dialog_content_width(self.page.window.width, 620),
             height=alto,
         )
 

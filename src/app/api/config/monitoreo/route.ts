@@ -93,11 +93,16 @@ export async function POST(req: NextRequest) {
           body.Mon_Almuerzo_Fin != null ? String(body.Mon_Almuerzo_Fin) : undefined,
       };
       let updated = 0;
+      const failed: Array<{ Per_Cod: number; message: string }> = [];
       for (const perCod of perCodes) {
-        await setMonitoreoConfig(db, perCod, patch);
-        updated++;
+        try {
+          await setMonitoreoConfig(db, perCod, patch);
+          updated++;
+        } catch (error) {
+          failed.push({ Per_Cod: perCod, message: error instanceof Error ? error.message : "Error" });
+        }
       }
-      return NextResponse.json({ success: true, updated });
+      return NextResponse.json({ success: failed.length === 0, updated, failed });
     }
 
     const config = await setMonitoreoGlobal(db, {

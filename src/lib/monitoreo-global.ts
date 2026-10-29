@@ -124,6 +124,15 @@ CREATE TABLE IF NOT EXISTS aud_dev_telemetria (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 `;
 
+const CREATE_CONEXION_DIARIA_SQL = `
+CREATE TABLE IF NOT EXISTS aud_dev_conexion_diaria (
+  Per_Cod INT NOT NULL,
+  Fecha DATE NOT NULL,
+  Primera_Conexion DATETIME NOT NULL,
+  PRIMARY KEY (Per_Cod, Fecha)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+`;
+
 const ALTER_DATETIME_SQL = `
 ALTER TABLE aud_dev_monitoreo_global
   MODIFY Cfg_Actualizado DATETIME NULL DEFAULT NULL
@@ -152,7 +161,7 @@ const schemaInflight = new Map<string, Promise<void>>();
 export function ensureMonitoreoSchema(prisma: PrismaClient): Promise<void> {
   // Evita martillar information_schema en cada telemetría / request.
   // v3: CREATE telemetria + config (antes solo global; caché vieja saltaba el CREATE).
-  const key = `${(prisma as { _exaDbKey?: string })._exaDbKey || "default"}:v4-tel`;
+  const key = `${(prisma as { _exaDbKey?: string })._exaDbKey || "default"}:v5-conexion-diaria`;
   if (schemaReady.has(key)) return Promise.resolve();
   const pending = schemaInflight.get(key);
   if (pending) return pending;
@@ -164,6 +173,7 @@ export function ensureMonitoreoSchema(prisma: PrismaClient): Promise<void> {
 async function prepareMonitoreoSchema(prisma: PrismaClient, key: string) {
   await prisma.$executeRawUnsafe(CREATE_CONFIG_SQL);
   await prisma.$executeRawUnsafe(CREATE_TELEMETRIA_SQL);
+  await prisma.$executeRawUnsafe(CREATE_CONEXION_DIARIA_SQL);
   await prisma.$executeRawUnsafe(CREATE_GLOBAL_SQL);
   try {
     await prisma.$executeRawUnsafe(ALTER_DATETIME_SQL);

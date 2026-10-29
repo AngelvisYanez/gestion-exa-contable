@@ -257,6 +257,15 @@ model aud_dev_monitoreo_config {
   personal personal @relation(fields: [Per_Cod], references: [Per_Cod])
 }
 
+/// Primera comunicacion recibida por usuario y dia operativo (Guayaquil).
+model aud_dev_conexion_diaria {
+  Per_Cod          Int
+  Fecha            DateTime @db.Date
+  Primera_Conexion DateTime @db.DateTime
+
+  @@id([Per_Cod, Fecha])
+}
+
 /// Pol?ticas globales del agente (1 fila, Cfg_Cod = 1). Incluye retenci?n de screenshots.
 model aud_dev_monitoreo_global {
   Cfg_Cod                    Int       @id @default(1)

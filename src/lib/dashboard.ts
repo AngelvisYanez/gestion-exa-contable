@@ -3,6 +3,7 @@ import { tasksEmpCod } from "./empresa";
 import { getTareasDateBounds, listAsignables, listTareas, kpisTareas } from "./tareas";
 import { hoyFecha, toCalendarYmd } from "./timezone";
 import { CATEGORIAS_PLAZO, plazoDesdeFechas, type CategoriaPlazo } from "./plazo-tarea";
+import { loadMonitoreoReporte, type MonitoreoReporte } from "./reporte-monitoreo";
 
 export type ChartSlice = { label: string; value: number; color: string };
 
@@ -267,6 +268,7 @@ export type BaseComparativaRow = {
 };
 
 export type DashboardMetrics = {
+  monitoreo: MonitoreoReporte;
   kpis: Awaited<ReturnType<typeof kpisTareas>>;
   porEstado: ChartSlice[];
   porPrioridad: ChartSlice[];
@@ -1314,6 +1316,11 @@ export async function getDashboardMetrics(
   const pool = perCod
     ? asignables.filter((a) => a.Per_Cod === perCod)
     : asignables;
+  const monitoreo = await loadMonitoreoReporte(getPrisma(db), pool, desde, hasta);
+  if (monitoreo.rango_disponible) {
+    rango.min = rango.min < monitoreo.rango_disponible.desde ? rango.min : monitoreo.rango_disponible.desde;
+    rango.max = rango.max > monitoreo.rango_disponible.hasta ? rango.max : monitoreo.rango_disponible.hasta;
+  }
 
   for (const a of pool) {
     byPer.set(a.Per_Cod, {
@@ -1433,6 +1440,7 @@ export async function getDashboardMetrics(
 
   return {
     kpis,
+    monitoreo,
     porEstado: Array.from(estadoMap.entries()).map(([label, value]) => ({
       label,
       value,

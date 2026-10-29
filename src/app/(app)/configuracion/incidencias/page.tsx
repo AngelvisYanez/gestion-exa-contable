@@ -221,7 +221,7 @@ export default function IncidenciasPage() {
   return (
     <>
       <Topbar title="Incidencias" subtitle="Logs de error EXA" />
-      <main className="mx-auto w-full min-w-0 max-w-[1400px] animate-fade-in px-4 py-6 sm:px-6">
+      <main className="mx-auto w-full min-w-0 max-w-[1400px] lg:max-w-none animate-fade-in px-4 py-6 sm:px-6">
         <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-5">
           {[
             { label: "Total", value: kpis?.total ?? 0, tone: "text-sky-700" },

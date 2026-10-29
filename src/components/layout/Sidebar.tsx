@@ -176,7 +176,7 @@ export default function Sidebar() {
 
   const sidebarWidth = collapsed
     ? "w-[min(18rem,86vw)] md:w-14"
-    : "w-[min(18rem,86vw)] md:w-60";
+    : "w-[min(18rem,86vw)] md:w-48";
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -314,7 +314,7 @@ export default function Sidebar() {
         type="button"
         onClick={() => setCollapsed(!collapsed)}
         className={`fixed top-8 z-[70] hidden h-7 w-5 -translate-y-1/2 cursor-pointer items-center justify-center rounded-r-md border border-sidebar-border bg-sidebar text-muted-foreground shadow-sm transition-[left,color] duration-200 ease-in-out hover:text-sidebar-foreground md:flex ${
-          collapsed ? "left-12" : "left-[14.5rem]"
+          collapsed ? "left-12" : "left-[11.5rem]"
         }`}
         title={collapsed ? "Expandir menu" : "Colapsar menu"}
       >

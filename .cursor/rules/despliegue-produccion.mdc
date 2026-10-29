@@ -5,9 +5,11 @@ alwaysApply: true
 
 # Despliegue a producción
 
+Esta es la fuente completa del procedimiento. `AGENTS.md` la hace visible a otros agentes, y los archivos `CLAUDE.md`, `GEMINI.md` y `.github/copilot-instructions.md` remiten a ella. Lee la regla entera antes de ejecutar un despliegue; no basta con aplicar solo el resumen de otro archivo.
+
 Esta regla vive en este repositorio y solo vale para exa-tareas-app (`gestion.exacontable.com`). No la uses en otros proyectos ni en otros dominios.
 
-Después de un commit que el usuario pidió y de un push exitoso a `main` de este repo, despliega en producción. No despliegues otros branches, ni un commit que no llegó a `origin/main`.
+Después de un commit que el usuario pidió y de un push exitoso a `origin/main` de este repo, despliega **ese mismo SHA** en producción dentro de la misma tarea. No hagas un commit o push solo para activar esta regla. No despliegues otros branches, un commit que no llegó a `origin/main` ni cambios locales no publicados. Respeta una instrucción explícita del usuario de no desplegar. Si una comprobación obligatoria falla, detente antes del paso dependiente e informa el estado alcanzado y lo pendiente.
 
 No hay Actions ni webhook. El sitio es `gestion.exacontable.com`. El código vive en `/var/www/vhosts/gestion.exacontable.com/httpdocs`. Nginx manda el dominio a `127.0.0.1:3010`. Node es `/opt/plesk/node/26/bin/node`. Ese proceso no sobrevive a un reinicio del servidor: hay que volver a levantarlo.
 
@@ -43,3 +45,5 @@ cd /var/www/vhosts/gestion.exacontable.com/httpdocs && fuser -k 3010/tcp ; sleep
 - Con una sesión real de prueba, abre `/` y `/tareas` y confirma que no aparece ese error. Si no hay una sesión legítima disponible, informa que esta comprobación quedó pendiente. No leas `AUTH_SECRET` ni fabriques cookies para eludir el inicio de sesión.
 
 No hagas commit de `.env`, logs, archivos sin seguimiento del servidor ni archivos ajenos al cambio solicitado.
+
+Al terminar, informa el SHA desplegado, el resultado del build, las verificaciones externas y cualquier comprobación pendiente.

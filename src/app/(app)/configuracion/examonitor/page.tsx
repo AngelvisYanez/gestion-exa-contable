@@ -130,6 +130,7 @@ export default function ExaMonitorConfigPage() {
   const [okMsg, setOkMsg] = useState("");
   const [saving, setSaving] = useState<number | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [section, setSection] = useState<"personas" | "lote" | "retencion">("personas");
 
   const [cfg, setCfg] = useState<GlobalConfig | null>(null);
   const [disk, setDisk] = useState<DiskStats | null>(null);
@@ -285,6 +286,14 @@ export default function ExaMonitorConfigPage() {
       Math.min(CAPTURA_RETENCION_DIAS_MAX, customDias || 1)
     );
   }, [preset, customDias]);
+  const retencionPendiente = !!cfg && (
+    !!cfg.Cap_Retencion_Activa !== retencionActiva ||
+    cfg.Cap_Retencion_Preset !== preset ||
+    cfg.Cap_Retencion_Dias !== diasEfectivos ||
+    !!cfg.Cap_Auto_Purga !== autoPurga ||
+    (cfg.Cap_Preservar_Asignaciones !== 0) !== preservarAsig ||
+    (cfg.Cap_Post_Cierre_Dias ?? 90) !== postCierreDias
+  );
 
   const save = async (c: Colab, patch: Partial<Colab>) => {
     setSaving(c.Per_Cod);
@@ -315,6 +324,7 @@ export default function ExaMonitorConfigPage() {
       });
       const j = await res.json();
       if (!j.success) throw new Error(j.message || "No se pudo guardar");
+      setOkMsg(`Política guardada para ${c.Nombre || "colaborador"}.`);
       const cfg = j.config || {};
       setRows((prev) =>
         prev.map((r) =>
@@ -460,7 +470,11 @@ export default function ExaMonitorConfigPage() {
         }),
       });
       const j = await res.json();
-      if (!j.success) throw new Error(j.message || "No se pudo aplicar");
+      if (!j.success) {
+        const failures = (j.failed || []) as Array<{ Per_Cod: number; message: string }>;
+        if (j.updated > 0) await load();
+        throw new Error(`Aplicadas a ${j.updated || 0}; fallaron ${failures.length}: ${failures.map((f) => `${f.Per_Cod} (${f.message})`).join(", ")}`);
+      }
       setOkMsg(`Políticas aplicadas a ${j.updated} colaborador(es).`);
       setSelected(new Set());
       await load();
@@ -476,7 +490,17 @@ export default function ExaMonitorConfigPage() {
   return (
     <>
       <Topbar title="Config. ExaMonitor" subtitle="Administracion" />
-      <main className="mx-auto w-full min-w-0 max-w-[1400px] animate-fade-in space-y-5 px-4 py-6 sm:px-6">
+      <main className="mx-auto w-full min-w-0 max-w-[1400px] lg:max-w-none animate-fade-in space-y-5 px-4 py-6 sm:px-6">
+        <nav className="flex flex-wrap gap-2" aria-label="Secciones de configuración">
+          {([ ["personas", "Políticas por persona"], ["lote", "Aplicación en lote"], ["retencion", "Capturas y retención"] ] as const).map(([id, label]) =>
+            <Button key={id} type="button" variant={section === id ? "default" : "secondary"} onClick={() => setSection(id)}>{label}</Button>
+          )}
+        </nav>
+        {error && <Alert variant="destructive">{error}</Alert>}
+        {okMsg && <Alert variant="success">{okMsg}</Alert>}
+        {selected.size > 0 && <p className="text-sm text-muted-foreground">{selected.size} colaborador(es) seleccionados para aplicar en lote.</p>}
+        {section === "retencion" && <>
+        {retencionPendiente && <Badge variant="info">Cambios de retención pendientes de guardar</Badge>}
         <div className="grid gap-4 lg:grid-cols-3">
           <Card className="lg:col-span-2">
             <CardHeader className="pb-2">
@@ -646,7 +670,10 @@ export default function ExaMonitorConfigPage() {
             </CardContent>
           </Card>
         </div>
+        </>}
 
+        {section === "lote" && <>
+        <p className="text-sm text-muted-foreground">Se aplicará a {selected.size} colaborador(es): monitoreo {bulkHorario ? "automático" : bulkActivo ? "activo" : "pausado"}, intervalo {bulkIntervalo} min, capturas {bulkCaptura ? "sí" : "no"}, bandeja {bulkBandeja ? "forzada" : "opcional"}.</p>
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
@@ -800,7 +827,10 @@ export default function ExaMonitorConfigPage() {
             </Button>
           </CardContent>
         </Card>
+        <p className="text-xs text-muted-foreground">La aplicación en lote reemplaza las políticas seleccionadas de cada colaborador. Selecciona personas en la sección Políticas por persona.</p>
+        </>}
 
+        {section === "personas" && <>
         <FilterBar>
           <div className="relative w-full min-w-0 sm:w-[240px]">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -817,8 +847,6 @@ export default function ExaMonitorConfigPage() {
           </Button>
         </FilterBar>
 
-        {error && <Alert variant="destructive">{error}</Alert>}
-        {okMsg && <Alert variant="success">{okMsg}</Alert>}
 
         <Card className="overflow-hidden">
           <Table className="responsive-card-table">
@@ -1076,6 +1104,7 @@ export default function ExaMonitorConfigPage() {
             </TableBody>
           </Table>
         </Card>
+        </>}
       </main>
     </>
   );

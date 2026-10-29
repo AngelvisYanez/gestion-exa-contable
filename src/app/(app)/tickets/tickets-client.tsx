@@ -709,7 +709,7 @@ export default function TicketsPage({ mode = "all" }: { mode?: "all" | "mine" })
               : `EXA, Servicios y Relavera · ${rango.desde} a ${rango.hasta}`
         }
       />
-      <main className="mx-auto w-full min-w-0 max-w-[1400px] animate-fade-in px-4 py-6 sm:px-6">
+      <main className="mx-auto w-full min-w-0 max-w-[1400px] lg:max-w-none animate-fade-in px-4 py-6 sm:px-6">
         <div className={cn("mb-5 grid grid-cols-2 gap-3", isMine ? "sm:grid-cols-3" : "sm:grid-cols-4")}>
           {(isMine
             ? [

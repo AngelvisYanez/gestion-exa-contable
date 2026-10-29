@@ -54,6 +54,26 @@ acciones que antes no tenia. El acceso a Monitoreo y Configuracion sigue reserva
 encargado. Los cambios de permisos del panel se aplican cuando el usuario vuelve a
 iniciar sesion.
 
+## Exportar rendimiento
+
+El dashboard del encargado incluye **Exportar PDF** y **Exportar CSV** junto a los filtros.
+Las descargas usan el proyecto, el período y la persona de los datos cargados; se bloquean
+mientras se actualizan las métricas o cuando la consulta falla.
+
+El PDF contiene KPIs, desglose por persona y tendencia diaria. El CSV usa UTF-8 con BOM,
+separador `;` y una fila por persona, listo para abrir en una hoja de cálculo.
+El reporte también incluye monitoreo por desarrollador: primera conexión, última señal,
+tiempo activo reportado, actividad, clics, teclas, líneas estimadas y capturas. El PDF
+añade detalle diario y los cinco procesos con más registros. Las fechas corresponden
+a America/Guayaquil. El agente no registra un cierre de sesión confirmado: se indica
+`No registrado`, sin sustituirlo por la última señal. Los datos ausentes se muestran
+como `Sin datos`; las consultas fallidas se identifican como información parcial.
+Si el período seleccionado no contiene telemetría, el dashboard muestra las fechas
+disponibles y permite consultarlas con **Ver período con telemetría**. El PDF también
+indica el período consultado y las fechas con registros, sin mezclar ambos rangos.
+Las tareas compartidas cuentan para cada persona asignada: la suma por persona puede
+superar el total de tareas del resumen.
+
 ## ExaMonitor.exe
 
 Login con **cédula + contraseña EXA** (mismo usuario del panel). Ya no usa Per_Cod fijo.

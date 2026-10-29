@@ -158,7 +158,7 @@ export default function ConfiguracionGeneralPage() {
   return (
     <>
       <Topbar title="Config. general" subtitle="Administracion" />
-      <main className="mx-auto w-full min-w-0 max-w-5xl animate-fade-in space-y-6 px-4 py-6 sm:px-6">
+      <main className="mx-auto w-full min-w-0 max-w-5xl lg:max-w-none animate-fade-in space-y-6 px-4 py-6 sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-sm text-brand-gray-600">

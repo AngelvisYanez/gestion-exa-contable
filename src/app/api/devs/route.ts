@@ -10,6 +10,9 @@ import {
   setMonitoreoConfig,
 } from "@/lib/tareas";
 import { hoyFecha } from "@/lib/timezone";
+import { getPrisma } from "@/lib/db";
+import { ensureMonitoreoSchema } from "@/lib/monitoreo-global";
+import { conexionesDiarias } from "@/lib/monitoreo-conexiones";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +33,12 @@ export async function GET(req: NextRequest) {
       const hasta = sp.get("hasta") || sp.get("Hasta") || undefined;
       const maximo = sp.get("rangoMaximo") === "1" || sp.get("maximo") === "1";
       const data = await historialCapturas(db, perCod, fecha, autoFecha, { desde, hasta, maximo });
-      return NextResponse.json({ success: true, ...data });
+      const prisma = getPrisma(db);
+      await ensureMonitoreoSchema(prisma);
+      const conexiones = await conexionesDiarias(
+        prisma, perCod, data.desde || desde || fecha, data.hasta || hasta || fecha
+      );
+      return NextResponse.json({ success: true, ...data, conexiones_diarias: conexiones });
     }
 
     if (view === "colaboradores") {

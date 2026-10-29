@@ -52,6 +52,8 @@ import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DevDashboard } from "@/components/dashboard/dev-dashboard";
+import { ExportarRendimiento } from "@/components/dashboard/exportar-rendimiento";
+import type { MonitoreoReporte } from "@/lib/reporte-monitoreo";
 import type {
   ApoyoDev,
   AvanceSinActividadMetric,
@@ -86,6 +88,8 @@ const DashboardGrid = dynamic(
 );
 
 type Metrics = {
+  monitoreo: MonitoreoReporte;
+  db: string;
   kpis: {
     total: number;
     completadas: number;
@@ -137,7 +141,7 @@ type Metrics = {
 };
 
 export default function HomePage() {
-  const { db, user, loading: authLoading } = useAuth();
+  const { db, user, projects, loading: authLoading } = useAuth();
   const { lastTaskEventAt } = useNotifications();
   const empCod = 96;
   const [loading, setLoading] = useState(true);
@@ -147,7 +151,7 @@ export default function HomePage() {
   const [bounds, setBounds] = useState<{ min: string; max: string } | null>(null);
   const [perCod, setPerCod] = useState<number | null>(null);
   const [devs, setDevs] = useState<Array<{ Per_Cod: number; Nombre: string }>>([]);
-  const initialized = useRef(false);
+  const latestRequest = useRef(0);
 
   const [editMode, setEditMode] = useState(false);
   const [customizeOpen, setCustomizeOpen] = useState(false);
@@ -159,6 +163,7 @@ export default function HomePage() {
   const load = useCallback(
     async (override?: { rango?: DateRangeValue; perCod?: number | null }) => {
       if (isDev || isAtencion || authLoading || !user) return;
+      const requestId = ++latestRequest.current;
       setLoading(true);
       setError("");
       try {
@@ -175,27 +180,20 @@ export default function HomePage() {
         if (filtroPer && filtroPer > 0) qs.set("Per_Cod", String(filtroPer));
         const res = await fetch(`/api/dashboard?${qs.toString()}`);
         const j = await res.json();
+        if (requestId !== latestRequest.current) return;
         if (!j.success) throw new Error(j.message || "Error al cargar metricas");
         setM(j as Metrics);
+        setPerCod(j.filtro.perCod);
         if (Array.isArray(j.desarrolladores)) setDevs(j.desarrolladores);
         if (j.rango) {
           setBounds({ min: j.rango.min, max: j.rango.max });
-          if (!initialized.current) {
-            // Mantener filtro por dia (hoy) al iniciar; no abrir todo el historial
-            const inicial = override?.rango || diaDesdePreset("hoy", {
-              min: j.rango.min,
-              max: j.rango.max,
-            });
-            setRango(inicial);
-            initialized.current = true;
-          } else if (override?.rango) {
-            setRango(override.rango);
-          }
+          // Keep the controls and exports on the effective period returned by the API.
+          setRango({ desde: j.rango.desde, hasta: j.rango.hasta });
         }
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Error");
+        if (requestId === latestRequest.current) setError(e instanceof Error ? e.message : "Error");
       } finally {
-        setLoading(false);
+        if (requestId === latestRequest.current) setLoading(false);
       }
     },
     [db, empCod, rango.desde, rango.hasta, perCod, isDev, isAtencion, authLoading, user]
@@ -217,7 +215,7 @@ export default function HomePage() {
     return (
       <>
         <Topbar title="Dashboard" subtitle="Cargando..." />
-        <main className="mx-auto flex w-full min-w-0 max-w-[1400px] items-center justify-center px-4 py-24">
+        <main className="mx-auto flex w-full min-w-0 max-w-[1400px] lg:max-w-none items-center justify-center px-4 py-24">
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </main>
       </>
@@ -228,7 +226,7 @@ export default function HomePage() {
     return (
       <>
         <Topbar title="Dashboard" subtitle={user?.name || "Tu resumen personal"} />
-        <main className="mx-auto w-full min-w-0 max-w-[1400px] animate-fade-in px-3 py-4 sm:px-6 sm:py-6">
+        <main className="mx-auto w-full min-w-0 max-w-[1400px] lg:max-w-none animate-fade-in px-3 py-4 sm:px-6 sm:py-6">
           <DevDashboard userName={user?.name} />
         </main>
       </>
@@ -239,7 +237,7 @@ export default function HomePage() {
     return (
       <>
         <Topbar title="Atencion al cliente" subtitle={user?.name || "Asignacion"} />
-        <main className="mx-auto w-full min-w-0 max-w-3xl animate-fade-in space-y-4 px-4 py-6 sm:px-6">
+        <main className="mx-auto w-full min-w-0 max-w-3xl lg:max-w-none animate-fade-in space-y-4 px-4 py-6 sm:px-6">
           <p className="text-sm text-brand-gray-600">
             Accede a los modulos habilitados para tu rol. El monitoreo, las capturas y la configuracion
             quedan reservados al encargado.
@@ -288,6 +286,10 @@ export default function HomePage() {
 
   const k = m?.kpis;
   const selectedDev = perCod ? devs.find((d) => d.Per_Cod === perCod) : null;
+  const exportReady = !!m && !loading && !error && m.db === db
+    && m.rango.desde === rango.desde && m.rango.hasta === rango.hasta
+    && m.filtro.perCod === perCod;
+  const projectName = projects.find((p) => p.dbDis === db || p.id === db)?.name || db;
 
   const renderWidget = (id: string) => {
     switch (id) {
@@ -459,7 +461,7 @@ export default function HomePage() {
   return (
     <>
       <Topbar title="Dashboard" subtitle={user?.name || "Metricas del proyecto"} />
-      <main className="mx-auto w-full min-w-0 max-w-[1400px] animate-fade-in px-3 py-4 sm:px-6 sm:py-6">
+      <main className="mx-auto w-full min-w-0 max-w-[1400px] lg:max-w-none animate-fade-in px-3 py-4 sm:px-6 sm:py-6">
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
           <div className="min-w-0">
             <h1 className="text-lg font-bold tracking-tight text-brand-gray-900">
@@ -513,6 +515,11 @@ export default function HomePage() {
             onChange={applyDev}
             disabled={loading && !m}
           />
+          <ExportarRendimiento
+            metrics={m}
+            proyecto={{ db: m?.db || db, nombre: projectName }}
+            disabled={!exportReady}
+          />
           {editMode && (
             <Badge variant="info" className="hidden h-9 gap-1 lg:inline-flex">
               <LayoutGrid className="size-3" />
@@ -524,6 +531,23 @@ export default function HomePage() {
         {error && (
           <div className="mb-4">
             <Alert variant="destructive">{error}</Alert>
+          </div>
+        )}
+
+        {exportReady && m?.monitoreo?.telemetria_consultada
+          && !m.monitoreo.desarrolladores.some((p) => p.registros > 0) && (
+          <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            <p className="min-w-0 flex-1">
+              No hay telemetría del {m.rango.desde} al {m.rango.hasta}.
+              {m.monitoreo.rango_disponible
+                ? ` Hay registros disponibles del ${m.monitoreo.rango_disponible.desde} al ${m.monitoreo.rango_disponible.hasta}.`
+                : " No se dispone de un período con registros para esta selección en el proyecto."}
+            </p>
+            {m.monitoreo.rango_disponible && (
+              <Button type="button" variant="outline" size="sm" onClick={() => applyRango(m.monitoreo.rango_disponible!)}>
+                Ver período con telemetría
+              </Button>
+            )}
           </div>
         )}
 
