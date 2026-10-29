@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 import tempfile
 import unittest
+import hashlib
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 from updater import download_executable, write_update_script
@@ -53,6 +57,34 @@ class TestUpdater(unittest.TestCase):
             self.assertLess(body.index("Get-Process -Id $oldPid"), body.index("Copy-Item"))
             self.assertLess(body.index("Get-FileHash -LiteralPath $target"), body.index("Start-Process"))
             self.assertIn("O''Brien", body)
+            self.assertIn("PYINSTALLER_RESET_ENVIRONMENT", body)
+            self.assertIn(".update-backup", body)
+
+    @unittest.skipUnless(sys.platform == "win32", "Requiere PowerShell en Windows")
+    def test_instala_y_prepara_reinicio_real(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root / "downloaded.exe"
+            shutil.copyfile(Path("C:/Windows/System32/where.exe"), source)
+            target = root / "installed.exe"
+            target.write_bytes(fake_executable())
+            expected = hashlib.sha256(source.read_bytes()).hexdigest()
+            script = write_update_script(root, target, source, expected, 2147483647)
+            marker = root / "launched.txt"
+            body = script.read_text(encoding="utf-8-sig")
+            fake_launch = (
+                "function Start-Process { param($FilePath, $WorkingDirectory) "
+                f"Set-Content -LiteralPath '{marker}' -Value $FilePath }}\n"
+            )
+            script.write_text(fake_launch + body, encoding="utf-8-sig")
+            result = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)],
+                capture_output=True, text=True, timeout=20,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(hashlib.sha256(target.read_bytes()).hexdigest(), expected)
+            self.assertEqual(marker.read_text().strip(), str(target))
+            self.assertFalse((root / "installed.exe.update-backup").exists())
 
 
 if __name__ == "__main__":

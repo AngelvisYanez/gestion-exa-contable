@@ -59,6 +59,8 @@ $source = {_ps_literal(str(downloaded))}
 $target = {_ps_literal(str(executable))}
 $expected = {_ps_literal(expected_sha256.lower())}
 $log = {_ps_literal(str(directory / 'update-error.log'))}
+$backup = Join-Path (Split-Path -Parent $target) ((Split-Path -Leaf $target) + '.update-backup')
+$installed = $false
 try {{
     for ($i = 0; $i -lt 120; $i++) {{
         if (-not (Get-Process -Id $oldPid -ErrorAction SilentlyContinue)) {{ break }}
@@ -70,7 +72,9 @@ try {{
     if ((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) {{
         throw 'La descarga no pasó la verificación SHA-256.'
     }}
-    $installed = $false
+    if (Test-Path -LiteralPath $target) {{
+        Copy-Item -LiteralPath $target -Destination $backup -Force -ErrorAction Stop
+    }}
     for ($i = 0; $i -lt 30; $i++) {{
         try {{
             Copy-Item -LiteralPath $source -Destination $target -Force -ErrorAction Stop
@@ -85,9 +89,15 @@ try {{
         }}
     }}
     if (-not $installed) {{ throw 'No se pudo instalar la actualización.' }}
-    Start-Process -FilePath $target -WorkingDirectory (Split-Path -Parent $target)
+    # El proceso nuevo no debe heredar el estado de extraccion del ejecutable anterior.
+    $env:PYINSTALLER_RESET_ENVIRONMENT = '1'
+    Start-Process -FilePath $target -WorkingDirectory (Split-Path -Parent $target) -ErrorAction Stop
     Remove-Item -LiteralPath $source -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
 }} catch {{
+    if ($installed -and (Test-Path -LiteralPath $backup)) {{
+        try {{ Copy-Item -LiteralPath $backup -Destination $target -Force -ErrorAction Stop }} catch {{}}
+    }}
     $message = "No se pudo actualizar ExaMonitor: $($_.Exception.Message)"
     Set-Content -LiteralPath $log -Value $message -Encoding UTF8
     Add-Type -AssemblyName System.Windows.Forms

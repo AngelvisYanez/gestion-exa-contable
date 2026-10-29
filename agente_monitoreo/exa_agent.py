@@ -32,7 +32,7 @@ from win_shell import (
     start_input_counter,
 )
 
-AGENT_VERSION = "2.14.3-flet"
+AGENT_VERSION = "2.14.4-flet"
 UPDATE_REPO = "AngelvisYanez/gestion-exa-contable"
 GITHUB_API_LATEST = f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest"
 
