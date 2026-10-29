@@ -495,8 +495,8 @@ async function handle(req: NextRequest) {
             Fecha_Fin: null,
             Fecha_Asignacion: sinAsignar ? null : detalleTicket.Fecha_Asignacion || null,
             Ava_Porcentaje: pct,
-            puede_registrar_avance: mio && detalleTicket.Tic_Estado !== "Cerrado",
-            puede_cambiar_estado: mio && detalleTicket.Tic_Estado !== "Cerrado" && detalleTicket.Tic_Estado !== "En Proceso",
+            puede_registrar_avance: mio && detalleTicket.Tic_Estado !== "Cerrado" && await monitorHasPermission(prisma, perCod, "tickets.avance"),
+            puede_cambiar_estado: mio && detalleTicket.Tic_Estado !== "Cerrado" && detalleTicket.Tic_Estado !== "En Proceso" && await monitorHasPermission(prisma, perCod, "tickets.avance"),
             puede_subir_evidencia: mio,
             puede_asignar: (mesa && sinAsignar) || puedeAutoasignarse,
             Enviado_Por: detalleTicket.Enviado_Por || detalleTicket.Creador_Nombre || null,
@@ -547,12 +547,12 @@ async function handle(req: NextRequest) {
           Estado: sinAsignar ? "Por asignar" : detalle.tarea.Tar_Estado || "",
           Fecha_Fin: detalle.tarea.Tar_Fecha_Fin,
           Ava_Porcentaje: detalle.tarea.Ava_Porcentaje ?? 0,
-          puede_registrar_avance: mia,
+          puede_registrar_avance: mia && await monitorHasPermission(prisma, perCod, "tareas.avance"),
           puede_cambiar_estado: false,
           puede_subir_evidencia: mia || (creador && await monitorHasPermission(prisma, perCod, "tareas.editar")),
           es_creador: creador,
           puede_asignar: mesa && sinAsignar,
-          puede_standby: mia,
+          puede_standby: mia && await monitorHasPermission(prisma, perCod, "tareas.avance"),
           Tar_Apoyo_Per_Cod: detalle.tarea.Tar_Apoyo_Per_Cod ?? null,
           Apoyo: detalle.tarea.Apoyo || null,
           Creador: detalle.tarea.Creador || null,
@@ -676,14 +676,18 @@ async function handle(req: NextRequest) {
         estado: estadoFinal,
       });
 
-      const { tareas } = await bandejaAgente(prisma, perCod, usuCod || undefined);
+      let tareas;
+      try {
+        ({ tareas } = await bandejaAgente(prisma, perCod, usuCod || undefined));
+      } catch (err) {
+        console.error("[monitoreo] avance guardado; no se pudo refrescar la bandeja:", err);
+      }
       return jsonRes("ok", "Avance registrado.", {
         porcentaje: res.porcentaje,
         Tar_Cod: tarCod,
         estado: estadoFinal,
         standby: enStandby,
-        mis_tareas: tareas,
-        tareas,
+        ...(tareas ? { mis_tareas: tareas, tareas } : {}),
       });
     }
 
@@ -751,15 +755,19 @@ async function handle(req: NextRequest) {
         estado: res.estado || mio.Tic_Estado,
         kind: "ticket",
       });
-      const rolAv = (await resolvePanelRol(prisma, perCod, usuCod || undefined)) || "developer";
-      const { tareas } = await bandejaAgente(prisma, perCod, usuCod || undefined, rolAv);
+      let tareas;
+      try {
+        const rolAv = (await resolvePanelRol(prisma, perCod, usuCod || undefined)) || "developer";
+        ({ tareas } = await bandejaAgente(prisma, perCod, usuCod || undefined, rolAv));
+      } catch (err) {
+        console.error("[monitoreo] avance de ticket guardado; no se pudo refrescar la bandeja:", err);
+      }
       return jsonRes("ok", "Avance registrado.", {
         porcentaje: res.porcentaje,
         Tic_Cod: ticCod,
         estado: res.estado,
         resueltoAhora: res.resueltoAhora,
-        mis_tareas: tareas,
-        tareas,
+        ...(tareas ? { mis_tareas: tareas, tareas } : {}),
       });
     }
 

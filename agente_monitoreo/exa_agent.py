@@ -32,7 +32,7 @@ from win_shell import (
     start_input_counter,
 )
 
-AGENT_VERSION = "2.14.2-flet"
+AGENT_VERSION = "2.14.3-flet"
 UPDATE_REPO = "AngelvisYanez/gestion-exa-contable"
 GITHUB_API_LATEST = f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest"
 
@@ -2949,6 +2949,18 @@ class ExaMonitorApp:
             self._pending_uploaded_rutas = []
             payload = data.get("data") or {}
             self._apply_task_list(payload)
+            if payload.get("mis_tareas") is None and payload.get("tareas") is None:
+                try:
+                    refreshed = self._api_post({
+                        "accion": "check_status",
+                        "Per_Cod": str(per),
+                        "mac_address": self.mac_address,
+                        "version_agente": AGENT_VERSION,
+                    })
+                    if refreshed.get("status") == "ok":
+                        self._apply_task_list(refreshed.get("data") or {})
+                except Exception:
+                    pass  # El avance ya se guardo; la proxima sincronizacion refrescara la bandeja.
             try:
                 on_ok()
             except Exception:
