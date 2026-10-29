@@ -655,6 +655,19 @@ class ExaMonitorApp:
             ),
         )
 
+    def _metric_chip(self, value: int, label: str, *, accent: bool = False) -> ft.Container:
+        return ft.Container(
+            content=ft.Row([
+                ft.Text(str(value), size=14, weight=ft.FontWeight.BOLD,
+                        color=C["primary"] if accent else C["text"]),
+                ft.Text(label, size=11, color=C["text_muted"]),
+            ], spacing=6, tight=True),
+            bgcolor=C["card"],
+            border=ft.Border.all(1, C["border"]),
+            border_radius=9,
+            padding=ft.Padding.symmetric(horizontal=11, vertical=7),
+        )
+
     def _build(self):
         # Topbar
         self.status_chip = ft.Container(
@@ -689,6 +702,7 @@ class ExaMonitorApp:
                         ],
                         spacing=12,
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        expand=True,
                     ),
                     ft.Row(
                         [
@@ -702,8 +716,6 @@ class ExaMonitorApp:
                 ],
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                wrap=True,
-                run_spacing=8,
             ),
             bgcolor=C["card"],
             padding=ft.Padding.symmetric(horizontal=16, vertical=10),
@@ -838,7 +850,7 @@ class ExaMonitorApp:
             visible=False,
             on_click=self._show_new_task_dialog,
         )
-        self.lbl_kpis = ft.Text("", size=12, color=C["text_muted"])
+        self.kpi_row = ft.Row(spacing=8, run_spacing=8, wrap=True)
 
         self.dd_active_task = ft.Dropdown(
             label="Tarea activa",
@@ -907,7 +919,8 @@ class ExaMonitorApp:
             focused_border_color=C["primary"],
             on_select=self._on_plazo_change,
         )
-        self.estado_filtro_box = ft.Container(content=self.dd_estado, expand=True, visible=False)
+        self.estado_filtro_box = ft.Container(content=self.dd_estado, width=220, visible=False)
+        self.plazo_filtro_box = ft.Container(content=self.dd_plazo, width=220)
 
         self.tasks_list_view = ft.ListView(expand=True, spacing=8, padding=0)
 
@@ -930,7 +943,7 @@ class ExaMonitorApp:
         self.workspace = ft.Column(
             [
                 ft.Row([self.btn_new_task, self.btn_refresh], wrap=True, spacing=10),
-                self.lbl_kpis,
+                self.kpi_row,
                 self.card_activa,
                 self._card(
                     ft.Row(
@@ -941,12 +954,17 @@ class ExaMonitorApp:
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                         wrap=True,
                     ),
-                    self.seg_bandeja,
-                    self.seg_tipo,
-                    ft.Row([
-                        self.estado_filtro_box,
-                        ft.Container(content=self.dd_plazo, expand=True),
-                    ], spacing=12),
+                    ft.Container(
+                        content=ft.Column([
+                            ft.Row([self.seg_bandeja, self.seg_tipo],
+                                   wrap=True, spacing=12, run_spacing=8),
+                            ft.Row([self.estado_filtro_box, self.plazo_filtro_box],
+                                   wrap=True, spacing=12, run_spacing=8),
+                        ], spacing=10, tight=True),
+                        bgcolor=C["muted_bg"],
+                        border_radius=10,
+                        padding=12,
+                    ),
                     ft.Container(content=self.tasks_list_view, height=340),
                     padding=14,
                 ),
@@ -1121,33 +1139,32 @@ class ExaMonitorApp:
             ),
         ]
 
-        if True:
-            mid.append(
-                ft.Row(
-                    [
-                        ft.ProgressBar(
-                            value=max(0, min(1, pct / 100.0)),
-                            color=C["primary"],
-                            bgcolor=C["border_soft"],
-                            bar_height=6,
-                            border_radius=4,
-                            expand=True,
-                        ),
-                        ft.Text(f"{pct}%", size=11, weight=ft.FontWeight.BOLD, color=C["text"], width=36),
-                    ],
-                    spacing=8,
-                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                )
+        mid.append(
+            ft.Row(
+                [
+                    ft.ProgressBar(
+                        value=max(0, min(1, pct / 100.0)),
+                        color=C["success_fg"] if pct >= 100 else C["primary"],
+                        bgcolor=C["border_soft"],
+                        bar_height=6,
+                        border_radius=4,
+                        expand=True,
+                    ),
+                    ft.Text(f"{pct}%", size=11, weight=ft.FontWeight.BOLD, color=C["text"], width=36),
+                ],
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
             )
+        )
 
         activo = (self.selected_tic_cod == cod and self.selected_tic_db == origen_raw
                   if is_ticket else self.selected_tar_cod == cod)
         return ft.Container(
-            content=ft.Column([top, *mid], spacing=8, tight=True),
+            content=ft.Column([top, *mid], spacing=7, tight=True),
             bgcolor=C["sky_hover"] if activo else C["card"],
             border=ft.Border.all(2, C["primary"]) if activo else ft.Border.all(1, C["border"]),
             border_radius=12,
-            padding=14,
+            padding=12,
             ink=True,
             on_click=lambda _e, c=cod, tp=tipo, db=str(t.get("Db_Origen") or ""): self._open_item(c, tp, db),
             shadow=ft.BoxShadow(
@@ -3076,7 +3093,10 @@ class ExaMonitorApp:
         if self._es_mesa():
             n_libres = sum(1 for t in self.tasks_list if t.get("por_asignar"))
             n_equipo = sum(1 for t in self.tasks_list if not t.get("por_asignar"))
-            self.lbl_kpis.value = f"{n_libres} por asignar | {n_equipo} asignados al equipo"
+            self.kpi_row.controls = [
+                self._metric_chip(n_libres, "por asignar", accent=True),
+                self._metric_chip(n_equipo, "asignados al equipo"),
+            ]
             if self.tipo_filtro != "todos":
                 vacio = "No hay tareas en este filtro."
             elif self.bandeja_filtro == "asignar":
@@ -3088,8 +3108,12 @@ class ExaMonitorApp:
             n_libres = sum(1 for t in self.tasks_list
                            if t.get("por_asignar") and t.get("tipo") == "ticket")
             n_tar_p = sum(1 for t in propias if t.get("tipo") != "ticket")
-            self.lbl_kpis.value = (f"{len(propias)} Asignaciones | {n_tar_p} tareas | "
-                                   f"{len(propias) - n_tar_p} tickets | {n_libres} sin asignar")
+            self.kpi_row.controls = [
+                self._metric_chip(len(propias), "asignaciones"),
+                self._metric_chip(n_tar_p, "tareas"),
+                self._metric_chip(len(propias) - n_tar_p, "tickets"),
+                self._metric_chip(n_libres, "sin asignar", accent=True),
+            ]
             vacio = ("No hay tickets sin asignar." if self.bandeja_filtro == "libres"
                      else "No hay tareas en este filtro.")
 

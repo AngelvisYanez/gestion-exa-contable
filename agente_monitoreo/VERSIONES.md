@@ -6,7 +6,7 @@ La versión vigente del código es `AGENT_VERSION` en `exa_agent.py`.
 
 | Versión | Ejecutable local | Qué cambió |
 | --- | --- | --- |
-| 2.14.5-flet | `dist/v2.14.5/ExaMonitor.exe` | Los cuadros de nueva tarea, detalle y vista previa se ajustan al ancho de la ventana. El flujo de actualización se verificó con dos ejecutables PyInstaller: reemplazo real y arranque de la versión nueva. Candidato local pendiente de revisión visual. |
+| 2.14.5-flet | `dist/v2.14.5-review/ExaMonitor.exe` | Cabecera compacta, resumen en indicadores, filtros agrupados y tarjetas más claras. Los cuadros de nueva tarea, detalle y vista previa se ajustan al ancho de la ventana. Actualización verificada con dos ejecutables PyInstaller: reemplazo real y arranque de la versión nueva. |
 | 2.14.4-flet | `dist/ExaMonitor.exe` | El instalador conserva una copia de la versión anterior, la restaura si falla el lanzamiento y reinicia el ejecutable con el entorno de PyInstaller limpio. Los usuarios de 2.14.1 deben instalar esta versión manualmente porque su actualizador anterior no cerraba el proceso completo. |
 | 2.14.3-flet | `dist/ExaMonitor.exe` | Tras guardar un avance, vuelve a cargar la bandeja si la API confirma el registro sin incluir la lista actualizada. Los permisos y la confirmación del guardado también requieren desplegar los cambios de la API. |
 | 2.14.2-flet | `dist/ExaMonitor.exe` | La actualización interna espera a que termine el proceso, verifica el ejecutable descargado y solo reinicia tras instalarlo correctamente. |
