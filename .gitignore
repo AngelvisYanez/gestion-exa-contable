@@ -16,3 +16,28 @@ agente_monitoreo/dist_new/
 agente_monitoreo/__pycache__/
 agente_monitoreo/config.json
 scripts/_tmp_e2e_cookie.txt
+
+# Configuracion local y secretos (conservar plantillas sin credenciales)
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+.ssh/
+
+# Procedimientos locales de produccion e instrucciones de despliegue
+/.cursor/rules/despliegue-produccion.mdc
+/AGENTS.md
+/CLAUDE.md
+/GEMINI.md
+/.github/copilot-instructions.md
+
+# Helpers y artefactos locales de Plesk
+**/*plesk*
+**/*Plesk*
+/public/deploy-status-*.txt
+/index.html.autoconfig-bak
