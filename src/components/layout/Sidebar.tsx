@@ -58,7 +58,6 @@ const navGroups: NavGroup[] = [
       {
         href: "/tickets",
         label: "Tickets",
-        roles: ["manager", "atencion"],
         permission: "tickets.ver",
         icon: <Ticket className="w-[17px] h-[17px]" strokeWidth={1.8} />,
       },

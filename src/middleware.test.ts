@@ -48,3 +48,49 @@ it("sigue reservando el monitoreo al encargado", async () => {
   const response = await middleware(request);
   assert.equal(response.status, 403);
 });
+
+it("abre la bandeja de tickets al desarrollador con tickets.ver", async () => {
+  const request = await requestConSesion("/tickets", "developer");
+  const response = await middleware(request);
+  assert.equal(response.status, 200);
+});
+
+it("abre mis-tickets al desarrollador con tickets.ver", async () => {
+  const request = await requestConSesion("/mis-tickets", "developer");
+  const response = await middleware(request);
+  assert.equal(response.status, 200);
+});
+
+it("bloquea tickets si el rol no tiene tickets.ver", async () => {
+  const token = await createSessionToken({
+    username: "1712345678",
+    cedula: "1712345678",
+    name: "Dev Uno",
+    role: "developer",
+    projects: ["exa"],
+    perCod: 42,
+    usuCod: 10,
+    prsCod: 5,
+    empCod: 96,
+    dbDis: "exa",
+    teamName: "Dev Uno",
+    permissions: {
+      "tareas.ver": true,
+      "tareas.crear": true,
+      "tareas.editar": true,
+      "tareas.asignar": false,
+      "tareas.eliminar": false,
+      "tareas.avance": true,
+      "tickets.ver": false,
+      "tickets.crear": false,
+      "tickets.asignar": false,
+      "tickets.avance": false,
+    },
+  });
+  const request = new NextRequest("https://gestion.exacontable.com/tickets", {
+    headers: { cookie: `${SESSION_COOKIE}=${token}` },
+  });
+  const response = await middleware(request);
+  assert.equal(response.status, 307);
+  assert.equal(new URL(response.headers.get("location") || "").pathname, "/");
+});

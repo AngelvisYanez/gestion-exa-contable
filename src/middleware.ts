@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/auth/session";
-import { canAssignWork, canSeeOversight } from "@/lib/auth/users";
+import { canSeeOversight } from "@/lib/auth/users";
 import { hasRolePermission } from "@/lib/auth/role-permissions";
 
 function deny(req: NextRequest, message: string) {
@@ -43,12 +43,17 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // Tareas y tickets se abren o cierran con los permisos del rol (Configuracion → Usuarios).
   if ((pathname === "/tareas" || pathname.startsWith("/api/tareas")) &&
       !hasRolePermission(session, "tareas.ver")) {
     return deny(req, "Tu rol no tiene acceso a tareas.");
   }
-  if ((pathname === "/tickets" || pathname.startsWith("/api/tickets")) &&
-      !hasRolePermission(session, "tickets.ver")) {
+  if (
+    (pathname === "/tickets" ||
+      pathname === "/mis-tickets" ||
+      pathname.startsWith("/api/tickets")) &&
+    !hasRolePermission(session, "tickets.ver")
+  ) {
     return deny(req, "Tu rol no tiene acceso a tickets.");
   }
 
@@ -58,12 +63,6 @@ export async function middleware(req: NextRequest) {
     pathname.startsWith("/api/incidencias") ||
     pathname.startsWith("/api/dashboard") ||
     pathname.startsWith("/api/config");
-
-  const desk =
-    pathname.startsWith("/tareas") ||
-    pathname.startsWith("/tickets") ||
-    pathname.startsWith("/api/tareas") ||
-    pathname.startsWith("/api/tickets");
 
   const devsAsignables =
     pathname.startsWith("/api/devs") &&
@@ -82,19 +81,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  const devTickets =
-    session.role === "developer" &&
-    (pathname === "/tickets" || pathname.startsWith("/api/tickets"));
-  const devTareas =
-    session.role === "developer" &&
-    (pathname === "/tareas" || pathname.startsWith("/api/tareas"));
-
-  if ((desk || pathname.startsWith("/api/devs")) && !canAssignWork(session.role)) {
-    if (devTickets || devTareas) return NextResponse.next();
-    return deny(req, "No tienes acceso a esa seccion.");
-  }
-
-  if (pathname.startsWith("/api/devs") && !canSeeOversight(session.role) && !devsAsignables) {
+  if (pathname.startsWith("/api/devs") && !canSeeOversight(session.role)) {
     return deny(req, "Solo el encargado consulta el monitoreo.");
   }
 

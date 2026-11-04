@@ -51,8 +51,8 @@ export async function GET(req: NextRequest) {
       if (!Number.isSafeInteger(itemCod) || itemCod <= 0 || !bases.includes(rawDb)) {
         return NextResponse.json({ success: false, message: "Ticket no encontrado" }, { status: 404 });
       }
-      const scope = actor.role === "developer" || sp.get("mios") === "1"
-        ? await ticketScopeForSession(actor) : null;
+      // mios=1 limita a tickets del colaborador; la bandeja general (encargado/dev) ve todos.
+      const scope = sp.get("mios") === "1" ? await ticketScopeForSession(actor) : null;
       const tickets = scope && !scope.aseCodes.length && !scope.perCodes.length
         ? []
         : await listTicketsAsignados({
@@ -61,19 +61,7 @@ export async function GET(req: NextRequest) {
             limit: 1,
             ...(scope ? { aseCodes: scope.aseCodes, perCodes: scope.perCodes } : {}),
           });
-      let ticket = tickets.find((t) => t.Tic_Cod === itemCod && t.Db_Origen === rawDb);
-      // Un desarrollador tambien puede abrir tickets sin asignar para tomarselos.
-      if (!ticket && scope && actor.role === "developer" && sp.get("mios") !== "1") {
-        const candidatos = await listTicketsAsignados({ ticCod: itemCod, bases: [rawDb], limit: 1 });
-        const cand = candidatos.find(
-          (t) =>
-            t.Tic_Cod === itemCod &&
-            t.Db_Origen === rawDb &&
-            (t.Asignado_Usu_Cod ?? 0) === 0 &&
-            (!t.Asignados || t.Asignados.length === 0)
-        );
-        if (cand) ticket = cand;
-      }
+      const ticket = tickets.find((t) => t.Tic_Cod === itemCod && t.Db_Origen === rawDb);
       if (!ticket) {
         return NextResponse.json({ success: false, message: "Ticket no encontrado" }, { status: 404 });
       }
@@ -111,23 +99,9 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ success: false, message: "Debe iniciar sesion." }, { status: 401 });
       }
       const prefer = sp.get("Db_Origen") || sp.get("Ses_Dat_Dis");
-      let ticketDb = sanitizeDbDis(prefer);
-      if (!canAssignWork(session.role) && !canSeeOversight(session.role)) {
-        const scope = await ticketScopeForSession(session);
-        const mio = await findTicketAsignado({
-          ticCod: historial,
-          aseCodes: scope.aseCodes,
-          perCodes: scope.perCodes,
-          preferDb: prefer,
-        });
-        if (!mio) {
-          return NextResponse.json(
-            { success: false, message: "Ese ticket no esta asignado a ti." },
-            { status: 403 }
-          );
-        }
-        ticketDb = mio.Db_Origen || ticketDb;
-      }
+      const ticketDb = sanitizeDbDis(prefer);
+      // Con tickets.ver se puede consultar el historial de cualquier ticket
+      // (la escritura de avance sigue limitada a los asignados).
       const avances = await listAvancesTicket(ticketDb, historial);
       return NextResponse.json({
         success: true,
@@ -147,7 +121,7 @@ export async function GET(req: NextRequest) {
     const db = sanitizeDbDis(sp.get("Ses_Dat_Dis"));
     const session = actor;
 
-    if (session.role === "developer" || sp.get("mios") === "1") {
+    if (sp.get("mios") === "1") {
       const scope = await ticketScopeForSession(session);
       const assigned =
         scope.aseCodes.length || scope.perCodes.length
@@ -239,7 +213,30 @@ export async function GET(req: NextRequest) {
         listTicketAssignees(),
         listTicketEmpresas(db),
       ]);
-      payload.asignables = asignables;
+      if (session.role === "developer") {
+        // Ve la bandeja completa, pero solo puede elegirse a si mismo al asignar.
+        const scope = await ticketScopeForSession(session);
+        const propios = asignables.filter(
+          (a) =>
+            (a.Usu_Cod != null && scope.aseCodes.includes(a.Usu_Cod)) ||
+            (a.Per_Cod != null && a.Per_Cod > 0 && scope.perCodes.includes(a.Per_Cod))
+        );
+        payload.asignables = propios.length
+          ? propios
+          : scope.aseCodes.length
+            ? [
+                {
+                  Per_Cod: scope.perCodes[0] || 0,
+                  Usu_Cod: scope.aseCodes[0],
+                  Nombre: session.name,
+                  Cedula: session.cedula,
+                  Rol: "developer",
+                },
+              ]
+            : [];
+      } else {
+        payload.asignables = asignables;
+      }
       payload.empresas = empresas;
     }
     return NextResponse.json(payload);

@@ -155,8 +155,8 @@ function fmtWhen(v: string) {
 
 export default function TicketsPage({ mode = "all" }: { mode?: "all" | "mine" }) {
   const { db, user, loading: authLoading } = useAuth();
-  const isDev = user?.role === "developer";
-  const isMine = mode === "mine" || isDev;
+  // mode="mine" = /mis-tickets. /tickets muestra la bandeja completa (como encargado).
+  const isMine = mode === "mine";
   const puedeAsignar = hasRolePermission(user, "tickets.asignar");
   // El desarrollador puede asignarse tickets, pero solo a si mismo.
   const soloAsignarme = user?.role === "developer";
@@ -260,16 +260,16 @@ export default function TicketsPage({ mode = "all" }: { mode?: "all" | "mine" })
   }, [asignables, tickets]);
 
   const ticketsVisibles = useMemo(() => {
-    if (isMine || !puedeAsignar || !filtroDev) return tickets;
-      const ids = new Set(
-        filtroDev
-          .split(",")
-          .map((n) => Number(n))
-          .filter((n) => n > 0)
-      );
+    if (isMine || !filtroDev) return tickets;
+    const ids = new Set(
+      filtroDev
+        .split(",")
+        .map((n) => Number(n))
+        .filter((n) => n > 0)
+    );
     if (!ids.size) return tickets;
     return tickets.filter((t) => usuDeTicket(t).some((id) => ids.has(id)));
-  }, [tickets, filtroDev, puedeAsignar, isMine]);
+  }, [tickets, filtroDev, isMine]);
 
   const conteoPorDev = useMemo(() => {
     const map = new Map<string, number>();
@@ -849,7 +849,7 @@ export default function TicketsPage({ mode = "all" }: { mode?: "all" | "mine" })
                 placeholder="Buscar por #, tema, empresa..."
               />
             </div>
-            {puedeAsignar && !isMine && (
+            {!isMine && (
               <Select
                 className="h-9 min-h-0 text-sm"
                 wrapperClassName="w-full min-w-[220px] sm:w-[260px]"

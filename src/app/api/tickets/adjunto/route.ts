@@ -4,8 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { hasRolePermission } from "@/lib/auth/role-permissions";
 import { sanitizeDbDis } from "@/lib/db";
-import { ticketScopeForSession } from "@/lib/ticket-scope";
-import { findTicketAsignado, listTickets } from "@/lib/tickets";
+import { listTickets } from "@/lib/tickets";
 import { resolveTicketAdjuntoFile } from "@/lib/ticket-adjuntos";
 import { isAllowedEvidenciaExt, mimeForExt } from "@/lib/evidencia-files";
 
@@ -30,17 +29,8 @@ export async function GET(req: NextRequest) {
     return new NextResponse("Solicitud inválida", { status: 400 });
   }
 
-  const ticket = actor.role === "developer"
-    ? await (async () => {
-        const scope = await ticketScopeForSession(actor);
-        return findTicketAsignado({
-          ticCod,
-          aseCodes: scope.aseCodes,
-          perCodes: scope.perCodes,
-          preferDb: db,
-        });
-      })()
-    : (await listTickets(db, { ticCod, limit: 1 }))[0];
+  // Quien tiene tickets.ver puede ver adjuntos de cualquier ticket de la bandeja.
+  const ticket = (await listTickets(db, { ticCod, limit: 1 }))[0];
   if (!ticket || !ticket.Adjuntos_Exa?.some((archivo) => archivo.ruta === stored)) {
     return new NextResponse("No encontrado", { status: 404 });
   }
