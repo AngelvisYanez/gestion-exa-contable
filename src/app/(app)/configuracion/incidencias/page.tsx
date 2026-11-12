@@ -145,6 +145,13 @@ export default function IncidenciasPage() {
   const [taskOk, setTaskOk] = useState("");
 
   const [detail, setDetail] = useState<Incidencia | null>(null);
+  const [analisis, setAnalisis] = useState("");
+  const [analisisError, setAnalisisError] = useState("");
+  const [analizando, setAnalizando] = useState(false);
+  useEffect(() => {
+    setAnalisis("");
+    setAnalisisError("");
+  }, [detail?.Inc_Cod]);
   const [resolveOpen, setResolveOpen] = useState<Incidencia | null>(null);
   const [resolving, setResolving] = useState(false);
   const [solucionText, setSolucionText] = useState("");
@@ -280,6 +287,27 @@ export default function IncidenciasPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error");
       setLoading(false);
+    }
+  };
+
+  const analizar = async (inc: Incidencia) => {
+    if (!inc.Inc_Cod) return;
+    setAnalizando(true);
+    setAnalisis("");
+    setAnalisisError("");
+    try {
+      const res = await fetch("/api/incidencias", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "analizar", Ses_Dat_Dis: db, Inc_Cod: inc.Inc_Cod }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.message || "No se pudo analizar la incidencia");
+      setAnalisis(data.analisis || "Sin respuesta de IA");
+    } catch (e) {
+      setAnalisisError(e instanceof Error ? e.message : "Error al analizar");
+    } finally {
+      setAnalizando(false);
     }
   };
 
@@ -701,7 +729,7 @@ export default function IncidenciasPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!detail} onOpenChange={(o) => !o && setDetail(null)}>
+      <Dialog open={!!detail} onOpenChange={(o) => { if (!o) { setDetail(null); setAnalisis(""); setAnalisisError(""); } }}>
         <DialogContent className="max-h-[90dvh] max-w-2xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Detalle de incidencia</DialogTitle>
@@ -717,6 +745,13 @@ export default function IncidenciasPage() {
               <pre className="max-h-[40vh] overflow-auto rounded-lg border border-border bg-[#141413] p-3 text-[11px] leading-relaxed text-[#e8e8e4] whitespace-pre-wrap break-words">
                 {detail.Inc_Mensaje || detail.Inc_Titulo}
               </pre>
+              {analisisError && <Alert variant="destructive">{analisisError}</Alert>}
+              {analisis && (
+                <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3">
+                  <p className="mb-1 text-xs font-semibold text-blue-900">Analisis sugerido por IA</p>
+                  <pre className="max-h-[40vh] overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-blue-950">{analisis}</pre>
+                </div>
+              )}
               {detail.Inc_Solucion && (
                 <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3">
                   <p className="mb-1 text-xs font-semibold text-emerald-900">Posible solucion (IA)</p>
@@ -728,6 +763,12 @@ export default function IncidenciasPage() {
             </div>
           )}
           <DialogFooter>
+            {detail?.Inc_Cod && (
+              <Button type="button" variant="outline" disabled={analizando} onClick={() => void analizar(detail)}>
+                {analizando ? <Loader2 className="size-4 animate-spin" /> : null}
+                {analizando ? "Analizando..." : "Analizar con IA"}
+              </Button>
+            )}
             <Button type="button" variant="secondary" onClick={() => setDetail(null)}>
               Cerrar
             </Button>

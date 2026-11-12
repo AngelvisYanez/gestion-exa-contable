@@ -4,6 +4,7 @@ import { hasRolePermission } from "@/lib/auth/role-permissions";
 import { publishAsignacion, publishEvent } from "@/lib/events";
 import { tasksDbDis } from "@/lib/empresa";
 import {
+  analizarIncidencia,
   crearTareaDesdeIncidencia,
   listIncidencias,
   resolverIncidenciaConSolucion,
@@ -47,6 +48,14 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const db = tasksDbDis(body.Ses_Dat_Dis);
     const action = String(body.action || "");
+
+    if (action === "analizar") {
+      const incCod = Number(body.Inc_Cod);
+      if (!Number.isSafeInteger(incCod) || incCod <= 0) {
+        return NextResponse.json({ success: false, message: "Inc_Cod invalido" }, { status: 400 });
+      }
+      return NextResponse.json({ success: true, ...(await analizarIncidencia(db, incCod)) });
+    }
 
     if (action === "crear_tarea") {
       const session = await getSessionFromRequest(req);
