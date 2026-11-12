@@ -6,12 +6,14 @@ import { tasksDbDis } from "@/lib/empresa";
 import {
   crearTareaDesdeIncidencia,
   listIncidencias,
+  resolverIncidenciaConSolucion,
   updateIncidenciaEstado,
   type IncEstado,
 } from "@/lib/incidencias";
 import { listAsignables } from "@/lib/tareas";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 120;
 
 export async function GET(req: NextRequest) {
   try {
@@ -19,11 +21,12 @@ export async function GET(req: NextRequest) {
     const db = tasksDbDis(sp.get("Ses_Dat_Dis"));
     const estado = sp.get("estado") || "todos";
     const nivel = sp.get("nivel") || "todos";
+    const proyecto = sp.get("proyecto") || "todos";
     const q = sp.get("q") || "";
     const sync = sp.get("sync") !== "0";
     const withAssignees = sp.get("assignees") === "1";
 
-    const data = await listIncidencias(db, { estado, nivel, q, sync });
+    const data = await listIncidencias(db, { estado, nivel, proyecto, q, sync });
     const payload: Record<string, unknown> = {
       success: true,
       db,
@@ -96,6 +99,10 @@ export async function POST(req: NextRequest) {
           { success: false, message: "Inc_Cod y estado requeridos" },
           { status: 400 }
         );
+      }
+      if (estado === "Resuelta") {
+        const resolved = await resolverIncidenciaConSolucion(db, incCod);
+        return NextResponse.json({ success: true, ...resolved });
       }
       await updateIncidenciaEstado(db, incCod, estado);
       return NextResponse.json({ success: true });

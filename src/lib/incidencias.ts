@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
+import { generateWithGemini } from "./brief/gemini";
 import { getPrisma, sanitizeDbDis } from "./db";
 import { tasksEmpCod } from "./empresa";
 import { createTarea } from "./tareas";
@@ -15,6 +16,26 @@ export const INC_ESTADOS = [
 ] as const;
 export type IncEstado = (typeof INC_ESTADOS)[number];
 
+export const INC_PROYECTOS = ["ofsercont", "relavera"] as const;
+export type IncProyecto = (typeof INC_PROYECTOS)[number];
+
+export function proyectoLabel(id: string | null | undefined): string {
+  if (id === "ofsercont") return "EXA Ofsercont";
+  if (id === "relavera") return "EXA Relavera";
+  return "Sin proyecto";
+}
+
+/** Infere ofsercont | relavera desde ruta de log, fuente o mensaje. */
+export function resolveIncProyecto(
+  ...hints: Array<string | null | undefined>
+): IncProyecto | null {
+  const blob = hints.filter(Boolean).join(" ").toLowerCase();
+  if (!blob) return null;
+  if (/relavera|erpexa\.com/.test(blob)) return "relavera";
+  if (/ofsercont/.test(blob)) return "ofsercont";
+  return null;
+}
+
 export type ParsedLogEntry = {
   fingerprint: string;
   nivel: string;
@@ -24,6 +45,7 @@ export type ParsedLogEntry = {
   linea: number | null;
   cuando: Date;
   fuente: string;
+  proyecto: IncProyecto | null;
 };
 
 export type IncidenciaView = {
@@ -40,6 +62,9 @@ export type IncidenciaView = {
   Inc_Estado: string;
   Tar_Cod: number | null;
   Inc_Fuente: string | null;
+  Inc_Proyecto: IncProyecto | null;
+  Inc_Proyecto_Label: string;
+  Inc_Solucion: string | null;
   enLog: boolean;
 };
 
@@ -61,13 +86,16 @@ CREATE TABLE IF NOT EXISTS aud_incidencias (
   Tar_Cod INT NULL,
   Usu_Creador INT NULL,
   Inc_Fuente VARCHAR(255) NULL,
+  Inc_Proyecto VARCHAR(40) NULL,
+  Inc_Solucion MEDIUMTEXT NULL,
   Inc_Est CHAR(1) NOT NULL DEFAULT 'A',
   PRIMARY KEY (Inc_Cod),
   UNIQUE KEY uq_aud_inc_fp (Inc_Fingerprint),
   KEY idx_aud_inc_estado_est (Inc_Estado, Inc_Est),
   KEY idx_aud_inc_ultima (Inc_Ultima_Vez),
   KEY idx_aud_inc_tar (Tar_Cod),
-  KEY idx_aud_inc_nivel (Inc_Nivel)
+  KEY idx_aud_inc_nivel (Inc_Nivel),
+  KEY idx_aud_inc_proyecto (Inc_Proyecto)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 `;
 
@@ -76,6 +104,12 @@ ALTER TABLE aud_incidencias
   MODIFY Inc_Primera_Vez DATETIME NULL DEFAULT NULL,
   MODIFY Inc_Ultima_Vez DATETIME NULL DEFAULT NULL
 `;
+
+const ALTER_EXTRA_COLUMNS = [
+  `ALTER TABLE aud_incidencias ADD COLUMN Inc_Proyecto VARCHAR(40) NULL`,
+  `ALTER TABLE aud_incidencias ADD COLUMN Inc_Solucion MEDIUMTEXT NULL`,
+  `ALTER TABLE aud_incidencias ADD KEY idx_aud_inc_proyecto (Inc_Proyecto)`,
+];
 
 function iso(d: Date | string | null | undefined) {
   if (!d) return "";
@@ -212,7 +246,12 @@ function extractArchivoLinea(msg: string): { archivo: string | null; linea: numb
   return { archivo: null, linea: null };
 }
 
-function normalizeForFingerprint(msg: string, archivo: string | null, linea: number | null) {
+function normalizeForFingerprint(
+  msg: string,
+  archivo: string | null,
+  linea: number | null,
+  proyecto: IncProyecto | null
+) {
   const n = msg
     .replace(/\[[^\]]+\]/g, " ")
     .replace(/\b0x[0-9a-f]+\b/gi, "0xN")
@@ -222,11 +261,19 @@ function normalizeForFingerprint(msg: string, archivo: string | null, linea: num
     .toLowerCase()
     .slice(0, 400);
   const base = archivo ? path.basename(archivo).toLowerCase() : "";
-  return `${base}|${linea ?? "x"}|${n}`;
+  return `${proyecto || "x"}|${base}|${linea ?? "x"}|${n}`;
 }
 
-function fingerprintOf(msg: string, archivo: string | null, linea: number | null) {
-  return crypto.createHash("sha1").update(normalizeForFingerprint(msg, archivo, linea)).digest("hex");
+function fingerprintOf(
+  msg: string,
+  archivo: string | null,
+  linea: number | null,
+  proyecto: IncProyecto | null
+) {
+  return crypto
+    .createHash("sha1")
+    .update(normalizeForFingerprint(msg, archivo, linea, proyecto))
+    .digest("hex");
 }
 
 function parseTs(raw: string): Date | null {
@@ -310,6 +357,7 @@ export function parseErrorLogText(text: string, fuente: string): ParsedLogEntry[
   }
   if (cur) blocks.push(cur);
 
+  const proyecto = resolveIncProyecto(fuente);
   const map = new Map<string, ParsedLogEntry>();
   for (const b of blocks) {
     const body = b.body.trim();
@@ -322,7 +370,8 @@ export function parseErrorLogText(text: string, fuente: string): ParsedLogEntry[
     const { archivo, linea } = extractArchivoLinea(body);
     const titulo = titleFromBody(body);
     const oneLine = body.replace(/\s+/g, " ").trim();
-    const fp = fingerprintOf(titulo || oneLine, archivo, linea);
+    const proy = resolveIncProyecto(fuente, archivo, body) || proyecto;
+    const fp = fingerprintOf(titulo || oneLine, archivo, linea, proy);
     const prev = map.get(fp);
     if (prev) {
       prev.mensaje = body.length > prev.mensaje.length ? body : prev.mensaje;
@@ -338,6 +387,7 @@ export function parseErrorLogText(text: string, fuente: string): ParsedLogEntry[
       linea,
       cuando: b.when,
       fuente: path.basename(fuente),
+      proyecto: proy,
     });
   }
   return [...map.values()];
@@ -392,6 +442,7 @@ export function scanErrorLogs(): {
           prev.nivel = e.nivel;
           prev.archivo = e.archivo;
           prev.linea = e.linea;
+          prev.proyecto = e.proyecto;
         }
       }
     }
@@ -405,6 +456,13 @@ async function ensureTable(dbDis: string) {
   await prisma.$executeRawUnsafe(CREATE_SQL);
   // Si la tabla ya existía con DEFAULT CURRENT_TIMESTAMP, corregir columnas.
   await prisma.$executeRawUnsafe(ALTER_DATETIME_SQL);
+  for (const sql of ALTER_EXTRA_COLUMNS) {
+    try {
+      await prisma.$executeRawUnsafe(sql);
+    } catch {
+      // columna o índice ya existe
+    }
+  }
 }
 
 type DbRow = {
@@ -421,11 +479,19 @@ type DbRow = {
   Inc_Estado: string;
   Tar_Cod: number | null;
   Inc_Fuente: string | null;
+  Inc_Proyecto?: string | null;
+  Inc_Solucion?: string | null;
 };
+
+function rowProyecto(r: DbRow): IncProyecto | null {
+  const stored = (r.Inc_Proyecto || "").trim().toLowerCase();
+  if (stored === "ofsercont" || stored === "relavera") return stored;
+  return resolveIncProyecto(r.Inc_Fuente, r.Inc_Archivo, r.Inc_Mensaje);
+}
 
 export async function listIncidencias(
   dbDis: string,
-  opts: { estado?: string; nivel?: string; q?: string; sync?: boolean } = {}
+  opts: { estado?: string; nivel?: string; proyecto?: string; q?: string; sync?: boolean } = {}
 ): Promise<{
   incidencias: IncidenciaView[];
   kpis: { total: number; nuevas: number; fatales: number; conTarea: number; ignoradas: number };
@@ -445,8 +511,8 @@ export async function listIncidencias(
       await prisma.$executeRawUnsafe(
         `INSERT INTO aud_incidencias
           (Inc_Fingerprint, Inc_Nivel, Inc_Titulo, Inc_Mensaje, Inc_Archivo, Inc_Linea,
-           Inc_Primera_Vez, Inc_Ultima_Vez, Inc_Ocurrencias, Inc_Estado, Inc_Fuente, Inc_Est)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Nueva', ?, 'A')
+           Inc_Primera_Vez, Inc_Ultima_Vez, Inc_Ocurrencias, Inc_Estado, Inc_Fuente, Inc_Proyecto, Inc_Est)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Nueva', ?, ?, 'A')
          ON DUPLICATE KEY UPDATE
            Inc_Nivel = VALUES(Inc_Nivel),
            Inc_Titulo = VALUES(Inc_Titulo),
@@ -456,6 +522,7 @@ export async function listIncidencias(
            Inc_Ultima_Vez = GREATEST(Inc_Ultima_Vez, VALUES(Inc_Ultima_Vez)),
            Inc_Ocurrencias = GREATEST(Inc_Ocurrencias, VALUES(Inc_Ocurrencias)),
            Inc_Fuente = VALUES(Inc_Fuente),
+           Inc_Proyecto = COALESCE(VALUES(Inc_Proyecto), Inc_Proyecto),
            Inc_Est = 'A'`,
         e.fingerprint,
         e.nivel,
@@ -466,7 +533,8 @@ export async function listIncidencias(
         e.cuando,
         e.cuando,
         e.ocurrencias,
-        e.fuente
+        e.fuente,
+        e.proyecto
       );
     }
   }
@@ -482,17 +550,28 @@ export async function listIncidencias(
     where.push("Inc_Nivel = ?");
     params.push(opts.nivel);
   }
+  if (opts.proyecto && opts.proyecto !== "todos") {
+    const proy = opts.proyecto === "ofsercont" || opts.proyecto === "relavera" ? opts.proyecto : "";
+    if (proy) {
+      where.push(
+        `(Inc_Proyecto = ? OR (IFNULL(Inc_Proyecto,'') = '' AND (IFNULL(Inc_Fuente,'') LIKE ? OR IFNULL(Inc_Mensaje,'') LIKE ? OR IFNULL(Inc_Archivo,'') LIKE ?)))`
+      );
+      const like = `%${proy}%`;
+      params.push(proy, like, like, like);
+    }
+  }
   if (opts.q) {
     where.push(
-      `(Inc_Titulo LIKE ? OR Inc_Mensaje LIKE ? OR IFNULL(Inc_Archivo,'') LIKE ? OR Inc_Fingerprint LIKE ?)`
+      `(Inc_Titulo LIKE ? OR Inc_Mensaje LIKE ? OR IFNULL(Inc_Archivo,'') LIKE ? OR Inc_Fingerprint LIKE ? OR IFNULL(Inc_Fuente,'') LIKE ?)`
     );
     const like = `%${opts.q}%`;
-    params.push(like, like, like, like);
+    params.push(like, like, like, like, like);
   }
 
   const rows = await prisma.$queryRawUnsafe<DbRow[]>(
     `SELECT Inc_Cod, Inc_Fingerprint, Inc_Nivel, Inc_Titulo, Inc_Mensaje, Inc_Archivo, Inc_Linea,
-            Inc_Primera_Vez, Inc_Ultima_Vez, Inc_Ocurrencias, Inc_Estado, Tar_Cod, Inc_Fuente
+            Inc_Primera_Vez, Inc_Ultima_Vez, Inc_Ocurrencias, Inc_Estado, Tar_Cod, Inc_Fuente,
+            Inc_Proyecto, Inc_Solucion
      FROM aud_incidencias
      WHERE ${where.join(" AND ")}
      ORDER BY
@@ -503,22 +582,28 @@ export async function listIncidencias(
   );
 
   const logFps = new Set(scan.entries.map((e) => e.fingerprint));
-  const incidencias: IncidenciaView[] = rows.map((r) => ({
-    Inc_Cod: r.Inc_Cod,
-    Inc_Fingerprint: r.Inc_Fingerprint,
-    Inc_Nivel: r.Inc_Nivel,
-    Inc_Titulo: r.Inc_Titulo,
-    Inc_Mensaje: r.Inc_Mensaje || "",
-    Inc_Archivo: r.Inc_Archivo,
-    Inc_Linea: r.Inc_Linea,
-    Inc_Primera_Vez: iso(r.Inc_Primera_Vez),
-    Inc_Ultima_Vez: iso(r.Inc_Ultima_Vez),
-    Inc_Ocurrencias: Number(r.Inc_Ocurrencias) || 1,
-    Inc_Estado: r.Inc_Estado,
-    Tar_Cod: r.Tar_Cod,
-    Inc_Fuente: r.Inc_Fuente,
-    enLog: logFps.has(r.Inc_Fingerprint),
-  }));
+  const incidencias: IncidenciaView[] = rows.map((r) => {
+    const proy = rowProyecto(r);
+    return {
+      Inc_Cod: r.Inc_Cod,
+      Inc_Fingerprint: r.Inc_Fingerprint,
+      Inc_Nivel: r.Inc_Nivel,
+      Inc_Titulo: r.Inc_Titulo,
+      Inc_Mensaje: r.Inc_Mensaje || "",
+      Inc_Archivo: r.Inc_Archivo,
+      Inc_Linea: r.Inc_Linea,
+      Inc_Primera_Vez: iso(r.Inc_Primera_Vez),
+      Inc_Ultima_Vez: iso(r.Inc_Ultima_Vez),
+      Inc_Ocurrencias: Number(r.Inc_Ocurrencias) || 1,
+      Inc_Estado: r.Inc_Estado,
+      Tar_Cod: r.Tar_Cod,
+      Inc_Fuente: r.Inc_Fuente,
+      Inc_Proyecto: proy,
+      Inc_Proyecto_Label: proyectoLabel(proy),
+      Inc_Solucion: r.Inc_Solucion || null,
+      enLog: logFps.has(r.Inc_Fingerprint),
+    };
+  });
 
   const allForKpis = await prisma.$queryRawUnsafe<
     Array<{ Inc_Estado: string; Inc_Nivel: string; Tar_Cod: number | null }>
@@ -549,6 +634,81 @@ export async function updateIncidenciaEstado(
     estado,
     incCod
   );
+}
+
+export async function resolverIncidenciaConSolucion(dbDis: string, incCod: number) {
+  const db = sanitizeDbDis(dbDis);
+  await ensureTable(db);
+  const prisma = getPrisma(db);
+
+  const rows = await prisma.$queryRawUnsafe<DbRow[]>(
+    `SELECT Inc_Cod, Inc_Fingerprint, Inc_Nivel, Inc_Titulo, Inc_Mensaje, Inc_Archivo, Inc_Linea,
+            Inc_Primera_Vez, Inc_Ultima_Vez, Inc_Ocurrencias, Inc_Estado, Tar_Cod, Inc_Fuente,
+            Inc_Proyecto, Inc_Solucion
+     FROM aud_incidencias WHERE Inc_Cod = ? AND Inc_Est = 'A' LIMIT 1`,
+    incCod
+  );
+  const row = rows[0];
+  if (!row) throw new Error("Incidencia no encontrada");
+
+  const proy = rowProyecto(row);
+  let solucion = (row.Inc_Solucion || "").trim();
+  let aiError: string | null = null;
+
+  if (!solucion) {
+    const ai = await generateWithGemini({
+      system: `Eres ingeniero senior del ERP EXA (PHP legacy: FRONT / LOGICA / VALIDACIONES / MysqlDatos).
+Respondes en espanol, concreto y accionable. No inventes APIs modernas que no existan en EXA.
+Devuelve solo texto plano con:
+1) Diagnostico probable (2-4 lineas)
+2) Pasos de correccion (lista numerada)
+3) Archivos o modulos a revisar
+4) Como verificar el fix`,
+      user: [
+        `Proyecto: ${proyectoLabel(proy)}`,
+        `Nivel: ${row.Inc_Nivel}`,
+        `Titulo: ${row.Inc_Titulo}`,
+        row.Inc_Archivo
+          ? `Archivo: ${row.Inc_Archivo}${row.Inc_Linea != null ? `:${row.Inc_Linea}` : ""}`
+          : null,
+        row.Inc_Fuente ? `Fuente log: ${row.Inc_Fuente}` : null,
+        `Ocurrencias: ${row.Inc_Ocurrencias}`,
+        ``,
+        `Mensaje del log:`,
+        (row.Inc_Mensaje || row.Inc_Titulo || "").slice(0, 6000),
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      retries: 1,
+    });
+    if (ai.ok && ai.text.trim()) {
+      solucion = ai.text.trim();
+    } else {
+      aiError = ai.error || "No se pudo generar la solucion con IA";
+      solucion =
+        `No se pudo consultar Gemini (${aiError}). Revisar manualmente:\n` +
+        `- Proyecto: ${proyectoLabel(proy)}\n` +
+        `- ${row.Inc_Archivo || "archivo desconocido"}${row.Inc_Linea != null ? `:${row.Inc_Linea}` : ""}\n` +
+        `- ${row.Inc_Titulo}`;
+    }
+  }
+
+  await prisma.$executeRawUnsafe(
+    `UPDATE aud_incidencias SET Inc_Estado = 'Resuelta', Inc_Solucion = ?, Inc_Proyecto = COALESCE(Inc_Proyecto, ?)
+     WHERE Inc_Cod = ? AND Inc_Est = 'A'`,
+    solucion,
+    proy,
+    incCod
+  );
+
+  return {
+    Inc_Cod: incCod,
+    Inc_Estado: "Resuelta" as const,
+    Inc_Solucion: solucion,
+    Inc_Proyecto: proy,
+    Inc_Proyecto_Label: proyectoLabel(proy),
+    aiError,
+  };
 }
 
 export async function crearTareaDesdeIncidencia(

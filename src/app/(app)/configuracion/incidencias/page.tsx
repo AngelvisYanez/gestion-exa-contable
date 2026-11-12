@@ -13,9 +13,16 @@ import {
   UserPlus,
 } from "lucide-react";
 import Topbar from "@/components/layout/Topbar";
-import { FilterBar } from "@/components/list-controls";
+import {
+  FilterBar,
+  PaginationBar,
+  ViewModeToggle,
+  useResponsiveListView,
+  type ListViewMode,
+} from "@/components/list-controls";
 import { PrioridadBadge } from "@/components/status-badges";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePagination } from "@/hooks/use-pagination";
 import { hasRolePermission } from "@/lib/auth/role-permissions";
 import { roleLabel } from "@/lib/auth/users";
 import { Alert } from "@/components/ui/alert";
@@ -32,6 +39,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 
 type Incidencia = {
@@ -48,6 +63,9 @@ type Incidencia = {
   Inc_Estado: string;
   Tar_Cod: number | null;
   Inc_Fuente: string | null;
+  Inc_Proyecto: "ofsercont" | "relavera" | null;
+  Inc_Proyecto_Label: string;
+  Inc_Solucion: string | null;
   enLog: boolean;
 };
 
@@ -94,6 +112,12 @@ function prioridadSugerida(nivel: string) {
   return "Baja";
 }
 
+function proyectoTone(proyecto: string | null | undefined) {
+  if (proyecto === "relavera") return "secondary" as const;
+  if (proyecto === "ofsercont") return "info" as const;
+  return "muted" as const;
+}
+
 export default function IncidenciasPage() {
   const { db, user } = useAuth();
   const canCreateTask = hasRolePermission(user, "tareas.crear");
@@ -108,7 +132,10 @@ export default function IncidenciasPage() {
   const [logConfigured, setLogConfigured] = useState(true);
   const [filtroEstado, setFiltroEstado] = useState("todos");
   const [filtroNivel, setFiltroNivel] = useState("todos");
+  const [filtroProyecto, setFiltroProyecto] = useState("todos");
   const [q, setQ] = useState("");
+  const [viewMode, setViewMode] = useState<ListViewMode>("grid");
+  const displayMode = useResponsiveListView(viewMode);
 
   const [taskOpen, setTaskOpen] = useState<Incidencia | null>(null);
   const [perCod, setPerCod] = useState("");
@@ -118,6 +145,10 @@ export default function IncidenciasPage() {
   const [taskOk, setTaskOk] = useState("");
 
   const [detail, setDetail] = useState<Incidencia | null>(null);
+  const [resolveOpen, setResolveOpen] = useState<Incidencia | null>(null);
+  const [resolving, setResolving] = useState(false);
+  const [solucionText, setSolucionText] = useState("");
+  const [solucionError, setSolucionError] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -127,6 +158,7 @@ export default function IncidenciasPage() {
         `/api/incidencias?Ses_Dat_Dis=${encodeURIComponent(db)}` +
         `&estado=${encodeURIComponent(filtroEstado)}` +
         `&nivel=${encodeURIComponent(filtroNivel)}` +
+        `&proyecto=${encodeURIComponent(filtroProyecto)}` +
         `&q=${encodeURIComponent(q)}&assignees=1`;
       const res = await fetch(url);
       const j = await res.json();
@@ -141,11 +173,16 @@ export default function IncidenciasPage() {
     } finally {
       setLoading(false);
     }
-  }, [db, filtroEstado, filtroNivel, q]);
+  }, [db, filtroEstado, filtroNivel, filtroProyecto, q]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  const pager = usePagination(rows, {
+    initialSize: 12,
+    resetKey: `${filtroEstado}|${filtroNivel}|${filtroProyecto}|${q}|${rows.length}`,
+  });
 
   const openTask = (inc: Incidencia) => {
     setTaskError("");
@@ -197,6 +234,34 @@ export default function IncidenciasPage() {
 
   const setEstado = async (inc: Incidencia, estado: string) => {
     if (!inc.Inc_Cod) return;
+    if (estado === "Resuelta") {
+      setResolveOpen(inc);
+      setSolucionText(inc.Inc_Solucion || "");
+      setSolucionError("");
+      setResolving(true);
+      try {
+        const res = await fetch("/api/incidencias", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "estado",
+            Ses_Dat_Dis: db,
+            Inc_Cod: inc.Inc_Cod,
+            estado: "Resuelta",
+          }),
+        });
+        const j = await res.json();
+        if (!j.success) throw new Error(j.message || "Error al resolver");
+        setSolucionText(j.Inc_Solucion || "");
+        if (j.aiError) setSolucionError(String(j.aiError));
+        await load();
+      } catch (e) {
+        setSolucionError(e instanceof Error ? e.message : "Error");
+      } finally {
+        setResolving(false);
+      }
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch("/api/incidencias", {
@@ -244,9 +309,10 @@ export default function IncidenciasPage() {
             <Alert variant="destructive">
               No se encontro el log de errores EXA. Configura{" "}
               <code className="rounded bg-black/10 px-1">EXA_ERROR_LOG</code> en{" "}
-              <code className="rounded bg-black/10 px-1">.env</code> apuntando a{" "}
-              <code className="rounded bg-black/10 px-1">exa-error.log</code>
-              {logFiles[0] ? ` (probado: ${logFiles[0].path})` : ""}.
+              <code className="rounded bg-black/10 px-1">.env</code> a las carpetas
+              sincronizadas de ofsercont/relavera (o un{" "}
+              <code className="rounded bg-black/10 px-1">exa-*.log</code>).
+              {logFiles[0] ? ` Probado: ${logFiles[0].path}` : ""}
             </Alert>
           </div>
         )}
@@ -297,10 +363,21 @@ export default function IncidenciasPage() {
             <option value="Warning">Warning</option>
             <option value="Notice">Notice</option>
           </Select>
+          <Select
+            value={filtroProyecto}
+            onChange={(e) => setFiltroProyecto(e.target.value)}
+            wrapperClassName="w-full sm:w-[190px]"
+            className="h-9 min-h-0 w-full py-0 text-sm"
+          >
+            <option value="todos">Todos los proyectos</option>
+            <option value="ofsercont">EXA Ofsercont</option>
+            <option value="relavera">EXA Relavera</option>
+          </Select>
           <Button type="button" variant="secondary" className="h-9" onClick={() => void load()} disabled={loading}>
             <RefreshCw className={loading ? "animate-spin" : ""} />
             Escanear
           </Button>
+          <ViewModeToggle value={viewMode} onChange={setViewMode} className="ml-auto" />
         </FilterBar>
 
         {error && (
@@ -324,25 +401,28 @@ export default function IncidenciasPage() {
             </p>
           </div>
         ) : (
-          <div className="space-y-3">
-            {rows.map((inc) => (
-              <article
-                key={inc.Inc_Fingerprint}
-                className={cn(
-                  "rounded-xl border bg-card p-4 shadow-sm transition-colors",
-                  inc.Inc_Nivel === "Fatal"
-                    ? "border-brand-red/30 bg-brand-red-subtle/30"
-                    : inc.Inc_Estado === "Nueva"
-                      ? "border-amber-200 bg-amber-50/30"
-                      : "border-border/80"
-                )}
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
+          <div className="w-full min-w-0">
+            {displayMode === "grid" ? (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {pager.slice.map((inc) => (
+                  <article
+                    key={inc.Inc_Fingerprint}
+                    className={cn(
+                      "rounded-xl border bg-card p-4 shadow-sm transition-colors",
+                      inc.Inc_Nivel === "Fatal"
+                        ? "border-brand-red/30 bg-brand-red-subtle/30"
+                        : inc.Inc_Estado === "Nueva"
+                          ? "border-amber-200 bg-amber-50/30"
+                          : "border-border/80"
+                    )}
+                  >
                     <div className="mb-1 flex flex-wrap items-center gap-2">
                       {inc.Inc_Cod != null && (
                         <span className="font-mono text-xs text-muted-foreground">#{inc.Inc_Cod}</span>
                       )}
+                      <Badge variant={proyectoTone(inc.Inc_Proyecto)}>
+                        {inc.Inc_Proyecto_Label || "Sin proyecto"}
+                      </Badge>
                       <Badge variant={nivelTone(inc.Inc_Nivel)}>
                         <AlertTriangle className="mr-1 size-3" />
                         {inc.Inc_Nivel}
@@ -354,13 +434,9 @@ export default function IncidenciasPage() {
                           En log actual
                         </Badge>
                       )}
-                      <span className="text-[11px] text-muted-foreground">
-                        ×{inc.Inc_Ocurrencias}
-                      </span>
+                      <span className="text-[11px] text-muted-foreground">×{inc.Inc_Ocurrencias}</span>
                     </div>
-                    <h3 className="text-sm font-bold text-brand-gray-900 line-clamp-2">
-                      {inc.Inc_Titulo}
-                    </h3>
+                    <h3 className="text-sm font-bold text-brand-gray-900 line-clamp-2">{inc.Inc_Titulo}</h3>
                     {(inc.Inc_Archivo || inc.Inc_Fuente) && (
                       <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">
                         {inc.Inc_Archivo
@@ -376,55 +452,191 @@ export default function IncidenciasPage() {
                         <span className="font-semibold text-foreground">Tarea #{inc.Tar_Cod}</span>
                       )}
                     </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button type="button" size="sm" variant="outline" onClick={() => setDetail(inc)}>
-                      Detalle
-                    </Button>
-                    {canCreateTask && !inc.Tar_Cod &&
-                      inc.Inc_Estado !== "Ignorada" &&
-                      inc.Inc_Estado !== "Resuelta" && (
-                        <Button type="button" size="sm" onClick={() => openTask(inc)}>
-                          <ClipboardList className="size-3.5" />
-                          Generar tarea
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button type="button" size="sm" variant="outline" onClick={() => setDetail(inc)}>
+                        Detalle
+                      </Button>
+                      {canCreateTask &&
+                        !inc.Tar_Cod &&
+                        inc.Inc_Estado !== "Ignorada" &&
+                        inc.Inc_Estado !== "Resuelta" && (
+                          <Button type="button" size="sm" onClick={() => openTask(inc)}>
+                            <ClipboardList className="size-3.5" />
+                            Generar tarea
+                          </Button>
+                        )}
+                      {inc.Inc_Estado === "Nueva" && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => void setEstado(inc, "En revision")}
+                        >
+                          Revisar
                         </Button>
                       )}
-                    {inc.Inc_Estado === "Nueva" && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => void setEstado(inc, "En revision")}
-                      >
-                        Revisar
-                      </Button>
-                    )}
-                    {inc.Inc_Estado !== "Ignorada" && inc.Inc_Estado !== "Resuelta" && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => void setEstado(inc, "Ignorada")}
-                      >
-                        <EyeOff className="size-3.5" />
-                        Ignorar
-                      </Button>
-                    )}
-                    {(inc.Inc_Estado === "Tarea creada" || inc.Inc_Estado === "En revision") && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => void setEstado(inc, "Resuelta")}
-                      >
-                        <CheckCircle2 className="size-3.5" />
-                        Resuelta
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </article>
-            ))}
+                      {inc.Inc_Estado !== "Ignorada" && inc.Inc_Estado !== "Resuelta" && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => void setEstado(inc, "Ignorada")}
+                        >
+                          <EyeOff className="size-3.5" />
+                          Ignorar
+                        </Button>
+                      )}
+                      {(inc.Inc_Estado === "Tarea creada" || inc.Inc_Estado === "En revision") && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => void setEstado(inc, "Resuelta")}
+                        >
+                          <CheckCircle2 className="size-3.5" />
+                          Resuelta
+                        </Button>
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-xl border border-border/80 bg-card shadow-sm">
+                <Table className="responsive-card-table min-w-[720px] lg:min-w-0">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="min-w-[220px]">Incidencia</TableHead>
+                      <TableHead className="w-[130px]">Proyecto</TableHead>
+                      <TableHead className="w-[100px]">Nivel</TableHead>
+                      <TableHead className="w-[110px]">Estado</TableHead>
+                      <TableHead className="w-[90px]">Veces</TableHead>
+                      <TableHead className="w-[150px]">Ultima</TableHead>
+                      <TableHead className="min-w-[220px] text-right">Acciones</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {pager.slice.map((inc) => (
+                      <TableRow key={inc.Inc_Fingerprint}>
+                        <TableCell data-label="Incidencia">
+                          <div className="min-w-0">
+                            <div className="mb-0.5 flex flex-wrap items-center gap-2">
+                              {inc.Inc_Cod != null && (
+                                <span className="font-mono text-xs text-muted-foreground">
+                                  #{inc.Inc_Cod}
+                                </span>
+                              )}
+                              {inc.enLog && (
+                                <Badge variant="secondary" className="text-[10px]">
+                                  En log
+                                </Badge>
+                              )}
+                              {inc.Tar_Cod && (
+                                <span className="text-[11px] font-semibold text-foreground">
+                                  Tarea #{inc.Tar_Cod}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-sm font-semibold text-brand-gray-900 line-clamp-2">
+                              {inc.Inc_Titulo}
+                            </p>
+                            {(inc.Inc_Archivo || inc.Inc_Fuente) && (
+                              <p className="mt-0.5 break-all font-mono text-[11px] text-muted-foreground">
+                                {inc.Inc_Archivo
+                                  ? `${inc.Inc_Archivo}${inc.Inc_Linea != null ? `:${inc.Inc_Linea}` : ""}`
+                                  : null}
+                                {inc.Inc_Fuente ? ` · ${inc.Inc_Fuente}` : null}
+                              </p>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell data-label="Proyecto">
+                          <Badge variant={proyectoTone(inc.Inc_Proyecto)}>
+                            {inc.Inc_Proyecto_Label || "Sin proyecto"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell data-label="Nivel">
+                          <Badge variant={nivelTone(inc.Inc_Nivel)}>{inc.Inc_Nivel}</Badge>
+                        </TableCell>
+                        <TableCell data-label="Estado">
+                          <Badge variant={estadoTone(inc.Inc_Estado)}>{inc.Inc_Estado}</Badge>
+                        </TableCell>
+                        <TableCell data-label="Veces" className="tabular-nums">
+                          ×{inc.Inc_Ocurrencias}
+                        </TableCell>
+                        <TableCell data-label="Ultima" className="text-xs text-muted-foreground">
+                          {fmtWhen(inc.Inc_Ultima_Vez)}
+                        </TableCell>
+                        <TableCell data-label="Acciones" className="text-right">
+                          <div className="flex flex-wrap justify-end gap-1.5">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setDetail(inc)}
+                            >
+                              Detalle
+                            </Button>
+                            {canCreateTask &&
+                              !inc.Tar_Cod &&
+                              inc.Inc_Estado !== "Ignorada" &&
+                              inc.Inc_Estado !== "Resuelta" && (
+                                <Button type="button" size="sm" onClick={() => openTask(inc)}>
+                                  <ClipboardList className="size-3.5" />
+                                  Tarea
+                                </Button>
+                              )}
+                            {inc.Inc_Estado === "Nueva" && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => void setEstado(inc, "En revision")}
+                              >
+                                Revisar
+                              </Button>
+                            )}
+                            {inc.Inc_Estado !== "Ignorada" && inc.Inc_Estado !== "Resuelta" && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => void setEstado(inc, "Ignorada")}
+                              >
+                                <EyeOff className="size-3.5" />
+                              </Button>
+                            )}
+                            {(inc.Inc_Estado === "Tarea creada" ||
+                              inc.Inc_Estado === "En revision") && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => void setEstado(inc, "Resuelta")}
+                              >
+                                <CheckCircle2 className="size-3.5" />
+                                Resuelta
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+
+            <PaginationBar
+              page={pager.page}
+              totalPages={pager.totalPages}
+              total={pager.total}
+              from={pager.from}
+              to={pager.to}
+              pageSize={pager.pageSize}
+              onPageChange={pager.setPage}
+              onPageSizeChange={pager.setPageSize}
+            />
           </div>
         )}
       </main>
@@ -494,15 +706,26 @@ export default function IncidenciasPage() {
           <DialogHeader>
             <DialogTitle>Detalle de incidencia</DialogTitle>
             <DialogDescription>
+              {detail?.Inc_Proyecto_Label ? `${detail.Inc_Proyecto_Label} · ` : ""}
               {detail?.Inc_Archivo
                 ? `${detail.Inc_Archivo}${detail.Inc_Linea != null ? `:${detail.Inc_Linea}` : ""}`
                 : "Mensaje completo del log"}
             </DialogDescription>
           </DialogHeader>
           {detail && (
-            <pre className="max-h-[50vh] overflow-auto rounded-lg border border-border bg-[#141413] p-3 text-[11px] leading-relaxed text-[#e8e8e4] whitespace-pre-wrap break-words">
-              {detail.Inc_Mensaje || detail.Inc_Titulo}
-            </pre>
+            <div className="space-y-3">
+              <pre className="max-h-[40vh] overflow-auto rounded-lg border border-border bg-[#141413] p-3 text-[11px] leading-relaxed text-[#e8e8e4] whitespace-pre-wrap break-words">
+                {detail.Inc_Mensaje || detail.Inc_Titulo}
+              </pre>
+              {detail.Inc_Solucion && (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3">
+                  <p className="mb-1 text-xs font-semibold text-emerald-900">Posible solucion (IA)</p>
+                  <pre className="max-h-[30vh] overflow-auto whitespace-pre-wrap break-words text-[12px] leading-relaxed text-emerald-950">
+                    {detail.Inc_Solucion}
+                  </pre>
+                </div>
+              )}
+            </div>
           )}
           <DialogFooter>
             <Button type="button" variant="secondary" onClick={() => setDetail(null)}>
@@ -519,6 +742,65 @@ export default function IncidenciasPage() {
                 Generar tarea
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!resolveOpen}
+        onOpenChange={(o) => {
+          if (!o && !resolving) {
+            setResolveOpen(null);
+            setSolucionText("");
+            setSolucionError("");
+          }
+        }}
+      >
+        <DialogContent className="max-h-[90dvh] max-w-2xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Incidencia resuelta</DialogTitle>
+            <DialogDescription>
+              {resolveOpen?.Inc_Proyecto_Label || "EXA"} · se genero una posible solucion con IA para
+              guiar el cierre.
+            </DialogDescription>
+          </DialogHeader>
+          {resolving ? (
+            <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" />
+              Analizando el error con Gemini...
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {resolveOpen && (
+                <div className="rounded-lg border border-border bg-muted/40 p-3 text-xs">
+                  <Badge variant={proyectoTone(resolveOpen.Inc_Proyecto)} className="mb-2">
+                    {resolveOpen.Inc_Proyecto_Label || "Sin proyecto"}
+                  </Badge>
+                  <p className="font-semibold text-foreground">{resolveOpen.Inc_Titulo}</p>
+                </div>
+              )}
+              {solucionError && <Alert variant="destructive">{solucionError}</Alert>}
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3">
+                <p className="mb-1 text-xs font-semibold text-emerald-900">Posible solucion</p>
+                <pre className="max-h-[45vh] overflow-auto whitespace-pre-wrap break-words text-[12px] leading-relaxed text-emerald-950">
+                  {solucionText || "Sin texto generado."}
+                </pre>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={resolving}
+              onClick={() => {
+                setResolveOpen(null);
+                setSolucionText("");
+                setSolucionError("");
+              }}
+            >
+              Cerrar
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
