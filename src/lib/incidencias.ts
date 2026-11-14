@@ -703,6 +703,9 @@ export async function proponerCorreccionCursor(dbDis: string, incCod: number) {
   const repo = proyecto === "ofsercont"
     ? process.env.EXA_OFSERCONT_REPO || "https://gitlab.com/exacontable/exa-ofsercont"
     : process.env.EXA_RELAVERA_REPO || "https://gitlab.com/exacontable/exa-relavera.git";
+  const startingRef = proyecto === "ofsercont"
+    ? process.env.EXA_OFSERCONT_CURSOR_REF || "copia_server"
+    : process.env.EXA_RELAVERA_CURSOR_REF || "desarrollo";
   const reserved = await prisma.$executeRawUnsafe(
     `UPDATE aud_incidencias SET Inc_Cursor_Url = 'pending'
      WHERE Inc_Cod = ? AND Inc_Est = 'A' AND Inc_Cursor_Url IS NULL`, incCod
@@ -722,13 +725,18 @@ Trabaja solo en una rama nueva. Agrega pruebas pertinentes y abre un PR para rev
 Nivel: ${row.Inc_Nivel}. Archivo: ${row.Inc_Archivo || "desconocido"}:${row.Inc_Linea || "?"}.
 Ocurrencias: ${row.Inc_Ocurrencias}. Fuente: ${row.Inc_Fuente || "desconocida"}.
 Log:\n${log}` },
-        repos: [{ url: repo, startingRef: "main" }],
+        repos: [{ url: repo, startingRef }],
         workOnCurrentBranch: false,
         autoCreatePR: true,
       }),
       signal: AbortSignal.timeout(30000),
     });
-    if (!response.ok) throw new Error(`Cursor rechazó la solicitud (HTTP ${response.status})`);
+    if (!response.ok) {
+      const body = await response.json().catch(() => null) as { error?: { code?: string; message?: string } } | null;
+      const code = String(body?.error?.code || "error").replace(/[^a-z0-9_-]/gi, "").slice(0, 60);
+      const detail = String(body?.error?.message || "").replaceAll(key, "[REDACTADO]").slice(0, 300);
+      throw new Error(`Cursor rechazó la solicitud (HTTP ${response.status}, ${code})${detail ? `: ${detail}` : ""}`);
+    }
     const payload = await response.json() as { agent?: { url?: string } };
     const url = payload.agent?.url;
     if (!url || !/^https:\/\/cursor\.com\/agents\//.test(url)) throw new Error("Cursor no devolvió el enlace del agente");
