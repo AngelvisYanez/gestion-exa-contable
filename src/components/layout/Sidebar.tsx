@@ -8,6 +8,7 @@ import {
   Activity,
   AlertTriangle,
   Building2,
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
@@ -77,6 +78,12 @@ const navGroups: NavGroup[] = [
   {
     group: "GESTION",
     items: [
+      {
+        href: "/capacitaciones",
+        label: "Capacitaciones",
+        roles: ["manager"],
+        icon: <CalendarDays className="w-[17px] h-[17px]" strokeWidth={1.8} />,
+      },
       {
         href: "/monitoreo",
         label: "Monitoreo",
