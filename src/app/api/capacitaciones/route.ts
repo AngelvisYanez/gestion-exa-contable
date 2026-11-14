@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
     const inicio = new Date(body.inicio);
     const duracion = Number(body.duracionMin);
     if (!Number.isFinite(inicio.getTime()) || !Number.isSafeInteger(duracion) || duracion < 1 || duracion > 10080) return bad("Fecha o duración inválida.");
-    await db().$executeRaw`INSERT INTO aud_capacitaciones (Cap_Titulo, Cap_Empresa, Cap_Cliente, Cap_Proyecto, Cap_Responsable_Per_Cod, Cap_Responsable_Nombre, Cap_Inicio, Cap_Duracion_Min, Cap_Creador) VALUES (${body.titulo.trim()}, ${body.empresa.trim()}, ${body.cliente.trim()}, ${proyecto}, ${responsable}, ${miembro.Nombre}, ${inicio}, ${duracion}, ${session.usuCod})`;
+    await db().$executeRaw`INSERT INTO aud_capacitaciones (Cap_Titulo, Cap_Empresa, Cap_Cliente, Cap_Proyecto, Cap_Responsable_Per_Cod, Cap_Responsable_Nombre, Cap_Inicio, Cap_Duracion_Min, Cap_Creador, Cap_Creada, Cap_Actualizada) VALUES (${body.titulo.trim()}, ${body.empresa.trim()}, ${body.cliente.trim()}, ${proyecto}, ${responsable}, ${miembro.Nombre}, ${inicio}, ${duracion}, ${session.usuCod}, NOW(), NOW())`;
     return NextResponse.json({ success: true }, { status: 201 });
   } catch (e) { console.error("capacitaciones POST", e); return bad("No se pudo crear la capacitación.", 500); }
 }
@@ -64,7 +64,7 @@ export async function PATCH(req: NextRequest) {
     if (!Number.isSafeInteger(id) || id < 1) return bad("Identificador inválido.");
     const rows = await db().$queryRaw<Array<{ Cap_Proyecto: string }>>`SELECT Cap_Proyecto FROM aud_capacitaciones WHERE Cap_Cod = ${id} LIMIT 1`;
     if (!rows.length) return bad("Capacitación no encontrada.", 404);
-    const count = await db().$executeRaw`UPDATE aud_capacitaciones SET Cap_Estado = 'Finalizada', Cap_Finalizada = NOW(3) WHERE Cap_Cod = ${id} AND Cap_Estado = 'Programada'`;
+    const count = await db().$executeRaw`UPDATE aud_capacitaciones SET Cap_Estado = 'Finalizada', Cap_Finalizada = NOW(), Cap_Actualizada = NOW() WHERE Cap_Cod = ${id} AND Cap_Estado = 'Programada'`;
     if (!count) return bad("La capacitación no existe o ya fue finalizada.", 409);
     return NextResponse.json({ success: true });
   } catch (e) { console.error("capacitaciones PATCH", e); return bad("No se pudo finalizar la capacitación.", 500); }
