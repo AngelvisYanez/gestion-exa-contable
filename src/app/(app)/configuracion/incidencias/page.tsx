@@ -66,6 +66,7 @@ type Incidencia = {
   Inc_Proyecto: "ofsercont" | "relavera" | null;
   Inc_Proyecto_Label: string;
   Inc_Solucion: string | null;
+  Inc_Cursor_Url: string | null;
   enLog: boolean;
 };
 
@@ -148,9 +149,14 @@ export default function IncidenciasPage() {
   const [analisis, setAnalisis] = useState("");
   const [analisisError, setAnalisisError] = useState("");
   const [analizando, setAnalizando] = useState(false);
+  const [cursorConfirm, setCursorConfirm] = useState(false);
+  const [cursorLoading, setCursorLoading] = useState(false);
+  const [cursorError, setCursorError] = useState("");
   useEffect(() => {
     setAnalisis("");
     setAnalisisError("");
+    setCursorConfirm(false);
+    setCursorError("");
   }, [detail?.Inc_Cod]);
   const [resolveOpen, setResolveOpen] = useState<Incidencia | null>(null);
   const [resolving, setResolving] = useState(false);
@@ -308,6 +314,28 @@ export default function IncidenciasPage() {
       setAnalisisError(e instanceof Error ? e.message : "Error al analizar");
     } finally {
       setAnalizando(false);
+    }
+  };
+
+  const solicitarCursor = async (inc: Incidencia) => {
+    if (!inc.Inc_Cod) return;
+    setCursorLoading(true);
+    setCursorError("");
+    try {
+      const res = await fetch("/api/incidencias", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "cursor_proponer", Ses_Dat_Dis: db, Inc_Cod: inc.Inc_Cod }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.message || "No se pudo iniciar Cursor");
+      setDetail({ ...inc, Inc_Cursor_Url: data.url });
+      setCursorConfirm(false);
+      await load();
+    } catch (e) {
+      setCursorError(e instanceof Error ? e.message : "Error al iniciar Cursor");
+    } finally {
+      setCursorLoading(false);
     }
   };
 
@@ -746,6 +774,11 @@ export default function IncidenciasPage() {
                 {detail.Inc_Mensaje || detail.Inc_Titulo}
               </pre>
               {analisisError && <Alert variant="destructive">{analisisError}</Alert>}
+              {cursorError && <Alert variant="destructive">{cursorError}</Alert>}
+              {cursorConfirm && <p className="text-xs text-muted-foreground">Cursor recibirá el log y podrá proponer cambios en una rama del repositorio. El PR requiere revisión humana; no se fusionará ni desplegará automáticamente.</p>}
+              {detail.Inc_Cursor_Url && detail.Inc_Cursor_Url !== "pending" && (
+                <a href={detail.Inc_Cursor_Url} target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-blue-700 underline">Abrir propuesta en Cursor</a>
+              )}
               {analisis && (
                 <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3">
                   <p className="mb-1 text-xs font-semibold text-blue-900">Analisis sugerido por IA</p>
@@ -763,6 +796,11 @@ export default function IncidenciasPage() {
             </div>
           )}
           <DialogFooter>
+            {canCreateTask && detail?.Inc_Cod && detail.Inc_Proyecto && !detail.Inc_Cursor_Url && (
+              <Button type="button" variant="outline" disabled={cursorLoading} onClick={() => cursorConfirm ? void solicitarCursor(detail) : setCursorConfirm(true)}>
+                {cursorLoading ? "Iniciando Cursor..." : cursorConfirm ? "Autorizar propuesta" : "Proponer corrección con Cursor"}
+              </Button>
+            )}
             {detail?.Inc_Cod && (
               <Button type="button" variant="outline" disabled={analizando} onClick={() => void analizar(detail)}>
                 {analizando ? <Loader2 className="size-4 animate-spin" /> : null}

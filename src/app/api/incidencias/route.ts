@@ -5,6 +5,7 @@ import { publishAsignacion, publishEvent } from "@/lib/events";
 import { tasksDbDis } from "@/lib/empresa";
 import {
   analizarIncidencia,
+  proponerCorreccionCursor,
   crearTareaDesdeIncidencia,
   listIncidencias,
   resolverIncidenciaConSolucion,
@@ -48,6 +49,18 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const db = tasksDbDis(body.Ses_Dat_Dis);
     const action = String(body.action || "");
+
+    if (action === "cursor_proponer") {
+      const session = await getSessionFromRequest(req);
+      if (!hasRolePermission(session, "tareas.crear")) {
+        return NextResponse.json({ success: false, message: "Tu rol no puede solicitar correcciones." }, { status: 403 });
+      }
+      const incCod = Number(body.Inc_Cod);
+      if (!Number.isSafeInteger(incCod) || incCod <= 0) {
+        return NextResponse.json({ success: false, message: "Inc_Cod invalido" }, { status: 400 });
+      }
+      return NextResponse.json({ success: true, ...(await proponerCorreccionCursor(db, incCod)) });
+    }
 
     if (action === "analizar") {
       const incCod = Number(body.Inc_Cod);

@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS aud_incidencias (
   Tar_Cod INT NULL,
   Usu_Creador INT NULL,
   Inc_Fuente VARCHAR(255) NULL,
+  Inc_Cursor_Url VARCHAR(500) NULL,
   Inc_Est CHAR(1) NOT NULL DEFAULT 'A',
   PRIMARY KEY (Inc_Cod),
   UNIQUE KEY uq_aud_inc_fp (Inc_Fingerprint),
