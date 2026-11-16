@@ -5,6 +5,8 @@ import { publishAsignacion, publishEvent } from "@/lib/events";
 import { tasksDbDis } from "@/lib/empresa";
 import {
   analizarIncidencia,
+  listIncidenciaEventos,
+  registrarHitoIncidencia,
   proponerCorreccionCursor,
   crearTareaDesdeIncidencia,
   listIncidencias,
@@ -24,11 +26,17 @@ export async function GET(req: NextRequest) {
     const estado = sp.get("estado") || "todos";
     const nivel = sp.get("nivel") || "todos";
     const proyecto = sp.get("proyecto") || "todos";
+    const fechaDesde = sp.get("fechaDesde") || "";
+    const fechaHasta = sp.get("fechaHasta") || "";
     const q = sp.get("q") || "";
     const sync = sp.get("sync") !== "0";
     const withAssignees = sp.get("assignees") === "1";
+    const eventIncCod = Number(sp.get("eventos"));
+    if (Number.isSafeInteger(eventIncCod) && eventIncCod > 0) {
+      return NextResponse.json({ success: true, eventos: await listIncidenciaEventos(db, eventIncCod) });
+    }
 
-    const data = await listIncidencias(db, { estado, nivel, proyecto, q, sync });
+    const data = await listIncidencias(db, { estado, nivel, proyecto, fechaDesde, fechaHasta, q, sync });
     const payload: Record<string, unknown> = {
       success: true,
       db,
@@ -49,6 +57,21 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const db = tasksDbDis(body.Ses_Dat_Dis);
     const action = String(body.action || "");
+
+    if (action === "registrar_hito") {
+      const session = await getSessionFromRequest(req);
+      if (!hasRolePermission(session, "tareas.crear")) {
+        return NextResponse.json({ success: false, message: "Tu rol no puede registrar hitos." }, { status: 403 });
+      }
+      const incCod = Number(body.Inc_Cod);
+      const tipo = body.tipo;
+      const referencia = String(body.referencia || "").trim();
+      if (!Number.isSafeInteger(incCod) || incCod <= 0 || !["mr", "despliegue"].includes(tipo) || !referencia || referencia.length > 500) {
+        return NextResponse.json({ success: false, message: "Indica un tipo y una referencia válida de hasta 500 caracteres." }, { status: 400 });
+      }
+      await registrarHitoIncidencia(db, incCod, tipo, referencia);
+      return NextResponse.json({ success: true });
+    }
 
     if (action === "cursor_proponer") {
       const session = await getSessionFromRequest(req);

@@ -86,6 +86,7 @@ type Kpis = {
 };
 
 type LogFile = { path: string; exists: boolean; size: number };
+type IncidenciaEvento = { Eve_Cod: number; Eve_Tipo: string; Eve_Detalle: string | null; Eve_Referencia: string | null; Eve_Fecha: string };
 
 function nivelTone(nivel: string) {
   if (nivel === "Fatal") return "danger" as const;
@@ -134,6 +135,8 @@ export default function IncidenciasPage() {
   const [filtroEstado, setFiltroEstado] = useState("todos");
   const [filtroNivel, setFiltroNivel] = useState("todos");
   const [filtroProyecto, setFiltroProyecto] = useState("todos");
+  const [fechaDesde, setFechaDesde] = useState("");
+  const [fechaHasta, setFechaHasta] = useState("");
   const [q, setQ] = useState("");
   const [viewMode, setViewMode] = useState<ListViewMode>("grid");
   const displayMode = useResponsiveListView(viewMode);
@@ -146,6 +149,11 @@ export default function IncidenciasPage() {
   const [taskOk, setTaskOk] = useState("");
 
   const [detail, setDetail] = useState<Incidencia | null>(null);
+  const [eventos, setEventos] = useState<IncidenciaEvento[]>([]);
+  const [hitoTipo, setHitoTipo] = useState<"mr" | "despliegue">("mr");
+  const [hitoReferencia, setHitoReferencia] = useState("");
+  const [hitoSaving, setHitoSaving] = useState(false);
+  const [hitoError, setHitoError] = useState("");
   const [analisis, setAnalisis] = useState("");
   const [analisisError, setAnalisisError] = useState("");
   const [analizando, setAnalizando] = useState(false);
@@ -158,6 +166,31 @@ export default function IncidenciasPage() {
     setCursorConfirm(false);
     setCursorError("");
   }, [detail?.Inc_Cod]);
+  useEffect(() => {
+    if (!detail?.Inc_Cod) { setEventos([]); return; }
+    let active = true;
+    fetch(`/api/incidencias?Ses_Dat_Dis=${encodeURIComponent(db)}&eventos=${detail.Inc_Cod}`)
+      .then((res) => res.json())
+      .then((data) => { if (active && data.success) setEventos(data.eventos || []); })
+      .catch(() => { if (active) setHitoError("No se pudo cargar la línea del tiempo."); });
+    return () => { active = false; };
+  }, [db, detail?.Inc_Cod, analisis, analisisError, cursorLoading, hitoSaving]);
+
+  const guardarHito = async () => {
+    if (!detail?.Inc_Cod || !hitoReferencia.trim()) return;
+    setHitoSaving(true);
+    setHitoError("");
+    try {
+      const res = await fetch("/api/incidencias", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "registrar_hito", Ses_Dat_Dis: db, Inc_Cod: detail.Inc_Cod, tipo: hitoTipo, referencia: hitoReferencia.trim() }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.message || "No se pudo registrar el hito");
+      setHitoReferencia("");
+    } catch (e) { setHitoError(e instanceof Error ? e.message : "Error al registrar el hito"); }
+    finally { setHitoSaving(false); }
+  };
   const [resolveOpen, setResolveOpen] = useState<Incidencia | null>(null);
   const [resolving, setResolving] = useState(false);
   const [solucionText, setSolucionText] = useState("");
@@ -172,6 +205,8 @@ export default function IncidenciasPage() {
         `&estado=${encodeURIComponent(filtroEstado)}` +
         `&nivel=${encodeURIComponent(filtroNivel)}` +
         `&proyecto=${encodeURIComponent(filtroProyecto)}` +
+        `&fechaDesde=${encodeURIComponent(fechaDesde)}` +
+        `&fechaHasta=${encodeURIComponent(fechaHasta)}` +
         `&q=${encodeURIComponent(q)}&assignees=1`;
       const res = await fetch(url);
       const j = await res.json();
@@ -186,7 +221,7 @@ export default function IncidenciasPage() {
     } finally {
       setLoading(false);
     }
-  }, [db, filtroEstado, filtroNivel, filtroProyecto, q]);
+  }, [db, filtroEstado, filtroNivel, filtroProyecto, fechaDesde, fechaHasta, q]);
 
   useEffect(() => {
     void load();
@@ -194,7 +229,7 @@ export default function IncidenciasPage() {
 
   const pager = usePagination(rows, {
     initialSize: 12,
-    resetKey: `${filtroEstado}|${filtroNivel}|${filtroProyecto}|${q}|${rows.length}`,
+    resetKey: `${filtroEstado}|${filtroNivel}|${filtroProyecto}|${fechaDesde}|${fechaHasta}|${q}|${rows.length}`,
   });
 
   const openTask = (inc: Incidencia) => {
@@ -429,6 +464,16 @@ export default function IncidenciasPage() {
             <option value="ofsercont">EXA Ofsercont</option>
             <option value="relavera">EXA Relavera</option>
           </Select>
+          <label className="flex w-full items-center gap-2 text-xs text-muted-foreground sm:w-auto">
+            Desde
+            <Input type="date" aria-label="Fecha desde" value={fechaDesde} max={fechaHasta || undefined}
+              onChange={(e) => setFechaDesde(e.target.value)} className="h-9 min-h-0 w-full sm:w-[145px] text-sm" />
+          </label>
+          <label className="flex w-full items-center gap-2 text-xs text-muted-foreground sm:w-auto">
+            Hasta
+            <Input type="date" aria-label="Fecha hasta" value={fechaHasta} min={fechaDesde || undefined}
+              onChange={(e) => setFechaHasta(e.target.value)} className="h-9 min-h-0 w-full sm:w-[145px] text-sm" />
+          </label>
           <Button type="button" variant="secondary" className="h-9" onClick={() => void load()} disabled={loading}>
             <RefreshCw className={loading ? "animate-spin" : ""} />
             Escanear
@@ -758,7 +803,7 @@ export default function IncidenciasPage() {
       </Dialog>
 
       <Dialog open={!!detail} onOpenChange={(o) => { if (!o) { setDetail(null); setAnalisis(""); setAnalisisError(""); } }}>
-        <DialogContent className="max-h-[90dvh] max-w-2xl overflow-y-auto">
+        <DialogContent className="max-h-[90dvh] sm:max-w-5xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Detalle de incidencia</DialogTitle>
             <DialogDescription>
@@ -770,7 +815,13 @@ export default function IncidenciasPage() {
           </DialogHeader>
           {detail && (
             <div className="space-y-3">
-              <pre className="max-h-[40vh] overflow-auto rounded-lg border border-border bg-[#141413] p-3 text-[11px] leading-relaxed text-[#e8e8e4] whitespace-pre-wrap break-words">
+              <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
+                <span>Primera vez: {fmtWhen(detail.Inc_Primera_Vez)}</span>
+                <span>Última vez: {fmtWhen(detail.Inc_Ultima_Vez)}</span>
+                <span>Ocurrencias: {detail.Inc_Ocurrencias}</span>
+                <span>Estado: {detail.Inc_Estado}</span>
+              </div>
+              <pre className="max-h-[55vh] overflow-auto rounded-lg border border-border bg-[#141413] p-4 text-xs leading-relaxed text-[#e8e8e4] whitespace-pre-wrap break-words">
                 {detail.Inc_Mensaje || detail.Inc_Titulo}
               </pre>
               {analisisError && <Alert variant="destructive">{analisisError}</Alert>}
@@ -793,6 +844,31 @@ export default function IncidenciasPage() {
                   </pre>
                 </div>
               )}
+              <section className="space-y-3 border-t border-border pt-4">
+                <h3 className="text-sm font-semibold">Línea del tiempo</h3>
+                {eventos.length === 0 && <p className="text-xs text-muted-foreground">Aún no hay acciones registradas.</p>}
+                <ol className="space-y-3">
+                  {eventos.map((evento) => (
+                    <li key={evento.Eve_Cod} className="rounded-lg border border-border p-3 text-xs">
+                      <div className="flex flex-wrap justify-between gap-2 font-semibold">
+                        <span>{({ analisis_ia: "Análisis con IA", analisis_error: "Error del análisis con IA", cursor: "Solicitud a Cursor", cursor_error: "Error de Cursor", mr: "MR registrado manualmente", despliegue: "Despliegue registrado manualmente" } as Record<string, string>)[evento.Eve_Tipo] || evento.Eve_Tipo}</span>
+                        <time className="font-normal text-muted-foreground">{fmtWhen(evento.Eve_Fecha)}</time>
+                      </div>
+                      {evento.Eve_Detalle && <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words font-sans leading-relaxed">{evento.Eve_Detalle}</pre>}
+                      {evento.Eve_Referencia?.startsWith("https://") && <a href={evento.Eve_Referencia} target="_blank" rel="noopener noreferrer" className="mt-2 block break-all text-blue-700 underline">Abrir referencia</a>}
+                    </li>
+                  ))}
+                </ol>
+                {canCreateTask && <p className="text-xs text-muted-foreground">Registra el MR o despliegue cuando tengas una referencia verificable.</p>}
+                {canCreateTask && <div className="flex flex-wrap items-center gap-2">
+                  <Select value={hitoTipo} onChange={(e) => setHitoTipo(e.target.value as "mr" | "despliegue")} wrapperClassName="w-full sm:w-[170px]">
+                    <option value="mr">MR creado</option><option value="despliegue">Despliegue realizado</option>
+                  </Select>
+                  <Input value={hitoReferencia} onChange={(e) => setHitoReferencia(e.target.value)} placeholder="URL del MR o referencia del despliegue" className="min-w-0 flex-1" maxLength={500} />
+                  <Button type="button" variant="outline" disabled={hitoSaving || !hitoReferencia.trim()} onClick={() => void guardarHito()}>Registrar</Button>
+                </div>}
+                {hitoError && <Alert variant="destructive">{hitoError}</Alert>}
+              </section>
             </div>
           )}
           <DialogFooter>

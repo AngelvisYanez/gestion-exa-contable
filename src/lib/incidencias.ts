@@ -457,6 +457,15 @@ export function scanErrorLogs(): {
 async function ensureTable(dbDis: string) {
   const prisma = getPrisma(dbDis);
   await prisma.$executeRawUnsafe(CREATE_SQL);
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS aud_incidencias_eventos (
+    Eve_Cod INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    Inc_Cod INT NOT NULL,
+    Eve_Tipo VARCHAR(40) NOT NULL,
+    Eve_Detalle MEDIUMTEXT NULL,
+    Eve_Referencia VARCHAR(500) NULL,
+    Eve_Fecha DATETIME NOT NULL,
+    KEY idx_inc_fecha (Inc_Cod, Eve_Fecha)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
   // Si la tabla ya existía con DEFAULT CURRENT_TIMESTAMP, corregir columnas.
   await prisma.$executeRawUnsafe(ALTER_DATETIME_SQL);
   for (const sql of ALTER_EXTRA_COLUMNS) {
@@ -466,6 +475,30 @@ async function ensureTable(dbDis: string) {
       // columna o índice ya existe
     }
   }
+}
+
+export async function listIncidenciaEventos(dbDis: string, incCod: number) {
+  const db = sanitizeDbDis(dbDis);
+  await ensureTable(db);
+  const prisma = getPrisma(db);
+  const rows = await prisma.$queryRawUnsafe<Array<{ Eve_Cod: number; Eve_Tipo: string; Eve_Detalle: string | null; Eve_Referencia: string | null; Eve_Fecha: Date }>>(
+    `SELECT Eve_Cod, Eve_Tipo, Eve_Detalle, Eve_Referencia, Eve_Fecha FROM aud_incidencias_eventos WHERE Inc_Cod = ? ORDER BY Eve_Fecha DESC, Eve_Cod DESC`, incCod
+  );
+  return rows.map((row) => ({ ...row, Eve_Fecha: iso(row.Eve_Fecha) }));
+}
+
+async function addIncidenciaEvento(dbDis: string, incCod: number, tipo: string, detalle: string, referencia?: string) {
+  const prisma = getPrisma(sanitizeDbDis(dbDis));
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO aud_incidencias_eventos (Inc_Cod, Eve_Tipo, Eve_Detalle, Eve_Referencia, Eve_Fecha)
+     SELECT Inc_Cod, ?, ?, ?, NOW() FROM aud_incidencias WHERE Inc_Cod = ? AND Inc_Est = 'A'`,
+    tipo, detalle, referencia || null, incCod
+  );
+}
+
+export async function registrarHitoIncidencia(dbDis: string, incCod: number, tipo: "mr" | "despliegue", referencia: string) {
+  await ensureTable(sanitizeDbDis(dbDis));
+  await addIncidenciaEvento(dbDis, incCod, tipo, referencia, referencia.startsWith("https://") ? referencia : undefined);
 }
 
 type DbRow = {
@@ -495,7 +528,7 @@ function rowProyecto(r: DbRow): IncProyecto | null {
 
 export async function listIncidencias(
   dbDis: string,
-  opts: { estado?: string; nivel?: string; proyecto?: string; q?: string; sync?: boolean } = {}
+  opts: { estado?: string; nivel?: string; proyecto?: string; fechaDesde?: string; fechaHasta?: string; q?: string; sync?: boolean } = {}
 ): Promise<{
   incidencias: IncidenciaView[];
   kpis: { total: number; nuevas: number; fatales: number; conTarea: number; ignoradas: number };
@@ -553,6 +586,15 @@ export async function listIncidencias(
   if (opts.nivel && opts.nivel !== "todos") {
     where.push("Inc_Nivel = ?");
     params.push(opts.nivel);
+  }
+  const validDate = (value: string | undefined) => value && /^\d{4}-\d{2}-\d{2}$/.test(value);
+  if (validDate(opts.fechaDesde)) {
+    where.push("Inc_Ultima_Vez >= ?");
+    params.push(opts.fechaDesde!);
+  }
+  if (validDate(opts.fechaHasta)) {
+    where.push("Inc_Ultima_Vez < DATE_ADD(?, INTERVAL 1 DAY)");
+    params.push(opts.fechaHasta!);
   }
   if (opts.proyecto && opts.proyecto !== "todos") {
     const proy = opts.proyecto === "ofsercont" || opts.proyecto === "relavera" ? opts.proyecto : "";
@@ -679,7 +721,11 @@ Si falta codigo o evidencia, dilo explicitamente. La respuesta es una sugerencia
     user: `Proyecto: ${proyectoLabel(proyecto)}\nNivel: ${row.Inc_Nivel}\nTitulo: ${row.Inc_Titulo}\nArchivo: ${row.Inc_Archivo || "desconocido"}:${row.Inc_Linea || "?"}\nOcurrencias: ${row.Inc_Ocurrencias}\nFuente: ${row.Inc_Fuente || "desconocida"}\n\nLOG:\n${(row.Inc_Mensaje || "").slice(0, 6000)}\n\nCODIGO:\n${codigo}`.replace(/(password|passwd|token|api[_-]?key|secret)(\s*[:=]\s*)([^\s,;]+)/gi, "$1$2[REDACTADO]"),
     retries: 0,
   });
-  if (!ai.ok) throw new Error(ai.error || "No se pudo analizar con Gemini");
+  if (!ai.ok) {
+    await addIncidenciaEvento(dbDis, incCod, "analisis_error", ai.error || "No se pudo analizar con Gemini");
+    throw new Error(ai.error || "No se pudo analizar con Gemini");
+  }
+  await addIncidenciaEvento(dbDis, incCod, "analisis_ia", ai.text, ai.model);
   return { Inc_Cod: incCod, analisis: ai.text, modelo: ai.model, contextoCodigo: codigo !== "Codigo fuente no disponible; diagnosticar solo con el log." };
 }
 
@@ -741,9 +787,11 @@ Log:\n${log}` },
     const url = payload.agent?.url;
     if (!url || !/^https:\/\/cursor\.com\/agents\//.test(url)) throw new Error("Cursor no devolvió el enlace del agente");
     await prisma.$executeRawUnsafe(`UPDATE aud_incidencias SET Inc_Cursor_Url = ? WHERE Inc_Cod = ?`, url, incCod);
+    await addIncidenciaEvento(dbDis, incCod, "cursor", "Propuesta solicitada a Cursor. El enlace del agente no confirma que exista un MR.", url);
     return { url, existing: false };
   } catch (error) {
     await prisma.$executeRawUnsafe(`UPDATE aud_incidencias SET Inc_Cursor_Url = NULL WHERE Inc_Cod = ? AND Inc_Cursor_Url = 'pending'`, incCod);
+    await addIncidenciaEvento(dbDis, incCod, "cursor_error", error instanceof Error ? error.message : "Error al solicitar Cursor");
     throw error;
   }
 }
