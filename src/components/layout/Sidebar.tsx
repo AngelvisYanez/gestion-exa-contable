@@ -79,6 +79,12 @@ const navGroups: NavGroup[] = [
     group: "GESTION",
     items: [
       {
+        href: "/plan-de-accion",
+        label: "Plan de Acción",
+        roles: ["manager"],
+        icon: <ClipboardList className="w-[17px] h-[17px]" strokeWidth={1.8} />,
+      },
+      {
         href: "/capacitaciones",
         label: "Capacitaciones",
         roles: ["manager"],

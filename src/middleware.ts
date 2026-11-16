@@ -58,6 +58,7 @@ export async function middleware(req: NextRequest) {
   }
 
   const oversight =
+    pathname.startsWith("/plan-de-accion") ||
     pathname.startsWith("/capacitaciones") ||
     pathname.startsWith("/api/capacitaciones") ||
     pathname.startsWith("/monitoreo") ||
