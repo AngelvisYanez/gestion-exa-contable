@@ -43,6 +43,7 @@ export type Ticket = {
   /** Campos del formato WhatsApp (parseados de Tic_Des). */
   Enviado_Por: string | null;
   Proceso: string | null;
+  Modulo?: string | null;
   Evidencias: Array<{ ruta: string; url: string; nombre: string; esImagen: boolean }>;
   /** Archivos que el cliente adjunto al crear el ticket en EXA. */
   Adjuntos_Exa?: TicketAdjuntoExa[];
@@ -98,6 +99,7 @@ export function ticketAsTarea(t: Ticket) {
     Creador_Nombre: t.Creador_Nombre,
     Enviado_Por: t.Enviado_Por,
     Proceso: t.Proceso,
+    Modulo: t.Modulo,
     Evidencias: t.Evidencias,
     Adjuntos_Exa: t.Adjuntos_Exa,
     Db_Origen: t.Db_Origen || null,

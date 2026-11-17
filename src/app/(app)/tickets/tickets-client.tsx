@@ -74,6 +74,7 @@ type EmpresaOpt = {
   Emp_Cod: number;
   Emp_Nom: string;
 };
+type ModuloOpt = { id: number; nombre: string };
 
 type Kpis = {
   total: number;
@@ -365,6 +366,8 @@ export default function TicketsPage({ mode = "all" }: { mode?: "all" | "mine" })
   const [formEmpCod, setFormEmpCod] = useState("");
   const [formTel, setFormTel] = useState("");
   const [formProceso, setFormProceso] = useState("Modificar");
+  const [formOrgCod, setFormOrgCod] = useState("");
+  const [modulos, setModulos] = useState<ModuloOpt[]>([]);
   const [formTitulo, setFormTitulo] = useState("");
   const [formDesc, setFormDesc] = useState("");
   const [formPrio, setFormPrio] = useState("Media");
@@ -392,6 +395,7 @@ export default function TicketsPage({ mode = "all" }: { mode?: "all" | "mine" })
     setEmpQuery("");
     setFormTel("");
     setFormProceso("Modificar");
+    setFormOrgCod("");
     setFormTitulo("");
     setFormDesc("");
     setFormPrio("Media");
@@ -446,6 +450,16 @@ export default function TicketsPage({ mode = "all" }: { mode?: "all" | "mine" })
     }
   }, [bandeja, q, rango.desde, rango.hasta, db, todasLasFechas, puedeAsignar, isMine]);
 
+  useEffect(() => {
+    if (!formOpen) return;
+    let active = true;
+    fetch(`/api/tickets?modulos=1&Ses_Dat_Dis=${encodeURIComponent(db)}`)
+      .then((r) => r.json())
+      .then((j) => { if (active) setModulos(j.success ? j.modulos || [] : []); })
+      .catch(() => { if (active) setModulos([]); });
+    return () => { active = false; };
+  }, [formOpen, db]);
+
   const vistaIniciada = useRef(false);
   useEffect(() => {
     if (authLoading || !user || vistaIniciada.current) return;
@@ -469,6 +483,10 @@ export default function TicketsPage({ mode = "all" }: { mode?: "all" | "mine" })
   }, [lastTaskEventAt, load, vistaLista]);
 
   const crearTicket = async () => {
+    if (!formOrgCod) {
+      setFormError("Selecciona el módulo del ticket.");
+      return;
+    }
     if (!formTitulo.trim()) {
       setFormError("El titulo es obligatorio.");
       return;
@@ -496,6 +514,7 @@ export default function TicketsPage({ mode = "all" }: { mode?: "all" | "mine" })
           empCod: formEmpCod ? Number(formEmpCod) : undefined,
           telefono: formTel,
           proceso: formProceso,
+          orgCod: formOrgCod ? Number(formOrgCod) : undefined,
           usuCreador: user?.usuCod || undefined,
         }),
       });
@@ -965,6 +984,7 @@ export default function TicketsPage({ mode = "all" }: { mode?: "all" | "mine" })
                         {t.Emp_Nom || "Empresa no indicada"}
                       </div>
                       {t.Proceso && <div>Proceso: {t.Proceso}</div>}
+                      {t.Modulo && <div>Módulo: {t.Modulo}</div>}
                       {t.Tic_Tel && <div>Tel: {t.Tic_Tel}</div>}
                       <div>
                         Desarrollador:{" "}
@@ -1081,6 +1101,7 @@ export default function TicketsPage({ mode = "all" }: { mode?: "all" | "mine" })
                       >
                         Empresa {sortIcon("Emp_Nom")}
                       </TableHead>
+                      <TableHead className="min-w-[150px]">Módulo</TableHead>
                       <TableHead
                         className="min-w-[160px] cursor-pointer select-none"
                         onClick={() => toggleSort("Contacto")}
@@ -1147,6 +1168,7 @@ export default function TicketsPage({ mode = "all" }: { mode?: "all" | "mine" })
                         <TableCell className="min-w-[160px] text-xs text-muted-foreground">
                           {t.Emp_Nom || "Empresa no indicada"}
                         </TableCell>
+                        <TableCell className="min-w-[150px] text-xs">{t.Modulo || "—"}</TableCell>
                         <TableCell className="min-w-[160px] text-xs">
                           <div className="font-medium text-foreground">
                             {t.Enviado_Por || t.Creador_Nombre || "—"}
@@ -1461,6 +1483,13 @@ export default function TicketsPage({ mode = "all" }: { mode?: "all" | "mine" })
                 </Select>
               </div>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="space-y-2 sm:col-span-2">
+                  <Label>Módulo</Label>
+                  <Select value={formOrgCod} onChange={(e) => setFormOrgCod(e.target.value)} disabled={formSaving}>
+                    <option value="">Selecciona un módulo</option>
+                    {modulos.map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}
+                  </Select>
+                </div>
                 <div className="space-y-2">
                   <Label>Telefono</Label>
                   <Input

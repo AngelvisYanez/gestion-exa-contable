@@ -223,7 +223,7 @@ async function firstId(
  */
 async function resolveTicketFks(
   prisma: PrismaClient,
-  opts: { empCod?: number; usuCod?: number }
+  opts: { empCod?: number; usuCod?: number; orgCod?: number }
 ) {
   let emp = opts.empCod && opts.empCod > 0 ? opts.empCod : 0;
   if (emp && !(await firstId(prisma, `SELECT Emp_Cod FROM empresas WHERE Emp_Cod = ? LIMIT 1`, [emp]))) {
@@ -250,7 +250,9 @@ async function resolveTicketFks(
   }
   if (!usu) throw new Error("No hay un usuario EXA valido para registrar el ticket.");
 
-  const org =
+  const org = opts.orgCod && opts.orgCod > 0
+    ? await firstId(prisma, `SELECT Org_Cod FROM organizado WHERE Org_Cod = ? LIMIT 1`, [opts.orgCod])
+    :
     (await firstId(
       prisma,
       `SELECT o.Org_Cod
@@ -260,7 +262,7 @@ async function resolveTicketFks(
        ORDER BY COUNT(*) DESC
        LIMIT 1`
     )) || (await firstId(prisma, `SELECT Org_Cod FROM organizado ORDER BY Org_Cod ASC LIMIT 1`));
-  if (!org) throw new Error("No hay un modulo en organizado para vincular el ticket.");
+  if (!org) throw new Error("El modulo seleccionado no existe en organizado.");
 
   const pcs =
     (await firstId(
@@ -418,6 +420,7 @@ export async function listTickets(
     Tic_Tip: number | null;
     Tic_Evi_Pro: string | null;
     Tic_Evi_Sol: string | null;
+    Modulo: string | null;
   };
 
   const rows = await prisma.$queryRawUnsafe<Row[]>(
@@ -439,7 +442,9 @@ export async function listTickets(
        t.Tic_Tip,
        CONVERT(t.Tic_Evi_Pro USING utf8mb4) AS Tic_Evi_Pro,
        CONVERT(t.Tic_Evi_Sol USING utf8mb4) AS Tic_Evi_Sol
+       ,CONVERT(o.Org_Des USING utf8mb4) AS Modulo
      FROM tickets t
+     LEFT JOIN organizado o ON o.Org_Cod = t.Org_Cod
      LEFT JOIN empresas e ON e.Emp_Cod = t.Emp_Cod
      LEFT JOIN usuarios uc ON uc.Usu_Cod = t.Usu_Cod
      LEFT JOIN persona pc ON pc.Prs_Cod = uc.Prs_Cod
@@ -537,6 +542,7 @@ export async function listTickets(
       Tic_Obs: r.Tic_Obs,
       Enviado_Por: parsed.enviadoPor || null,
       Proceso: parsed.proceso || (r.Tic_Obs && r.Tic_Obs !== "N/A" ? r.Tic_Obs : null),
+      Modulo: r.Modulo?.trim() || null,
       Db_Origen: db,
       Evidencias: parsed.adjuntos.map((ruta) => {
         const nombre = ruta.split("/").pop() || ruta;
@@ -957,6 +963,7 @@ export async function createTicket(
     empresa?: string;
     telefono?: string;
     proceso?: string;
+    orgCod?: number;
     adjuntos?: string[];
   }
 ) {
@@ -986,6 +993,7 @@ export async function createTicket(
   const fk = await resolveTicketFks(prisma, {
     empCod: data.empCod,
     usuCod: data.usuCreador,
+    orgCod: data.orgCod,
   });
 
   try {

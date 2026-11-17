@@ -73,6 +73,7 @@ function textoParaCompartir(ticket: Tarea, avances: AvanceTicket[]) {
   if (ticket.Emp_Nom) lineas.push(`Empresa: ${ticket.Emp_Nom}`);
   if (ticket.Tic_Tel) lineas.push(`Teléfono: ${ticket.Tic_Tel}`);
   if (ticket.Proceso) lineas.push(`Proceso: ${ticket.Proceso}`);
+  if (ticket.Modulo) lineas.push(`Módulo: ${ticket.Modulo}`);
 
   const descripcion = plainTextFromHtml(ticket.Tar_Descripcion);
   if (descripcion) lineas.push(`\nDescripción:\n${descripcion}`);
@@ -366,6 +367,12 @@ export function TicketDetalleDialog({ ticket, onClose, onRegistrarAvance, onConv
                     <Wrench className="size-4 text-muted-foreground" />
                     <span className="text-muted-foreground">Proceso:</span>
                     <strong>{ticket.Proceso}</strong>
+                  </div>
+                )}
+                {ticket?.Modulo && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground">Módulo:</span>
+                    <strong>{ticket.Modulo}</strong>
                   </div>
                 )}
               </div>

@@ -11,6 +11,7 @@ import { fechaFinPorPlazo } from "@/lib/plazo";
 import { linkTicketTarea } from "@/lib/ticket-tarea";
 import { asignacionSoloPropia } from "@/lib/ticket-assign";
 import { ticketScopeForSession } from "@/lib/ticket-scope";
+import { listOfsercontCatalogo } from "@/lib/brief/catalog";
 import {
   assignTicket,
   attachTicketEvidencias,
@@ -43,6 +44,11 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, message: "Tu rol no tiene acceso a tickets." }, { status: 403 });
     }
     const sp = req.nextUrl.searchParams;
+    if (sp.get("modulos") === "1") {
+      const db = sanitizeDbDis(sp.get("Ses_Dat_Dis"));
+      const modulos = await listOfsercontCatalogo(db);
+      return NextResponse.json({ success: true, modulos: modulos.map(({ id, nombre }) => ({ id, nombre })) });
+    }
     const itemParam = sp.get("item");
     if (itemParam !== null) {
       const itemCod = Number(itemParam);
@@ -278,6 +284,9 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "create") {
+      if (!Number.isSafeInteger(Number(body.orgCod)) || Number(body.orgCod) <= 0) {
+        return NextResponse.json({ success: false, message: "Selecciona un módulo válido." }, { status: 400 });
+      }
       const adjuntos = Array.isArray(body.adjuntos) ? body.adjuntos.map(String) : [];
       const ticket = await createTicket(db, {
         titulo: String(body.titulo || ""),
@@ -290,6 +299,7 @@ export async function POST(req: NextRequest) {
         empresa: body.empresa != null ? String(body.empresa) : undefined,
         telefono: body.telefono != null ? String(body.telefono) : undefined,
         proceso: body.proceso != null ? String(body.proceso) : undefined,
+        orgCod: body.orgCod ? Number(body.orgCod) : undefined,
         adjuntos,
       });
       publishEvent({

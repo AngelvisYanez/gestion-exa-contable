@@ -1419,8 +1419,9 @@ class ExaMonitorApp:
             return
         inicio = datetime.now(timezone(timedelta(hours=-5))).date().isoformat()
         estado_form = {"standby": False}
-        titulo = ft.TextField(label="Título *", autofocus=True,
-                              hint_text="¿Qué hay que hacer?", border_color=C["border"])
+        titulo = ft.TextField(label="Título de la tarea *", autofocus=True,
+                              hint_text="¿Qué hay que hacer?", border_color=C["border"],
+                              bgcolor=C["card"])
         seleccion = {"start": 0, "end": 0}
 
         def on_descripcion_selection(e):
@@ -1477,12 +1478,12 @@ class ExaMonitorApp:
         )
         prioridad = ft.Dropdown(label="Prioridad", value="Media", expanded_insets=ft.Padding.all(0), options=[
             ft.DropdownOption(key=v, text=v) for v in ("Alta", "Media", "Baja")
-        ])
+        ], bgcolor=C["card"])
         complejidad = ft.Dropdown(label="Complejidad", value="Media", expanded_insets=ft.Padding.all(0), options=[
             ft.DropdownOption(key=v, text=v) for v in ("Baja", "Media", "Alta", "Muy alta")
-        ])
-        fecha_fin = ft.TextField(label="Fecha fin", hint_text="AAAA-MM-DD · opcional",
-                                  border_color=C["border"])
+        ], bgcolor=C["card"])
+        fecha_fin = ft.TextField(label="Fecha límite", hint_text="AAAA-MM-DD · opcional",
+                                  border_color=C["border"], bgcolor=C["card"])
         plazo_hint = ft.Text("Elige un plazo o escribe una fecha de fin.", size=11, color=C["text_muted"])
         plazo = ft.SegmentedButton(
             segments=[ft.Segment(value=v, label=ft.Text(v)) for v in
@@ -1519,13 +1520,13 @@ class ExaMonitorApp:
         plazo.on_change = elegir_plazo
         fecha_fin.on_change = actualizar_plazo
         asignables = self.asignables if self.permisos_tarea.get("asignar") else []
-        asignar = ft.Dropdown(label="Asignar a", value="", expanded_insets=ft.Padding.all(0), options=[
+        asignar = ft.Dropdown(label="Responsable", value="", expanded_insets=ft.Padding.all(0), options=[
             ft.DropdownOption(key="", text="Sin asignar"),
             *[
                 ft.DropdownOption(key=str(p.get("Per_Cod")), text=p.get("Nombre") or "Sin nombre")
                 for p in asignables if p.get("Per_Cod")
             ],
-        ])
+        ], bgcolor=C["card"])
         archivos: list[str] = []
         creado = {"cod": 0}
         label_files = ft.Text("Sin archivos adjuntos", size=11, color=C["text_muted"])
@@ -1562,14 +1563,34 @@ class ExaMonitorApp:
                 archivos.remove(ruta)
                 actualizar_archivos()
 
-        def mostrar_error(msg: str):
+        def mostrar_error(msg: str, *, desplazar: bool = False):
             error.value = msg
             error.visible = True
             self.page.update()
+            if desplazar:
+                self.page.run_task(dialog.content.scroll_to, offset=0)
 
         def cerrar(_ev=None):
             if not guardar.disabled:
                 self.page.pop_dialog()
+
+        def seccion(icono, nombre: str, ayuda: str, *controles) -> ft.Container:
+            return ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Icon(icono, size=18, color=C["primary"]),
+                        ft.Column([
+                            ft.Text(nombre, size=14, weight=ft.FontWeight.BOLD, color=C["text"]),
+                            ft.Text(ayuda, size=11, color=C["text_muted"]),
+                        ], spacing=1, tight=True, expand=True),
+                    ], spacing=9, vertical_alignment=ft.CrossAxisAlignment.START),
+                    *controles,
+                ], spacing=11, tight=True,
+                   horizontal_alignment=ft.CrossAxisAlignment.STRETCH),
+                bgcolor=C["muted_bg"],
+                border_radius=12,
+                padding=14,
+            )
 
         dialog = ft.AlertDialog(
             modal=True,
@@ -1580,46 +1601,52 @@ class ExaMonitorApp:
                              bgcolor=C["muted_bg"], padding=10, border_radius=10),
                 ft.Column([
                     ft.Text("Nueva tarea", size=19, weight=ft.FontWeight.BOLD, color=C["text"]),
-                    ft.Text("Completa los datos y elige un plazo.", size=11, color=C["text_muted"]),
-                ], spacing=1, tight=True),
+                    ft.Text("Define el trabajo, el plazo y la persona responsable.",
+                            size=11, color=C["text_muted"]),
+                ], spacing=1, tight=True, expand=True),
+                ft.IconButton(icon=ft.Icons.CLOSE, tooltip="Cerrar", icon_color=C["text_muted"],
+                              on_click=cerrar),
             ], spacing=12),
             content=ft.Column(
                 [
-                    section_label("Datos de la tarea"),
-                    titulo,
-                    ft.Text("Descripción", size=12, weight=ft.FontWeight.W_600, color=C["text"]),
-                    editor_descripcion,
-                    ft.Row([
-                        ft.Container(content=prioridad, expand=True),
-                        ft.Container(content=complejidad, expand=True),
-                    ], spacing=12),
-                    ft.Divider(height=10, color=C["border_soft"]),
-                    section_label("Plazo y fecha de fin"),
-                    plazo,
-                    plazo_hint,
-                    ft.Row([
-                        ft.Container(content=fecha_fin, expand=True),
-                        ft.IconButton(icon=ft.Icons.CALENDAR_MONTH, tooltip="Elegir fecha",
-                                      icon_color=C["primary"], on_click=lambda _ev: self.page.run_task(abrir_calendario)),
-                        ft.IconButton(icon=ft.Icons.CLOSE, tooltip="Quitar fecha",
-                                      icon_color=C["text_muted"], on_click=lambda _ev: limpiar_fecha()),
-                    ], spacing=4),
-                    *([ft.Divider(height=10, color=C["border_soft"]),
-                       section_label("Asignación"), asignar]
+                    error,
+                    seccion(ft.Icons.DESCRIPTION_OUTLINED, "Datos principales",
+                            "Describe el resultado esperado y su importancia.",
+                            titulo,
+                            ft.Text("Descripción", size=12, weight=ft.FontWeight.W_600, color=C["text"]),
+                            editor_descripcion,
+                            ft.Row([
+                                ft.Container(content=prioridad, expand=True),
+                                ft.Container(content=complejidad, expand=True),
+                            ], spacing=12)),
+                    seccion(ft.Icons.CALENDAR_MONTH, "Planificación",
+                            "Elige un plazo rápido o define una fecha límite.",
+                            plazo,
+                            ft.Row([
+                                ft.Container(content=fecha_fin, expand=True),
+                                ft.IconButton(icon=ft.Icons.CALENDAR_MONTH, tooltip="Elegir fecha",
+                                              icon_color=C["primary"],
+                                              on_click=lambda _ev: self.page.run_task(abrir_calendario)),
+                                ft.IconButton(icon=ft.Icons.CLOSE, tooltip="Quitar fecha",
+                                              icon_color=C["text_muted"],
+                                              on_click=lambda _ev: limpiar_fecha()),
+                            ], spacing=4),
+                            plazo_hint),
+                    *([seccion(ft.Icons.PERSON_OUTLINE, "Responsable",
+                               "Puedes asignarla ahora o dejarla sin asignar.", asignar)]
                       if self.permisos_tarea.get("asignar") else []),
-                    *([ft.Divider(height=10, color=C["border_soft"]),
-                       section_label("Archivos de contexto"),
-                       ft.Row([btn_files, label_files], wrap=True, spacing=10),
-                       files_chips]
+                    *([seccion(ft.Icons.ATTACH_FILE, "Archivos de contexto",
+                               "Adjunta documentos que ayuden a empezar.",
+                               ft.Row([btn_files, label_files], wrap=True, spacing=10),
+                               files_chips)]
                       if self.permisos_tarea.get("editar") else []),
                     progreso,
                     estado_upload,
-                    error,
                 ],
                 width=dialog_content_width(self.page.window.width, 620),
-                height=max(300, min(490, int(self.page.window.height or 860) - 180)),
+                height=max(300, min(600, int(self.page.window.height or 860) - 175)),
                 scroll=ft.ScrollMode.AUTO,
-                spacing=10, horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                spacing=12, horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
             ),
             actions=[ft.TextButton("Cancelar", on_click=cerrar), guardar],
             actions_alignment=ft.MainAxisAlignment.END,
@@ -1693,7 +1720,7 @@ class ExaMonitorApp:
 
         def crear(_ev=None):
             if not creado["cod"] and not (titulo.value or "").strip():
-                mostrar_error("El título es obligatorio.")
+                mostrar_error("El título es obligatorio.", desplazar=True)
                 return
             fin = (fecha_fin.value or "").strip()
             if estado_form["standby"]:
@@ -1704,7 +1731,7 @@ class ExaMonitorApp:
                         raise ValueError("formato")
                     date.fromisoformat(fin)
                 except ValueError:
-                    mostrar_error("Usa una fecha válida en formato AAAA-MM-DD.")
+                    mostrar_error("Usa una fecha válida en formato AAAA-MM-DD.", desplazar=True)
                     return
             guardar.disabled = True
             guardar.text = "Guardando..."
@@ -1773,7 +1800,7 @@ class ExaMonitorApp:
                     self._show_info("Tarea creada", f"Tarea #{creado['cod']} creada correctamente.")
                 except Exception as exc:
                     suffix = f" La tarea #{creado['cod']} ya existe; puedes reintentar los adjuntos." if creado["cod"] else ""
-                    mostrar_error(str(exc) + suffix)
+                    mostrar_error(str(exc) + suffix, desplazar=True)
                     guardar.disabled = False
                     guardar.text = "Reintentar adjuntos" if creado["cod"] else "Crear tarea"
                     self.page.update()
