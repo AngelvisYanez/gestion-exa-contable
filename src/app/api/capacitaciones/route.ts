@@ -12,11 +12,12 @@ const validText = (value: unknown, max: number) => typeof value === "string" && 
 
 export async function GET(req: NextRequest) {
   const session = await getSessionFromRequest(req);
-  if (session?.role !== "manager") return bad("Solo encargados.", 403);
+  if (session?.role !== "manager" && session?.role !== "developer") return bad("Tu rol no tiene acceso a capacitaciones.", 403);
   try {
     const proyecto = req.nextUrl.searchParams.get("proyecto");
     if (proyecto && !CAPACITACION_PROYECTOS.some((p) => p.id === proyecto)) return bad("Proyecto inválido.");
     if (req.nextUrl.searchParams.get("view") === "miembros") {
+      if (session.role !== "manager") return bad("Solo encargados.", 403);
       if (!proyecto || !CAPACITACION_PROYECTOS.some((p) => p.id === proyecto)) return bad("Proyecto inválido.");
       const miembros = await listAsignables(proyecto);
       return NextResponse.json({ success: true, miembros: miembros.map((m) => ({ Per_Cod: m.Per_Cod, Nombre: m.Nombre })) });
@@ -38,15 +39,19 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const session = await getSessionFromRequest(req);
-  if (session?.role !== "manager") return bad("Solo encargados.", 403);
+  if (session?.role !== "manager" && session?.role !== "developer") return bad("Tu rol no tiene acceso a capacitaciones.", 403);
   try {
     const body = await req.json();
     if (!validText(body.titulo, 255) || !validText(body.empresa, 180) || !validText(body.cliente, 180)) return bad("Completa título, empresa y cliente.");
     const proyecto = String(body.proyecto || "");
-    const responsable = Number(body.responsablePerCod);
+    const autoAsignar = session.role === "developer";
+    const responsable = autoAsignar ? session.perCod : Number(body.responsablePerCod);
+    if (autoAsignar && !responsable) return bad("Tu cuenta necesita una ficha de personal para crear capacitaciones.");
     if (!CAPACITACION_PROYECTOS.some((p) => p.id === proyecto)) return bad("Proyecto inválido.");
     if (!Number.isSafeInteger(responsable) || responsable < 1) return bad("Selecciona quién hará la capacitación.");
-    const miembro = (await listAsignables(proyecto)).find((m) => m.Per_Cod === responsable);
+    const miembro = autoAsignar
+      ? { Nombre: session.name }
+      : (await listAsignables(proyecto)).find((m) => m.Per_Cod === responsable);
     if (!miembro) return bad("El responsable no pertenece al proyecto.");
     const inicio = new Date(body.inicio);
     const duracion = Number(body.duracionMin);

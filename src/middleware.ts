@@ -57,10 +57,13 @@ export async function middleware(req: NextRequest) {
     return deny(req, "Tu rol no tiene acceso a tickets.");
   }
 
+  if ((pathname === "/capacitaciones" || pathname === "/api/capacitaciones") &&
+      session.role !== "manager" && session.role !== "developer") {
+    return deny(req, "Tu rol no tiene acceso a capacitaciones.");
+  }
+
   const oversight =
     pathname.startsWith("/plan-de-accion") ||
-    pathname.startsWith("/capacitaciones") ||
-    pathname.startsWith("/api/capacitaciones") ||
     pathname.startsWith("/monitoreo") ||
     pathname.startsWith("/configuracion") ||
     pathname.startsWith("/api/incidencias") ||

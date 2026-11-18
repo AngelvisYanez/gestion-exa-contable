@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuth } from "@/contexts/AuthContext";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, Download, Plus } from "lucide-react";
 import Topbar from "@/components/layout/Topbar";
@@ -15,6 +16,8 @@ const dateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() 
 const formatDate = (value: string) => new Intl.DateTimeFormat("es-VE", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 
 export default function CapacitacionesPage() {
+  const { user } = useAuth();
+  const isManager = user?.role === "manager";
   const projectOptions = CAPACITACION_PROYECTOS;
   const [items, setItems] = useState<Training[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
@@ -28,7 +31,7 @@ export default function CapacitacionesPage() {
   const [error, setError] = useState("");
   useEffect(() => { if (!project) setProject(CAPACITACION_PROYECTOS[0].id); }, [project]);
   useEffect(() => {
-    if (!project) return;
+    if (!project || !isManager || !showForm) return;
     let active = true;
     setMembers([]); setResponsablePerCod("");
     fetch(`/api/capacitaciones?view=miembros&proyecto=${encodeURIComponent(project)}`)
@@ -36,7 +39,7 @@ export default function CapacitacionesPage() {
       .then((j) => { if (active) setMembers(j.miembros || []); })
       .catch((e) => { if (active) setError(e instanceof Error ? e.message : "No se pudo cargar el equipo."); });
     return () => { active = false; };
-  }, [project]);
+  }, [project, isManager, showForm]);
   const load = useCallback(async () => {
     try {
       const response = await fetch("/api/capacitaciones", { cache: "no-store" });
@@ -86,13 +89,13 @@ export default function CapacitacionesPage() {
   return <div className="space-y-6 p-4 md:p-6">
     <Topbar title="Calendario de capacitaciones" />
     <div className="flex flex-wrap items-center gap-2">
-      <Button onClick={() => { setForm((v) => ({ ...v, inicio: `${selected}T09:00` })); setShowForm(!showForm); }}><Plus className="mr-2 size-4" />Nueva capacitación</Button>
+      <Button disabled={!user} onClick={() => { setForm((v) => ({ ...v, inicio: `${selected}T09:00` })); setShowForm(!showForm); }}><Plus className="mr-2 size-4" />Nueva capacitación</Button>
       <Button variant="outline" asChild><a href="/api/capacitaciones?format=ics"><Download className="mr-2 size-4" />Exportar calendario actualizado</a></Button>
     </div>
     {error && <p role="alert" className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
     {showForm && <form onSubmit={save} className="grid gap-4 rounded-xl border bg-card p-4 md:grid-cols-2">
       <div className="space-y-1"><Label htmlFor="proyecto">Proyecto</Label><Select id="proyecto" required value={project} onChange={(e) => setProject(e.target.value)}><option value="">Selecciona un proyecto</option>{projectOptions.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}</Select></div>
-      <div className="space-y-1"><Label htmlFor="responsable">Quién hace la capacitación</Label><Select id="responsable" required value={responsablePerCod} onChange={(e) => setResponsablePerCod(e.target.value)}><option value="">Selecciona un miembro</option>{members.map((m) => <option key={m.Per_Cod} value={m.Per_Cod}>{m.Nombre}</option>)}</Select></div>
+      {isManager ? <div className="space-y-1"><Label htmlFor="responsable">Quién hace la capacitación</Label><Select id="responsable" required value={responsablePerCod} onChange={(e) => setResponsablePerCod(e.target.value)}><option value="">Selecciona un miembro</option>{members.map((m) => <option key={m.Per_Cod} value={m.Per_Cod}>{m.Nombre}</option>)}</Select></div> : <div className="space-y-1"><Label>Responsable</Label><p className="text-sm">{user?.name} (se asigna al guardar)</p></div>}
       <div className="space-y-1"><Label htmlFor="titulo">Capacitación</Label><Input id="titulo" required maxLength={255} value={form.titulo} onChange={(e) => setForm({ ...form, titulo: e.target.value })} /></div>
       <div className="space-y-1"><Label htmlFor="empresa">Empresa</Label><Input id="empresa" required maxLength={180} value={form.empresa} onChange={(e) => setForm({ ...form, empresa: e.target.value })} /></div>
       <div className="space-y-1"><Label htmlFor="cliente">Cliente</Label><Input id="cliente" required maxLength={180} value={form.cliente} onChange={(e) => setForm({ ...form, cliente: e.target.value })} /></div>
@@ -106,7 +109,7 @@ export default function CapacitacionesPage() {
         <div className="grid grid-cols-7 text-center text-xs font-medium text-muted-foreground">{["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"].map((d) => <span key={d}>{d}</span>)}</div>
         <div className="mt-2 grid grid-cols-7 gap-1">{days.map((day) => { const key = dateKey(day); const count = byDay.get(key)?.length || 0; return <button key={key} type="button" onClick={() => setSelected(key)} className={`min-h-16 rounded-md border p-1 text-left text-sm hover:bg-accent ${key === selected ? "border-primary bg-accent" : ""} ${day.getMonth() !== month.getMonth() ? "text-muted-foreground opacity-50" : ""}`}><span>{day.getDate()}</span>{count > 0 && <span className="mt-1 block rounded bg-primary/15 px-1 text-xs text-primary">{count} sesión{count > 1 ? "es" : ""}</span>}</button>; })}</div>
       </section>
-      <section className="rounded-xl border bg-card p-4"><h2 className="mb-4 flex items-center gap-2 font-semibold"><CalendarDays className="size-4" />{new Intl.DateTimeFormat("es-VE", { dateStyle: "long" }).format(new Date(`${selected}T12:00:00`))}</h2>{selectedItems.length === 0 ? <p className="text-sm text-muted-foreground">Sin capacitaciones este día.</p> : <div className="space-y-3">{selectedItems.map((item) => <article key={item.Cap_Cod} className="rounded-lg border p-3 text-sm"><h3 className="font-semibold">{item.Cap_Titulo}</h3><p>{nombreProyectoCapacitacion(item.Cap_Proyecto)} · {item.Cap_Responsable_Nombre || "Sin responsable"}</p><p>{item.Cap_Empresa} · {item.Cap_Cliente}</p><p className="text-muted-foreground">{formatDate(item.Cap_Inicio)} · {item.Cap_Duracion_Min} min</p><p className="mt-1 font-medium">{item.Cap_Estado}</p>{item.Cap_Estado === "Programada" && <Button className="mt-2" size="sm" variant="outline" disabled={busy} onClick={() => void finish(item.Cap_Cod)}>Finalizar</Button>}</article>)}</div>}</section>
+      <section className="rounded-xl border bg-card p-4"><h2 className="mb-4 flex items-center gap-2 font-semibold"><CalendarDays className="size-4" />{new Intl.DateTimeFormat("es-VE", { dateStyle: "long" }).format(new Date(`${selected}T12:00:00`))}</h2>{selectedItems.length === 0 ? <p className="text-sm text-muted-foreground">Sin capacitaciones este día.</p> : <div className="space-y-3">{selectedItems.map((item) => <article key={item.Cap_Cod} className="rounded-lg border p-3 text-sm"><h3 className="font-semibold">{item.Cap_Titulo}</h3><p>{nombreProyectoCapacitacion(item.Cap_Proyecto)} · {item.Cap_Responsable_Nombre || "Sin responsable"}</p><p>{item.Cap_Empresa} · {item.Cap_Cliente}</p><p className="text-muted-foreground">{formatDate(item.Cap_Inicio)} · {item.Cap_Duracion_Min} min</p><p className="mt-1 font-medium">{item.Cap_Estado}</p>{isManager && item.Cap_Estado === "Programada" && <Button className="mt-2" size="sm" variant="outline" disabled={busy} onClick={() => void finish(item.Cap_Cod)}>Finalizar</Button>}</article>)}</div>}</section>
     </div>
   </div>;
 }

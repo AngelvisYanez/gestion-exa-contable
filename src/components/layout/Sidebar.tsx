@@ -87,7 +87,7 @@ const navGroups: NavGroup[] = [
       {
         href: "/capacitaciones",
         label: "Capacitaciones",
-        roles: ["manager"],
+        roles: ["manager", "developer"],
         icon: <CalendarDays className="w-[17px] h-[17px]" strokeWidth={1.8} />,
       },
       {
