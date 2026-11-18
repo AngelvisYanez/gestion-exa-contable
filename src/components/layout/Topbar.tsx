@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, LogOut, Menu, Settings } from "lucide-react";
+import { ChevronDown, Download, LogOut, Menu, Settings } from "lucide-react";
 import Link from "next/link";
 import { roleLabel } from "@/lib/auth/users";
 import { useAuth } from "@/contexts/AuthContext";
@@ -63,6 +63,15 @@ export default function Topbar({ title, subtitle, showDbSelector = true }: Props
       </div>
 
       <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+        <a
+          href="https://github.com/AngelvisYanez/gestion-exa-contable/releases/latest/download/ExaMonitor.exe"
+          className="inline-flex min-h-10 items-center gap-1.5 rounded-lg px-2 text-xs font-semibold text-brand-gray-700 transition-colors hover:bg-brand-gray-100 hover:text-brand-gray-900 sm:px-3"
+          aria-label="Descargar la última versión de ExaMonitor"
+          title="Descargar la última versión de ExaMonitor"
+        >
+          <Download className="size-4 shrink-0" strokeWidth={1.8} />
+          <span className="hidden lg:inline">Descargar ExaMonitor</span>
+        </a>
         {showDbSelector && projects.length > 0 && (
           <Select
             value={db}
