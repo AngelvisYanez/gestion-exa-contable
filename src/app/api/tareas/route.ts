@@ -146,7 +146,17 @@ export async function POST(req: NextRequest) {
       if (!titulo) {
         return NextResponse.json({ success: false, message: "Titulo requerido" }, { status: 400 });
       }
-      const perCodAsignar = body.perCodAsignar ? Number(body.perCodAsignar) : undefined;
+      const perCodAsignar = session.role === "developer"
+        ? await resolvePerCod(db, {
+            perCod: session.perCod > 0 ? session.perCod : undefined,
+            prsCod: session.prsCod,
+            cedula: session.cedula,
+            nameMatch: matchTeamMember(session.name)?.nameMatch,
+          })
+        : body.perCodAsignar ? Number(body.perCodAsignar) : undefined;
+      if (session.role === "developer" && !perCodAsignar) {
+        return NextResponse.json({ success: false, message: "Tu usuario no tiene ficha en personal para asignarte la tarea." }, { status: 409 });
+      }
       const tarea = await createTarea(db, {
         titulo,
         descripcion: body.descripcion,

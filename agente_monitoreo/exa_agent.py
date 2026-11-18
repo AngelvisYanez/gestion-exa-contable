@@ -32,7 +32,7 @@ from win_shell import (
     start_input_counter,
 )
 
-AGENT_VERSION = "2.14.5-flet"
+AGENT_VERSION = "2.14.6-flet"
 UPDATE_REPO = "AngelvisYanez/gestion-exa-contable"
 GITHUB_API_LATEST = f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest"
 
@@ -358,6 +358,7 @@ class ExaMonitorApp:
         self.mac_address = get_mac()
         self.dev_data: dict = {}
         self.tasks_list: list = []
+        self.capacitaciones: list = []
         self.is_authenticated = False
         self.running = True
         self.admin_mon_active = 0
@@ -923,6 +924,7 @@ class ExaMonitorApp:
         self.plazo_filtro_box = ft.Container(content=self.dd_plazo, width=220)
 
         self.tasks_list_view = ft.ListView(expand=True, spacing=8, padding=0)
+        self.capacitaciones_list_view = ft.ListView(spacing=8, height=240, padding=0)
 
         self.lbl_activa_hint = ft.Text(
             "Puedes seleccionar una tarea y un ticket a la vez para telemetría.",
@@ -940,11 +942,26 @@ class ExaMonitorApp:
         self.lbl_lista_titulo = ft.Text("Mis tareas", size=15, weight=ft.FontWeight.BOLD, color=C["text"])
         self.lbl_lista_hint = ft.Text("Clic para marcar activa", size=11, color=C["text_muted"])
 
-        self.workspace = ft.Column(
-            [
-                ft.Row([self.btn_new_task, self.btn_refresh], wrap=True, spacing=10),
-                self.kpi_row,
-                self.card_activa,
+        self.tab_selector = ft.SegmentedButton(
+            selected=["activo"],
+            allow_multiple_selection=False,
+            segments=[
+                ft.Segment(value="activo", label=ft.Text("Trabajo activo")),
+                ft.Segment(value="tareas", label=ft.Text("Tareas del equipo")),
+                ft.Segment(value="capacitaciones", label=ft.Text("Capacitaciones")),
+            ],
+            on_change=self._on_workspace_tab_change,
+        )
+        self.tab_activo = ft.Container(content=self.card_activa, visible=True)
+        self.tab_capacitaciones = ft.Container(
+            content=self._card(
+                    ft.Text("Capacitaciones", size=15, weight=ft.FontWeight.BOLD, color=C["text"]),
+                    self.capacitaciones_list_view,
+                ), visible=False,
+        )
+        self.tab_tareas = ft.Container(
+            content=ft.Column([
+                self.btn_new_task,
                 self._card(
                     ft.Row(
                         [
@@ -968,6 +985,17 @@ class ExaMonitorApp:
                     ft.Container(content=self.tasks_list_view, height=340),
                     padding=14,
                 ),
+            ], spacing=10), visible=False,
+        )
+
+        self.workspace = ft.Column(
+            [
+                ft.Row([self.btn_refresh], wrap=True, spacing=10),
+                self.kpi_row,
+                self.tab_selector,
+                self.tab_activo,
+                self.tab_tareas,
+                self.tab_capacitaciones,
             ],
             spacing=12,
             visible=False,
@@ -1048,6 +1076,14 @@ class ExaMonitorApp:
             self.bandeja_filtro = str(selected[0])
             self._apply_rol_ui()
             self._refresh_tasks_ui()
+
+    def _on_workspace_tab_change(self, e: ft.ControlEvent):
+        selected = list(e.control.selected or [])
+        tab = str(selected[0]) if selected else "activo"
+        self.tab_activo.visible = tab == "activo"
+        self.tab_tareas.visible = tab == "tareas"
+        self.tab_capacitaciones.visible = tab == "capacitaciones"
+        self.page.update()
 
     def _on_tipo_change(self, e: ft.ControlEvent):
         selected = list(e.control.selected or [])
@@ -3225,6 +3261,41 @@ class ExaMonitorApp:
             self.seg_bandeja.visible = True
             self.seg_tipo.visible = True
 
+    def _refresh_capacitaciones_ui(self):
+        self.capacitaciones_list_view.controls.clear()
+        if not self.capacitaciones:
+            self.capacitaciones_list_view.controls.append(
+                ft.Text("No hay capacitaciones registradas.", color=C["text_muted"])
+            )
+            return
+        for item in self.capacitaciones:
+            inicio = str(item.get("Cap_Inicio") or "")
+            try:
+                fecha = datetime.fromisoformat(inicio.replace("Z", "+00:00"))
+                inicio = fecha.astimezone().strftime("%d/%m/%Y %H:%M")
+            except ValueError:
+                pass
+            detalle = (
+                f"{item.get('Cap_Proyecto_Nombre') or item.get('Cap_Proyecto') or ''}"
+                f" · {item.get('Cap_Responsable_Nombre') or 'Sin responsable'}\n"
+                f"Empresa: {item.get('Cap_Empresa') or ''}"
+                f" · Cliente: {item.get('Cap_Cliente') or ''}\n"
+                f"{inicio} · {item.get('Cap_Duracion_Min') or 0} min"
+                f" · {item.get('Cap_Estado') or 'Programada'}"
+            )
+            self.capacitaciones_list_view.controls.append(
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text(str(item.get("Cap_Titulo") or "Capacitación"),
+                                weight=ft.FontWeight.BOLD, color=C["text"]),
+                        ft.Text(detalle, size=12, color=C["text_muted"]),
+                    ], spacing=4, tight=True),
+                    border=ft.Border.all(1, C["border"]),
+                    border_radius=8,
+                    padding=10,
+                )
+            )
+
     def _update_ui_after_login(self):
         name = (self.dev_data or {}).get("Nombre") or "Desarrollador"
         self.subtitle.value = name
@@ -3239,6 +3310,7 @@ class ExaMonitorApp:
         self.topbar.visible = True
         self.workspace.visible = True
         self._refresh_tasks_ui()
+        self._refresh_capacitaciones_ui()
         self.page.update()
 
     # --- API ---
@@ -3288,6 +3360,7 @@ class ExaMonitorApp:
                 tasks = payload.get("mis_tareas") or payload.get("tareas") or []
                 self.dev_data = dev
                 self.tasks_list = tasks
+                self.capacitaciones = payload.get("capacitaciones") or []
                 self.asignables = payload.get("asignables") or []
                 self.equipo = payload.get("equipo") or self.asignables or []
                 self.permisos_tarea = payload.get("permisos_tarea") or {}
@@ -3377,6 +3450,7 @@ class ExaMonitorApp:
             self.forzar_bandeja = int(payload.get("Mon_Forzar_Bandeja", self.forzar_bandeja))
             self.permitir_salir = int(payload.get("Mon_Permitir_Salir", self.permitir_salir))
             self.tasks_list = payload.get("mis_tareas") or payload.get("tareas") or []
+            self.capacitaciones = payload.get("capacitaciones") or []
             if payload.get("Rol") and isinstance(self.dev_data, dict):
                 self.dev_data["Rol"] = payload.get("Rol")
             if payload.get("permisos_tarea") is not None:
@@ -3390,6 +3464,7 @@ class ExaMonitorApp:
             try:
                 self._apply_rol_ui()
                 self._refresh_tasks_ui()
+                self._refresh_capacitaciones_ui()
                 if force_ui:
                     self._set_status(f"{len(self.tasks_list)} Asignaciones", ok=True)
                 for n in notes:

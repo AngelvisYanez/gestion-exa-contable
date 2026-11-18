@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { nombreProyectoCapacitacion } from "@/lib/capacitaciones-proyectos";
 import { assertApiKey, isUploadedFile, jsonRes, pick, readBody } from "@/lib/api";
 import { authenticateByCedula } from "@/lib/auth/exaLogin";
 import { canAssignWork, normalizePanelRole } from "@/lib/auth/users";
@@ -121,6 +122,21 @@ async function asignablesMonitor() {
     }));
 }
 
+async function capacitacionesMonitor() {
+  const prisma = getPrisma("exa");
+  const rows = await prisma.$queryRaw<Array<{
+    Cap_Cod: number; Cap_Titulo: string; Cap_Empresa: string; Cap_Cliente: string;
+    Cap_Proyecto: string; Cap_Responsable_Nombre: string; Cap_Inicio: Date;
+    Cap_Duracion_Min: number; Cap_Estado: string;
+  }>>`SELECT Cap_Cod, Cap_Titulo, Cap_Empresa, Cap_Cliente, Cap_Proyecto,
+    Cap_Responsable_Nombre, Cap_Inicio, Cap_Duracion_Min, Cap_Estado
+    FROM aud_capacitaciones ORDER BY Cap_Inicio ASC`;
+  return rows.map((row) => ({
+    ...row,
+    Cap_Proyecto_Nombre: nombreProyectoCapacitacion(row.Cap_Proyecto),
+  }));
+}
+
 async function handle(req: NextRequest) {
   const keyErr = assertApiKey(req);
   if (keyErr) return keyErr;
@@ -207,6 +223,7 @@ async function handle(req: NextRequest) {
         mis_tareas: tareas,
         asignables,
         equipo,
+        capacitaciones: await capacitacionesMonitor(),
         permisos_tarea,
         notificaciones,
       });
@@ -248,6 +265,7 @@ async function handle(req: NextRequest) {
         mis_tareas: tareas,
         asignables,
         equipo,
+        capacitaciones: await capacitacionesMonitor(),
         permisos_tarea,
         notificaciones,
       });
@@ -261,12 +279,14 @@ async function handle(req: NextRequest) {
       if (!usuCod) return jsonRes("error", "Usuario sin identificador.");
       const permisos = await monitorTaskPermissions(prisma, perCod);
       if (!permisos.crear) return jsonRes("error", "Tu rol no puede crear tareas.", null, 403);
+      const rolCreador = normalizePanelRole(await resolvePanelRol(prisma, perCod, usuCod));
       const titulo = pick(form, json, req, "titulo").trim();
       if (!titulo) return jsonRes("error", "Titulo requerido.");
       const perCodAsignar = parseInt(pick(form, json, req, "perCodAsignar"), 10) || 0;
       if (perCodAsignar && !permisos.asignar) {
         return jsonRes("error", "Tu rol no puede asignar tareas.", null, 403);
       }
+      const asignadoFinal = rolCreador === "developer" ? perCod : perCodAsignar;
       const fechaFin = pick(form, json, req, "fechaFin").trim();
       const fechaInicio = pick(form, json, req, "fechaInicio").trim();
       const fechaValida = (value: string) =>
@@ -292,17 +312,17 @@ async function handle(req: NextRequest) {
           estado: pick(form, json, req, "estado") === "Standby" ? "Standby" : undefined,
           empCod,
           usuCreador: usuCod,
-          perCodAsignar: perCodAsignar || undefined,
+          perCodAsignar: asignadoFinal || undefined,
         });
       } catch (err) {
         if (err instanceof AsignacionInvalidaError) return jsonRes("error", err.message);
         throw err;
       }
-      if (perCodAsignar) {
+      if (asignadoFinal) {
         publishAsignacion({
           kind: "tarea", title: "Nueva tarea asignada",
           message: `#${tarea.Tar_Cod} · ${tarea.Tar_Titulo}`,
-          db: dbDis, tarCod: tarea.Tar_Cod, perCod: perCodAsignar,
+          db: dbDis, tarCod: tarea.Tar_Cod, perCod: asignadoFinal,
           estado: tarea.Tar_Estado, actor: "ExaMonitor",
         });
       } else {
