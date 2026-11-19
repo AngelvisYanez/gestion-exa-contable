@@ -456,7 +456,7 @@ export async function listTickets(
     ...params
   );
 
-  const extra = new Map<number, TicketAsignado[]>();
+  const extra = new Map<number, Array<Omit<TicketAsignado, "Nombre"> & { Nombre: string | null }>>();
   const ids = rows.map((r) => Number(r.Tic_Cod)).filter((n) => n > 0);
   if (ids.length && extraAsignados) {
     const marks = ids.map(() => "?").join(",");
@@ -481,16 +481,58 @@ export async function listTickets(
     for (const a of asigs) {
       const id = Number(a.Tic_Cod);
       const list = extra.get(id) || [];
-      const nombre = (a.Nombre || "").trim();
       list.push({
         Usu_Cod: Number(a.Usu_Cod),
         Per_Cod: a.Per_Cod != null ? Number(a.Per_Cod) : null,
-        Nombre: nombre || `Usuario ${Number(a.Usu_Cod)}`,
+        Nombre: a.Nombre,
         Fecha: asIso(a.Tia_Fecha),
       });
       extra.set(id, list);
     }
   }
+
+  // Las asignaciones del panel guardan códigos del equipo de EXA en todos los proyectos.
+  // Un código igual en la base remota puede pertenecer a otra persona.
+  const teamNames = new Map<number, string>();
+  const exaNames = new Map<number, string>();
+  if (!localUsers) {
+    const userIds = new Set(rows.map((row) => Number(row.Ase_Cod)).filter((id) => id > 0));
+    for (const assignments of extra.values()) {
+      for (const assignment of assignments) userIds.add(assignment.Usu_Cod);
+    }
+    if (userIds.size) {
+      const ids = [...userIds];
+      const marks = ids.map(() => "?").join(",");
+      const members = await getPrisma(teamDb).$queryRawUnsafe<
+        Array<{ Usu_Cod: number | bigint; Nombre: string | null; Es_Panel: number | bigint }>
+      >(
+        `SELECT Usu_Cod, CONVERT(Pan_Nombre USING utf8mb4) AS Nombre, 1 AS Es_Panel
+         FROM aud_panel_usuarios WHERE Usu_Cod IN (${marks})
+         UNION ALL
+         SELECT u.Usu_Cod,
+                CONVERT(CONCAT(IFNULL(p.Prs_Ape,''), ' ', IFNULL(p.Prs_Nom,'')) USING utf8mb4),
+                0
+         FROM usuarios u JOIN persona p ON p.Prs_Cod = u.Prs_Cod
+         WHERE u.Usu_Cod IN (${marks})`,
+        ...ids,
+        ...ids
+      );
+      for (const member of members) {
+        const name = member.Nombre?.trim();
+        if (name) {
+          const names = Number(member.Es_Panel) ? teamNames : exaNames;
+          names.set(Number(member.Usu_Cod), name);
+        }
+      }
+    }
+  }
+  const assigneeName = (id: number, name: string | null, fromPanel: boolean) => {
+    const exaName = exaNames.get(id);
+    const projectName = name?.trim();
+    return teamNames.get(id)
+      || (fromPanel ? exaName || projectName : projectName || exaName)
+      || `Usuario ${id}`;
+  };
 
   const mapped = rows.map((r) => {
     const estCod = String(r.Tic_Est ?? "0");
@@ -503,13 +545,16 @@ export async function listTickets(
         : joinNom || parsed.empresa || null;
     const tel = (r.Tic_Tel || "").trim() || parsed.telefono || null;
     const descOnly = parsed.descripcion || ticketDescripcionPreview(r.Tic_Des) || r.Tic_Des;
-    let asignados = extra.get(Number(r.Tic_Cod)) || [];
+    let asignados = (extra.get(Number(r.Tic_Cod)) || []).map((assignment) => ({
+      ...assignment,
+      Nombre: assigneeName(assignment.Usu_Cod, assignment.Nombre, true),
+    }));
     if (ase && !asignados.some((a) => a.Usu_Cod === ase)) {
       asignados = [
         {
           Usu_Cod: ase,
           Per_Cod: null,
-          Nombre: (r.Asignado_Nombre || "").trim() || `Usuario ${ase}`,
+          Nombre: assigneeName(ase, r.Asignado_Nombre, false),
         },
         ...asignados,
       ];

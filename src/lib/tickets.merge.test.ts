@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
-import { allowedDatabases, sanitizeDbDis, sharesServer } from "./db";
+import { allowedDatabases, getPrisma, sanitizeDbDis, sharesServer } from "./db";
 import { ticketEstadoToKanban } from "./ticket-view";
 import type { Ticket } from "./ticket-view";
-import { kanbanToTicketEstado, pickTicketByOrigen, resumirTickets, ticketPerteneceA } from "./tickets";
+import { kanbanToTicketEstado, listTickets, pickTicketByOrigen, resumirTickets, ticketPerteneceA } from "./tickets";
 
 function ticket(partial: Partial<Ticket> & Pick<Ticket, "Tic_Cod" | "Db_Origen">): Ticket {
   return {
@@ -108,4 +108,51 @@ describe("registro de ExaMonitor", () => {
     const registro = readFileSync("agente_monitoreo/VERSIONES.md", "utf8");
     assert.ok(registro.includes(match[1]));
   });
+});
+
+it("muestra los nombres del equipo EXA en las asignaciones de Relavera", async (context) => {
+  const env = { ...process.env };
+  context.after(() => { process.env = env; });
+  process.env.DATABASE_NAMES = "exa,relavera";
+  process.env.TASKS_DB_DIS = "exa";
+  process.env.RELAVERA_DB_HOST = "relavera.test";
+  const remote = getPrisma("relavera");
+  const team = getPrisma("exa");
+  remote.$executeRawUnsafe = (async () => 0) as typeof remote.$executeRawUnsafe;
+  remote.$queryRawUnsafe = (async (sql: string) => {
+    if (sql.includes("FROM tickets t")) {
+      return [
+        { Tic_Cod: 26, Ase_Cod: 5280, Creador_Nombre: "Cliente Relavera" },
+        { Tic_Cod: 20, Ase_Cod: 6273, Asignado_Nombre: "Asesor histórico" },
+        { Tic_Cod: 19, Ase_Cod: 5280, Asignado_Nombre: "Homónimo en Relavera" },
+      ];
+    }
+    if (sql.includes("FROM aud_ticket_asignados a")) {
+      return [
+        { Tic_Cod: 26, Usu_Cod: 5280, Per_Cod: 1439, Nombre: null },
+        { Tic_Cod: 20, Usu_Cod: 5280, Per_Cod: 1439, Nombre: "Homónimo en Relavera" },
+        { Tic_Cod: 20, Usu_Cod: 4321, Per_Cod: 201, Nombre: null },
+      ];
+    }
+    assert.match(sql, /aud_ticket_avances/);
+    return [];
+  }) as typeof remote.$queryRawUnsafe;
+  const lookup = context.mock.fn(async (sql: string, ...ids: number[]) => {
+    assert.match(sql, /FROM aud_panel_usuarios/);
+    assert.deepEqual(ids, [5280, 6273, 4321, 5280, 6273, 4321]);
+    return [
+      { Usu_Cod: 5280, Nombre: "Patricio Moreno", Es_Panel: 1 },
+      { Usu_Cod: 6273, Nombre: "Otro asesor de EXA", Es_Panel: 0 },
+      { Usu_Cod: 4321, Nombre: "Asesora EXA", Es_Panel: 0 },
+    ];
+  });
+  team.$queryRawUnsafe = lookup as typeof team.$queryRawUnsafe;
+
+  const [principal, multiple, legacy] = await listTickets("relavera");
+  assert.equal(lookup.mock.callCount(), 1);
+  assert.equal(principal.Asignado_Nombre, "Patricio Moreno");
+  assert.equal(principal.Per_Cod_Asignado, 1439);
+  assert.equal(principal.Creador_Nombre, "Cliente Relavera");
+  assert.equal(multiple.Asignado_Nombre, "Asesor histórico, Patricio Moreno, Asesora EXA");
+  assert.equal(legacy.Asignado_Nombre, "Patricio Moreno");
 });
