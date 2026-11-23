@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { nombreProyectoCapacitacion } from "@/lib/capacitaciones-proyectos";
 import { assertApiKey, isUploadedFile, jsonRes, pick, readBody } from "@/lib/api";
 import { authenticateByCedula } from "@/lib/auth/exaLogin";
+import { createMonitorSessionToken, getMonitorSession } from "@/lib/auth/session";
 import { canAssignWork, normalizePanelRole } from "@/lib/auth/users";
 import { hasRolePermission, type RolePermissionKey } from "@/lib/auth/role-permissions";
 import { loadRolePermissions } from "@/lib/auth/role-permissions-db";
@@ -40,7 +41,9 @@ import {
   registrarAvance,
   salirDeStandby,
   setTareaAsignados,
+  updateTarea,
 } from "@/lib/tareas";
+import { esTareaProyecto } from "@/lib/tarea-proyectos";
 import { estadoTrasAvance } from "@/lib/standby";
 import { isImagePath } from "@/lib/avance-format";
 import {
@@ -210,6 +213,7 @@ async function handle(req: NextRequest) {
       const permisos_tarea = await monitorTaskPermissions(prismaUser, row.Per_Cod, rol);
 
       return jsonRes("ok", "Desarrollador autenticado con exito.", {
+        sesion_monitor: await createMonitorSessionToken(user),
         desarrollador: {
           ...mapped,
           Cedula: user.cedula,
@@ -286,6 +290,16 @@ async function handle(req: NextRequest) {
       if (perCodAsignar && !permisos.asignar) {
         return jsonRes("error", "Tu rol no puede asignar tareas.", null, 403);
       }
+      const proyecto = pick(form, json, req, "proyecto");
+      if (proyecto && !esTareaProyecto(proyecto)) {
+        return jsonRes("error", "Proyecto inválido.");
+      }
+      if (proyecto) {
+        const sesion = await getMonitorSession(req);
+        if (sesion?.perCod !== perCod) {
+          return jsonRes("error", "Vuelve a iniciar sesión en ExaMonitor.", null, 401);
+        }
+      }
       const asignadoFinal = rolCreador === "developer" ? perCod : perCodAsignar;
       const fechaFin = pick(form, json, req, "fechaFin").trim();
       const fechaInicio = pick(form, json, req, "fechaInicio").trim();
@@ -307,6 +321,7 @@ async function handle(req: NextRequest) {
           descripcion: pick(form, json, req, "descripcion"),
           prioridad: pick(form, json, req, "prioridad") || "Media",
           complejidad: pick(form, json, req, "complejidad") || "Media",
+          proyecto: esTareaProyecto(proyecto) ? proyecto : undefined,
           fechaInicio: fechaInicio || undefined,
           fechaFin: fechaFin || null,
           estado: pick(form, json, req, "estado") === "Standby" ? "Standby" : undefined,
@@ -335,6 +350,36 @@ async function handle(req: NextRequest) {
       }
       const { tareas } = await bandejaAgente(prisma, perCod, usuCod);
       return jsonRes("ok", "Tarea creada.", { tarea, tareas, mis_tareas: tareas });
+    }
+
+    if (accion === "editar_proyecto_tarea") {
+      if (req.method !== "POST") return jsonRes("error", "Usa POST para editar tareas.", null, 405);
+      const sesion = await getMonitorSession(req);
+      if (!sesion || sesion.perCod <= 0) {
+        return jsonRes("error", "Vuelve a iniciar sesión en ExaMonitor.", null, 401);
+      }
+      const tarCod = Number(form?.get("Tar_Cod"));
+      const proyecto = form?.get("proyecto");
+      if (!Number.isSafeInteger(tarCod) || tarCod <= 0) return jsonRes("error", "Código de tarea inválido.");
+      if (proyecto !== "" && !esTareaProyecto(proyecto)) return jsonRes("error", "Proyecto inválido.");
+
+      const { perCod } = sesion;
+      const usuCod = await resolveUsuCodFromPer(prisma, perCod);
+      if (!usuCod) return jsonRes("error", "Usuario sin identificador.", null, 403);
+      const rol = normalizePanelRole(await resolvePanelRol(prisma, perCod, usuCod));
+      const acceso = await getTareaAccess(dbDis, tarCod, usuCod, perCod);
+      const permisos = await monitorTaskPermissions(prisma, perCod, rol);
+      if (!acceso || !permisos.editar || !(acceso.isCreator || canAssignWork(rol))) {
+        return jsonRes("error", "No puedes editar esta tarea.", null, 403);
+      }
+
+      const tarea = await updateTarea(dbDis, tarCod, { proyecto: proyecto || null });
+      publishEvent({
+        type: "tarea_actualizada", title: "Tarea actualizada",
+        message: `#${tarCod} · Proyecto actualizado`,
+        db: dbDis, tarCod, actor: sesion.name,
+      });
+      return jsonRes("ok", "Proyecto actualizado.", { tarea });
     }
 
     if (accion === "subir_telemetria") {
@@ -558,6 +603,7 @@ async function handle(req: NextRequest) {
       if (!detalle) return jsonRes("error", "No se pudo cargar el detalle de la tarea.");
 
       const asignablesTarea = mesa && sinAsignar ? await asignablesMonitor() : [];
+      const permisosTarea = await monitorTaskPermissions(prisma, perCod, rol);
       return jsonRes("ok", "Detalle de tarea.", {
         tipo: "tarea",
         trabajo: {
@@ -566,12 +612,14 @@ async function handle(req: NextRequest) {
           Descripcion: detalle.tarea.Tar_Descripcion || "",
           Prioridad: detalle.tarea.Tar_Prioridad || "Media",
           Complejidad: detalle.tarea.Tar_Complejidad || "Media",
+          Proyecto: detalle.tarea.Tar_Proyecto,
+          puede_editar_proyecto: permisosTarea.editar && (creador || mesa),
           Estado: sinAsignar ? "Por asignar" : detalle.tarea.Tar_Estado || "",
           Fecha_Fin: detalle.tarea.Tar_Fecha_Fin,
           Ava_Porcentaje: detalle.tarea.Ava_Porcentaje ?? 0,
           puede_registrar_avance: mia && await monitorHasPermission(prisma, perCod, "tareas.avance"),
           puede_cambiar_estado: false,
-          puede_subir_evidencia: mia || (creador && await monitorHasPermission(prisma, perCod, "tareas.editar")),
+          puede_subir_evidencia: mia || (creador && permisosTarea.editar),
           es_creador: creador,
           puede_asignar: mesa && sinAsignar,
           puede_standby: mia && await monitorHasPermission(prisma, perCod, "tareas.avance"),

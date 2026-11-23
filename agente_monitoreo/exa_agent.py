@@ -32,7 +32,13 @@ from win_shell import (
     start_input_counter,
 )
 
-AGENT_VERSION = "2.14.6-flet"
+AGENT_VERSION = "2.14.7-flet"
+TAREA_PROYECTOS = {
+    "": "Sin proyecto",
+    "relavera": "Exa Relavera",
+    "ofsercont": "Exa Ofsercont",
+    "otro": "Otro",
+}
 UPDATE_REPO = "AngelvisYanez/gestion-exa-contable"
 GITHUB_API_LATEST = f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest"
 
@@ -183,6 +189,16 @@ def prioridad_style(prioridad: str) -> tuple[str, str]:
     if prioridad == "Baja":
         return C["muted_badge_bg"], C["muted_badge_fg"]
     return C["warn_bg"], C["warn_fg"]
+
+
+def selector_proyecto(proyecto: str = "") -> ft.Dropdown:
+    return ft.Dropdown(
+        label="Proyecto",
+        value=proyecto if proyecto in TAREA_PROYECTOS else "",
+        expanded_insets=ft.Padding.all(0),
+        options=[ft.DropdownOption(key=key, text=nombre) for key, nombre in TAREA_PROYECTOS.items()],
+        bgcolor=C["card"],
+    )
 
 
 def complejidad_style(complejidad: str) -> tuple[str, str]:
@@ -357,6 +373,7 @@ class ExaMonitorApp:
         apply_palette(self.theme_mode)
         self.mac_address = get_mac()
         self.dev_data: dict = {}
+        self.sesion_monitor = ""
         self.tasks_list: list = []
         self.capacitaciones: list = []
         self.is_authenticated = False
@@ -1257,7 +1274,10 @@ class ExaMonitorApp:
 
     def _api_post(self, data: dict, timeout: int = 20) -> dict:
         url = build_api_url(self.config.get("server_url"), self.config.get("api_path"))
-        resp = requests.post(url, data=data, timeout=timeout)
+        headers = None
+        if self.sesion_monitor and data.get("accion") in ("crear_tarea", "editar_proyecto_tarea"):
+            headers = {"X-Exa-Monitor-Session": self.sesion_monitor}
+        resp = requests.post(url, data=data, headers=headers, timeout=timeout)
         return resp.json()
 
     def _load_detalle(self, cod: int, tipo: str, db: str = ""):
@@ -1512,6 +1532,7 @@ class ExaMonitorApp:
             clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
             bgcolor=C["card"],
         )
+        proyecto = selector_proyecto()
         prioridad = ft.Dropdown(label="Prioridad", value="Media", expanded_insets=ft.Padding.all(0), options=[
             ft.DropdownOption(key=v, text=v) for v in ("Alta", "Media", "Baja")
         ], bgcolor=C["card"])
@@ -1651,6 +1672,7 @@ class ExaMonitorApp:
                             titulo,
                             ft.Text("Descripción", size=12, weight=ft.FontWeight.W_600, color=C["text"]),
                             editor_descripcion,
+                            proyecto,
                             ft.Row([
                                 ft.Container(content=prioridad, expand=True),
                                 ft.Container(content=complejidad, expand=True),
@@ -1784,6 +1806,7 @@ class ExaMonitorApp:
                             "descripcion": descripcion.value or "",
                             "prioridad": prioridad.value or "Media",
                             "complejidad": complejidad.value or "Media",
+                            "proyecto": proyecto.value or "",
                             "fechaInicio": inicio,
                             "fechaFin": fin,
                             "estado": "Standby" if estado_form["standby"] else "Pendiente",
@@ -1797,7 +1820,7 @@ class ExaMonitorApp:
                         creado["cod"] = int((payload.get("tarea") or {}).get("Tar_Cod") or 0)
                         if not creado["cod"]:
                             raise RuntimeError("No se recibió el número de la tarea creada.")
-                        for field in (titulo, descripcion, prioridad, complejidad, fecha_fin, asignar, plazo):
+                        for field in (titulo, descripcion, proyecto, prioridad, complejidad, fecha_fin, asignar, plazo):
                             field.disabled = True
                         btn_files.disabled = True
                         self._apply_task_list(payload)
@@ -1878,6 +1901,22 @@ class ExaMonitorApp:
         if tipo == "tarea":
             plazo = plazo_tarea(trabajo.get("Fecha_Inicio"), trabajo.get("Fecha_Fin"), estado)
             badges.append(badge(plazo, C["info_bg"], C["info_fg"]))
+        proyecto_actual = str(trabajo.get("Proyecto") or "")
+        etiqueta_proyecto = ft.Text(size=11, weight=ft.FontWeight.W_600, color=C["info_fg"])
+        proyecto_badge = ft.Container(
+            content=etiqueta_proyecto,
+            bgcolor=C["info_bg"],
+            padding=ft.Padding.symmetric(horizontal=8, vertical=4),
+            border_radius=8,
+        )
+
+        def mostrar_proyecto(valor: str):
+            etiqueta_proyecto.value = f"Proyecto: {TAREA_PROYECTOS.get(valor, TAREA_PROYECTOS[''])}"
+            proyecto_badge.visible = bool(valor)
+
+        if tipo == "tarea":
+            mostrar_proyecto(proyecto_actual)
+            badges.append(proyecto_badge)
         if trabajo.get("Complejidad"):
             cbg, cfg = complejidad_style(str(trabajo.get("Complejidad")))
             badges.append(badge(f"Complejidad: {trabajo.get('Complejidad')}", cbg, cfg))
@@ -1982,6 +2021,64 @@ class ExaMonitorApp:
                 desc_box(plain_text(trabajo.get("Descripcion"))),
             ]
         )
+
+        if tipo == "tarea" and trabajo.get("puede_editar_proyecto"):
+            proyecto_input = selector_proyecto(proyecto_actual)
+            proyecto_estado = ft.Text(size=11, visible=False)
+            guardar_proyecto = ft.Button("Guardar proyecto", disabled=True)
+            editar_proyecto = ft.TextButton("Editar proyecto")
+            proyecto_editor = ft.Column(
+                [proyecto_input, ft.Row([guardar_proyecto, proyecto_estado], wrap=True)],
+                visible=False,
+            )
+
+            def abrir_proyecto(_event):
+                proyecto_editor.visible = not proyecto_editor.visible
+                editar_proyecto.content = "Cerrar edición" if proyecto_editor.visible else "Editar proyecto"
+                self.page.update()
+
+            def cambio_proyecto(_event):
+                guardar_proyecto.disabled = (proyecto_input.value or "") == proyecto_actual
+                proyecto_estado.visible = False
+                self.page.update()
+
+            def confirmar_proyecto(_event):
+                valor = proyecto_input.value or ""
+                guardar_proyecto.disabled = True
+                proyecto_input.disabled = True
+                proyecto_estado.visible = False
+                self.page.update()
+
+                def job():
+                    nonlocal proyecto_actual
+                    try:
+                        res = self._api_post({
+                            "accion": "editar_proyecto_tarea",
+                            "Tar_Cod": str(cod),
+                            "proyecto": valor,
+                        })
+                        if res.get("status") != "ok":
+                            raise RuntimeError(res.get("mensaje") or "No se pudo guardar el proyecto.")
+                        proyecto_actual = valor
+                        mostrar_proyecto(valor)
+                        proyecto_estado.value = "Proyecto guardado."
+                        proyecto_estado.color = C["success_fg"]
+                    except Exception as exc:
+                        proyecto_estado.value = str(exc)
+                        proyecto_estado.color = C["danger_fg"]
+                    finally:
+                        proyecto_input.disabled = False
+                        guardar_proyecto.disabled = valor == proyecto_actual
+                        proyecto_estado.visible = True
+                        if not editor_state["closed"]:
+                            self.page.update()
+
+                self.page.run_thread(job)
+
+            editar_proyecto.on_click = abrir_proyecto
+            proyecto_input.on_select = cambio_proyecto
+            guardar_proyecto.on_click = confirmar_proyecto
+            body_cols.extend([editar_proyecto, proyecto_editor])
 
         tickets_vinculados = payload.get("tickets_vinculados") or []
         if tipo == "tarea" and tickets_vinculados:
@@ -3358,6 +3455,7 @@ class ExaMonitorApp:
                 payload = data.get("data", {}) or {}
                 dev = payload.get("desarrollador", {}) or {}
                 tasks = payload.get("mis_tareas") or payload.get("tareas") or []
+                self.sesion_monitor = payload.get("sesion_monitor") or ""
                 self.dev_data = dev
                 self.tasks_list = tasks
                 self.capacitaciones = payload.get("capacitaciones") or []

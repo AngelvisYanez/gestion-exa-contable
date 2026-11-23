@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Download, LogOut, Menu, Settings } from "lucide-react";
 import Link from "next/link";
+import { EXAMONITOR_LATEST_DOWNLOAD } from "@/lib/examonitor-release";
 import { roleLabel } from "@/lib/auth/users";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSidebar } from "@/contexts/SidebarContext";
@@ -64,7 +65,7 @@ export default function Topbar({ title, subtitle, showDbSelector = true }: Props
 
       <div className="flex shrink-0 items-center gap-1 sm:gap-2">
         <a
-          href="https://github.com/AngelvisYanez/gestion-exa-contable/releases/latest/download/ExaMonitor.exe"
+          href={EXAMONITOR_LATEST_DOWNLOAD}
           className="inline-flex min-h-10 items-center gap-1.5 rounded-lg px-2 text-xs font-semibold text-brand-gray-700 transition-colors hover:bg-brand-gray-100 hover:text-brand-gray-900 sm:px-3"
           aria-label="Descargar la última versión de ExaMonitor"
           title="Descargar la última versión de ExaMonitor"

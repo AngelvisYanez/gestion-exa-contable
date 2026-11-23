@@ -6,6 +6,7 @@ La versión vigente del código es `AGENT_VERSION` en `exa_agent.py`.
 
 | Versión | Ejecutable local | Qué cambió |
 | --- | --- | --- |
+| 2.14.7-flet | `dist/v2.14.7/ExaMonitor.exe` | Selección de proyecto al crear una tarea, etiqueta en el detalle y edición según los permisos de Gestión. |
 | 2.14.6-flet | `dist/v2.14.6-tabs/ExaMonitor.exe` | Pestañas Trabajo activo, Tareas del equipo y Capacitaciones. La lista sincronizada con Gestión muestra proyecto, responsable, empresa, cliente, fecha, duración y estado. |
 | 2.14.5-flet | `dist/v2.14.5-review/ExaMonitor.exe` | Cabecera compacta, resumen en indicadores, filtros agrupados y tarjetas más claras. El modal de nueva tarea organiza datos, planificación, responsable y archivos en secciones; los errores llevan al inicio del formulario. Los cuadros se ajustan al ancho de la ventana. Actualización verificada con dos ejecutables PyInstaller: reemplazo real y arranque de la versión nueva. |
 | 2.14.4-flet | `dist/ExaMonitor.exe` | El instalador conserva una copia de la versión anterior, la restaura si falla el lanzamiento y reinicia el ejecutable con el entorno de PyInstaller limpio. Los usuarios de 2.14.1 deben instalar esta versión manualmente porque su actualizador anterior no cerraba el proceso completo. |

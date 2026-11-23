@@ -128,6 +128,25 @@ export async function parseSessionToken(
   }
 }
 
+export async function createMonitorSessionToken(user: ExaAuthUser): Promise<string | null> {
+  const key = process.env.AUTH_SECRET;
+  if (!key) return null;
+  return signPayload(JSON.stringify(toCompact(user)), `monitor:${key}`);
+}
+
+export async function getMonitorSession(req: NextRequest): Promise<SessionData | null> {
+  const key = process.env.AUTH_SECRET;
+  const token = req.headers.get("x-exa-monitor-session");
+  if (!key || !token) return null;
+  const raw = await unsignPayload(token, `monitor:${key}`);
+  if (!raw) return null;
+  try {
+    return fromCompact(JSON.parse(raw) as CompactSession);
+  } catch {
+    return null;
+  }
+}
+
 export async function getSession(): Promise<SessionData | null> {
   const jar = await cookies();
   return (
