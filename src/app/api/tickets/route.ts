@@ -32,6 +32,7 @@ import {
   descripcionTicketAvance,
   listAvancesTicket,
   registrarAvanceTicket,
+  reabrirTicket,
 } from "@/lib/ticket-avances";
 
 export const dynamic = "force-dynamic";
@@ -317,10 +318,11 @@ export async function POST(req: NextRequest) {
     if (action === "attach_evidencias") {
       const ticCod = Number(body.Tic_Cod || 0);
       const rutas = Array.isArray(body.adjuntos) ? body.adjuntos.map(String) : [];
-      if (!ticCod) {
-        return NextResponse.json({ success: false, message: "Tic_Cod requerido" }, { status: 400 });
+      const ticketDb = String(body.Db_Origen || body.Ses_Dat_Dis || db);
+      if (!Number.isSafeInteger(ticCod) || ticCod <= 0 || !(await resolveTicketDatabaseIds()).includes(ticketDb)) {
+        return NextResponse.json({ success: false, message: "Ticket o base de origen inválidos." }, { status: 400 });
       }
-      const res = await attachTicketEvidencias(db, ticCod, rutas);
+      const res = await attachTicketEvidencias(ticketDb, ticCod, rutas);
       return NextResponse.json({ success: true, ...res });
     }
 
@@ -544,6 +546,29 @@ export async function POST(req: NextRequest) {
         kind: "ticket",
       });
       return NextResponse.json({ success: true, ...res, Tic_Cod: ticCod });
+    }
+
+    if (action === "reabrir") {
+      if (session.role !== "manager") {
+        return NextResponse.json({ success: false, message: "Solo el encargado puede reabrir el ticket." }, { status: 403 });
+      }
+      const ticCod = Number(body.Tic_Cod);
+      const ticketDb = String(body.Db_Origen || body.Ses_Dat_Dis || "");
+      if (!Number.isSafeInteger(ticCod) || ticCod <= 0 || !(await resolveTicketDatabaseIds()).includes(ticketDb)) {
+        return NextResponse.json({ success: false, message: "Ticket o base de origen inválidos." }, { status: 400 });
+      }
+      await reabrirTicket(ticketDb, ticCod, session.usuCod);
+      publishEvent({
+        type: "estado_cambiado",
+        title: "Ticket reabierto",
+        message: `Ticket #${ticCod} reabierto`,
+        db: ticketDb,
+        ticCod,
+        estado: "En Proceso",
+        kind: "ticket",
+        actor: session.name,
+      });
+      return NextResponse.json({ success: true });
     }
 
     if (action === "estado") {

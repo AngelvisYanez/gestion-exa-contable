@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import path from "path";
 import fs from "fs";
 import { fechaEnZona, horaHisZona, hoyFecha, startOfDayZona } from "./timezone";
@@ -276,9 +277,11 @@ function evidenciaNombre(refCod: number, filename: string, kind: "tar" | "tic") 
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
       .replace(/[^a-zA-Z0-9._-]+/g, "_")
+      .replace(/\.{2,}/g, "_")
       .replace(/^_+|_+$/g, "")
       .slice(0, 48) || "archivo";
-  return { ext, nombre: `${kind}_${refCod}_${horaHisZona()}_${base}.${ext}` };
+  const suffix = kind === "tic" ? `_${randomUUID()}` : "";
+  return { ext, nombre: `${kind}_${refCod}_${horaHisZona()}${suffix}_${base}.${ext}` };
 }
 
 /** Copia bytes ya generados (brief MD/PDF) al almacén de evidencias de la tarea. */

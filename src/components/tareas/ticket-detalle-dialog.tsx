@@ -47,6 +47,7 @@ type AvanceTicket = {
 type Props = {
   ticket: Tarea | null;
   onClose: () => void;
+  onReabrir?: () => Promise<boolean>;
   onRegistrarAvance?: (t: Tarea) => void;
   onConvertirTarea?: (t: Tarea) => void;
 };
@@ -109,8 +110,10 @@ function textoParaCompartir(ticket: Tarea, avances: AvanceTicket[]) {
   return lineas.join("\n");
 }
 
-export function TicketDetalleDialog({ ticket, onClose, onRegistrarAvance, onConvertirTarea }: Props) {
+export function TicketDetalleDialog({ ticket, onClose, onReabrir, onRegistrarAvance, onConvertirTarea }: Props) {
   const { db, user } = useAuth();
+  const [reabriendo, setReabriendo] = useState(false);
+  const [errorReabrir, setErrorReabrir] = useState("");
   const isManager = user?.role === "manager";
   const open = !!ticket && ticket.tipo === "ticket";
   const cerrado = ticket?.Tar_Estado === "Finalizada";
@@ -135,6 +138,7 @@ export function TicketDetalleDialog({ ticket, onClose, onRegistrarAvance, onConv
   const [avancesKey, setAvancesKey] = useState("");
   const [compartirEstado, setCompartirEstado] = useState<CompartirEstado>(null);
   const ticketKey = `${ticket?.Db_Origen || db}:${ticCod}`;
+  useEffect(() => setErrorReabrir(""), [ticketKey]);
   const avancesActuales = avancesKey === ticketKey ? avances : [];
 
   const textoCompartir = () => ticket ? textoParaCompartir(ticket, avancesActuales) : "";
@@ -696,6 +700,7 @@ export function TicketDetalleDialog({ ticket, onClose, onRegistrarAvance, onConv
           >
             {compartirEstado === "error" ? "No se pudo copiar o compartir el detalle." : compartirEstado === "copiado" ? "Detalle copiado." : ""}
           </span>
+          {errorReabrir && <p role="alert" className="mb-2 text-sm text-destructive">{errorReabrir}</p>}
           <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
             <ShareMenu title={`Ticket #${ticCod}: ${ticket?.Tar_Titulo ?? ""}`} getText={textoCompartir} getUrl={() => ticketDetailUrl(window.location.origin, ticCod, ticket!.Db_Origen || db)} onStatus={setCompartirEstado} disabled={!ticket} />
             <Button type="button" variant="ghost" className="w-full sm:w-auto" onClick={() => { setCompartirEstado(null); setPreview(null); onClose(); }}>
@@ -710,6 +715,19 @@ export function TicketDetalleDialog({ ticket, onClose, onRegistrarAvance, onConv
               >
                 <Wrench className="size-4" />
                 Convertir a tarea
+              </Button>
+            )}
+            {ticket && onReabrir && cerrado && (
+              <Button type="button" disabled={reabriendo} onClick={async () => {
+                setErrorReabrir("");
+                setReabriendo(true);
+                try {
+                  if (!(await onReabrir())) setErrorReabrir("No se pudo reabrir el ticket. Actualiza la bandeja e inténtalo de nuevo.");
+                } finally {
+                  setReabriendo(false);
+                }
+              }}>
+                Reabrir ticket
               </Button>
             )}
             {ticket && onRegistrarAvance && !cerrado && (

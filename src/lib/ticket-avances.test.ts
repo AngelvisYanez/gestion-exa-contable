@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, it } from "node:test";
 import type { PrismaClient } from "@prisma/client";
 import { TicketAvanceError, estadoTrasAvance, registrarAvanceTicketConPrisma } from "./ticket-avances";
+import { saveEvidenciaBytes } from "./captures";
+import { copiarEvidenciaTicketExa, resolveTicketAdjuntoFile } from "./ticket-adjuntos";
 import { ticketAsTarea, type Ticket } from "./ticket-view";
 import { parseAsignadosTicket } from "./monitoreo-asignacion";
 
@@ -118,4 +123,39 @@ describe("cierre del ticket por avance", () => {
     );
     assert.equal(transactions, 0);
   });
+});
+
+it("copia evidencias al sistema de origen aunque se repita el numero de ticket", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "exa-ticket-"));
+  const ofsercont = path.join(root, "ofsercont");
+  const relavera = path.join(root, "relavera");
+  const settings = {
+    CAPTURES_DIR: path.join(root, "gestion"),
+    EXA_OFSERCONT_TICKETS_DIR: ofsercont,
+    EXA_RELAVERA_TICKETS_DIR: relavera,
+  };
+  const previous = Object.keys(settings).map((key) => [key, process.env[key]] as const);
+  try {
+    Object.assign(process.env, settings);
+    await Promise.all([fs.mkdir(ofsercont), fs.mkdir(relavera)]);
+    const origen = saveEvidenciaBytes(7, "archivo.txt", Buffer.from("problema"), "tic");
+    const solucion = saveEvidenciaBytes(7, "archivo.txt", Buffer.from("solucion"), "tic");
+    assert.notEqual(origen, solucion);
+
+    const pro = await copiarEvidenciaTicketExa("servicios", 7, 12, [origen], "problema");
+    const sol = await copiarEvidenciaTicketExa("relavera", 7, 12, [solucion], "solucion");
+    assert.ok(pro && sol);
+    assert.match(pro, /^\.\.\/tickets\/12\//);
+    assert.match(sol, /^\.\.\/ticketsSolucionados\/12\//);
+    assert.equal(resolveTicketAdjuntoFile(pro, "relavera"), null);
+    assert.equal(resolveTicketAdjuntoFile(sol, "servicios"), null);
+    assert.equal(await fs.readFile(resolveTicketAdjuntoFile(pro, "servicios")!, "utf8"), "problema");
+    assert.equal(await fs.readFile(resolveTicketAdjuntoFile(sol, "relavera")!, "utf8"), "solucion");
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    await fs.rm(root, { recursive: true, force: true });
+  }
 });

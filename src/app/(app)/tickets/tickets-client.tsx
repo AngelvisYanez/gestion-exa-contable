@@ -163,6 +163,7 @@ export default function TicketsPage({ mode = "all" }: { mode?: "all" | "mine" })
   const soloAsignarme = user?.role === "developer";
   const puedeCrear = hasRolePermission(user, "tickets.crear");
   const puedeAvanzar = hasRolePermission(user, "tickets.avance");
+  const puedeReabrir = puedeAvanzar && user?.role === "manager";
   // Convertir ticket → tarea: lo determina atención al cliente o el encargado.
   const puedeConvertir = canAssignWork(user?.role);
   const { lastTaskEventAt } = useNotifications();
@@ -374,6 +375,7 @@ export default function TicketsPage({ mode = "all" }: { mode?: "all" | "mine" })
   const [formFotos, setFormFotos] = useState<File[]>([]);
   const [formError, setFormError] = useState("");
   const [formSaving, setFormSaving] = useState(false);
+  const [ticketCreado, setTicketCreado] = useState<{ codigo: number; db: string } | null>(null);
   const fotoRef = useRef<HTMLInputElement>(null);
   const [fotoPreviews, setFotoPreviews] = useState<string[]>([]);
 
@@ -389,6 +391,7 @@ export default function TicketsPage({ mode = "all" }: { mode?: "all" | "mine" })
   }, [formFotos]);
 
   const resetForm = () => {
+    setTicketCreado(null);
     setFormEnviadoPor("");
     setFormEmpresa("");
     setFormEmpCod("");
@@ -498,33 +501,41 @@ export default function TicketsPage({ mode = "all" }: { mode?: "all" | "mine" })
     setFormSaving(true);
     setFormError("");
     try {
-      const res = await fetch("/api/tickets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "create",
-          Ses_Dat_Dis: db,
-          titulo: formTitulo,
-          descripcion: formDesc,
-          prioridad: formPrio,
-          enviadoPor: formEnviadoPor,
-          empresa: formEmpCod
-            ? empresas.find((e) => String(e.Emp_Cod) === formEmpCod)?.Emp_Nom || formEmpresa
-            : "TODAS EMPRESAS",
-          empCod: formEmpCod ? Number(formEmpCod) : undefined,
-          telefono: formTel,
-          proceso: formProceso,
-          orgCod: formOrgCod ? Number(formOrgCod) : undefined,
-          usuCreador: user?.usuCod || undefined,
-        }),
-      });
-      const j = await res.json();
-      if (!j.success) throw new Error(j.message || "No se pudo crear");
-      const ticCod = Number(j.ticket?.Tic_Cod || 0);
+      let creado = ticketCreado;
+      if (!creado) {
+        const res = await fetch("/api/tickets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "create",
+            Ses_Dat_Dis: db,
+            titulo: formTitulo,
+            descripcion: formDesc,
+            prioridad: formPrio,
+            enviadoPor: formEnviadoPor,
+            empresa: formEmpCod
+              ? empresas.find((e) => String(e.Emp_Cod) === formEmpCod)?.Emp_Nom || formEmpresa
+              : "TODAS EMPRESAS",
+            empCod: formEmpCod ? Number(formEmpCod) : undefined,
+            telefono: formTel,
+            proceso: formProceso,
+            orgCod: formOrgCod ? Number(formOrgCod) : undefined,
+            usuCreador: user?.usuCod || undefined,
+          }),
+        });
+        const j = await res.json();
+        if (!j.success) throw new Error(j.message || "No se pudo crear");
+        const codigo = Number(j.ticket?.Tic_Cod || 0);
+        if (!Number.isSafeInteger(codigo) || codigo <= 0) throw new Error("No se recibió el código del ticket creado.");
+        creado = { codigo, db: j.ticket?.Db_Origen || db };
+        setTicketCreado(creado);
+      }
+      const { codigo: ticCod, db: ticketDb } = creado;
 
       if (ticCod > 0 && formFotos.length) {
         const fd = new FormData();
         fd.set("Tic_Cod", String(ticCod));
+        fd.set("Db_Origen", ticketDb);
         for (const f of formFotos) fd.append("files", f);
         const up = await fetch("/api/evidencias", { method: "POST", body: fd });
         const uj = await up.json();
@@ -536,7 +547,7 @@ export default function TicketsPage({ mode = "all" }: { mode?: "all" | "mine" })
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               action: "attach_evidencias",
-              Ses_Dat_Dis: db,
+              Ses_Dat_Dis: ticketDb,
               Tic_Cod: ticCod,
               adjuntos,
             }),
@@ -670,14 +681,14 @@ export default function TicketsPage({ mode = "all" }: { mode?: "all" | "mine" })
     }
   };
 
-  const setEstado = async (t: Ticket, estado: string) => {
+  const setEstado = async (t: Ticket, estado: string, action = "estado") => {
     setLoading(true);
     try {
       const res = await fetch("/api/tickets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "estado",
+          action,
           Ses_Dat_Dis: t.Db_Origen || db,
           Db_Origen: t.Db_Origen || undefined,
           Tic_Cod: t.Tic_Cod,
@@ -687,9 +698,11 @@ export default function TicketsPage({ mode = "all" }: { mode?: "all" | "mine" })
       const j = await res.json();
       if (!j.success) throw new Error(j.message || "Error");
       await load();
+      return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error");
       setLoading(false);
+      return false;
     }
   };
 
@@ -929,7 +942,7 @@ export default function TicketsPage({ mode = "all" }: { mode?: "all" | "mine" })
                 loading={loading}
                 onAvance={puedeAvanzar ? (t) => setAvanceTarea(t) : undefined}
                 onMoveEstado={moverKanban}
-                canMoveEstado={() => puedeAvanzar}
+                canMoveEstado={(t) => puedeAvanzar && t.Tar_Estado !== "Finalizada"}
                 onOpen={(t) => {
                   setDetalleCod(t.Tic_Cod || t.Tar_Cod);
                   setDetalleDb(t.Db_Origen || null);
@@ -1293,6 +1306,16 @@ export default function TicketsPage({ mode = "all" }: { mode?: "all" | "mine" })
         <TicketDetalleDialog
           ticket={detalleTicket ? ticketAsTarea(detalleTicket) : null}
           onClose={() => { setDetalleCod(null); setDetalleDb(null); setLinkedTicket(null); clearDetailLink("db"); }}
+          onReabrir={puedeReabrir && detalleTicket ? async () => {
+            const reabierto = await setEstado(detalleTicket, "En Proceso", "reabrir");
+            if (reabierto) {
+              setDetalleCod(null);
+              setDetalleDb(null);
+              setLinkedTicket(null);
+              clearDetailLink("db");
+            }
+            return reabierto;
+          } : undefined}
           onRegistrarAvance={puedeAvanzar ? (t) => setAvanceTarea(t) : undefined}
           onConvertirTarea={puedeConvertir && detalleTicket ? () => abrirConvertir(detalleTicket) : undefined}
         />
@@ -1423,6 +1446,7 @@ export default function TicketsPage({ mode = "all" }: { mode?: "all" | "mine" })
         <Dialog
           open={formOpen}
           onOpenChange={(o) => {
+            if (formSaving) return;
             setFormOpen(o);
             if (!o) resetForm();
           }}

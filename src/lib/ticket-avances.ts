@@ -7,6 +7,7 @@ import {
 } from "./avance-format";
 import { toPublicCaptureUrl } from "./captures";
 import { getPrisma, sanitizeDbDis } from "./db";
+import { copiarEvidenciaTicketExa, rutaEvidenciaTicket } from "./ticket-adjuntos";
 
 const ready = new Set<string>();
 
@@ -72,15 +73,7 @@ export function descripcionTicketAvance(
   const list = (v: unknown) =>
     Array.isArray(v) ? v.map((x) => String(x ?? "").trim()).filter(Boolean) : [];
   const realizado = str(body.realizado ?? body.descripcion, 8000);
-  const adjPrefix = "gestion/adjuntos/monitoreo/evidencias/";
-  const adjuntos = list(body.adjuntos)
-    .filter(
-      (r) =>
-        r.startsWith(adjPrefix) &&
-        !r.includes("..") &&
-        r.split("/").pop()?.startsWith(`tic_${ticCod}_`)
-    )
-    .slice(0, 10);
+  const adjuntos = list(body.adjuntos).filter((ruta) => rutaEvidenciaTicket(ruta, ticCod)).slice(0, 10);
   const enlaces = list(body.enlaces)
     .filter(isSafeUrl)
     .map((u) => u.slice(0, 500))
@@ -183,7 +176,8 @@ type RegistrarAvanceTicketOptions = {
 
 export async function registrarAvanceTicketConPrisma(
   prisma: PrismaClient,
-  opts: RegistrarAvanceTicketOptions
+  opts: RegistrarAvanceTicketOptions,
+  db?: string
 ) {
   if (!Number.isInteger(opts.porcentaje) || opts.porcentaje < 0 || opts.porcentaje > 100) {
     throw new TicketAvanceError("Porcentaje debe ser un entero entre 0 y 100.", 400);
@@ -193,13 +187,22 @@ export async function registrarAvanceTicketConPrisma(
   return prisma.$transaction(async (tx) => {
     // Bloquea el ticket antes de insertar el avance: dos solicitudes simultáneas
     // no pueden registrar dos cierres ni reemplazar la fecha de resolución.
-    const rows = await tx.$queryRawUnsafe<Array<{ Tic_Est: string | null }>>(
-      `SELECT Tic_Est FROM tickets WHERE Tic_Cod = ? FOR UPDATE`,
+    const rows = await tx.$queryRawUnsafe<Array<{ Tic_Est: string | null; Emp_Cod: number }>>(
+      `SELECT Tic_Est, Emp_Cod FROM tickets WHERE Tic_Cod = ? FOR UPDATE`,
       opts.ticCod
     );
     if (!rows.length) throw new TicketAvanceError("Ticket no encontrado.", 404);
     if (String(rows[0].Tic_Est) === "3") {
       throw new TicketAvanceError("El ticket ya está resuelto; no se puede registrar otro avance.", 409);
+    }
+
+    const evidencia = db && await copiarEvidenciaTicketExa(
+      db, opts.ticCod, rows[0].Emp_Cod, parseAvanceDescripcion(opts.descripcion).adjuntos, "solucion"
+    );
+    if (evidencia) {
+      await tx.$executeRawUnsafe(
+        `UPDATE tickets SET Tic_Evi_Sol = ? WHERE Tic_Cod = ?`, evidencia, opts.ticCod
+      );
     }
 
     await tx.$executeRawUnsafe(
@@ -231,7 +234,30 @@ export async function registrarAvanceTicketConPrisma(
 }
 
 export async function registrarAvanceTicket(dbDis: string, opts: RegistrarAvanceTicketOptions) {
-  const prisma = getPrisma(sanitizeDbDis(dbDis));
+  const db = sanitizeDbDis(dbDis);
+  const prisma = getPrisma(db);
   await ensureTicketAvances(prisma);
-  return registrarAvanceTicketConPrisma(prisma, opts);
+  return registrarAvanceTicketConPrisma(prisma, opts, db);
+}
+
+export async function reabrirTicket(db: string, ticCod: number, usuCod: number) {
+  const prisma = getPrisma(db);
+  await ensureTicketAvances(prisma);
+  await prisma.$transaction(async (tx) => {
+    const updated = await tx.$executeRawUnsafe(
+      `UPDATE tickets SET Tic_Est = '1' WHERE Tic_Cod = ? AND Tic_Est = '3'`,
+      ticCod
+    );
+    if (updated !== 1) {
+      throw new TicketAvanceError("El ticket ya no está cerrado o no existe.", 409);
+    }
+    await tx.$executeRawUnsafe(
+      `INSERT INTO aud_ticket_avances
+        (Tic_Cod, Usu_Cod, Ava_Descripcion, Ava_Porcentaje, Ava_Fecha, Ava_Est)
+       VALUES (?, ?, ?, 0, NOW(), 'A')`,
+      ticCod,
+      usuCod || null,
+      "Ticket reabierto por el encargado."
+    );
+  });
 }

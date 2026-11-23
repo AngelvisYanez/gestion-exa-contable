@@ -16,8 +16,8 @@ import {
 } from "./ticket-format";
 import { isImagePath } from "./avance-format";
 import { type Ticket } from "./ticket-view";
-import { mapTicketAdjuntos } from "./ticket-adjuntos";
-import { attachAvancePorcentaje } from "./ticket-avances";
+import { copiarEvidenciaTicketExa, mapTicketAdjuntos, rutaEvidenciaTicket } from "./ticket-adjuntos";
+import { TicketAvanceError, attachAvancePorcentaje } from "./ticket-avances";
 import { attachTareaVinculada, ticketTareaKey } from "./ticket-tarea";
 import { ensureMonitoreoSchema } from "./monitoreo-global";
 
@@ -941,36 +941,40 @@ export async function assignTicket(
   }
   if (!unique.length) throw new Error("Selecciona al menos un desarrollador.");
 
-  const exists = await prisma.$queryRawUnsafe<Array<{ Tic_Cod: number | bigint }>>(
-    `SELECT Tic_Cod FROM tickets WHERE Tic_Cod = ? LIMIT 1`,
-    opts.ticCod
-  );
-  if (!exists.length) throw new Error("Ticket no encontrado");
-
   const primary = unique[0].usuCod;
-  await prisma.$executeRawUnsafe(
-    `UPDATE tickets
-     SET Ase_Cod = ?,
-         Tic_Est = '2'
-     WHERE Tic_Cod = ?`,
-    primary,
-    opts.ticCod
-  );
-  if (ticketAsignadosEnabled(prisma)) {
-    await prisma.$executeRawUnsafe(
-      `UPDATE aud_ticket_asignados SET Tia_Est = 'I' WHERE Tic_Cod = ? AND Tia_Est = 'A'`,
+  await prisma.$transaction(async (tx) => {
+    const [ticket] = await tx.$queryRawUnsafe<Array<{ Tic_Est: string | null }>>(
+      `SELECT Tic_Est FROM tickets WHERE Tic_Cod = ? FOR UPDATE`,
       opts.ticCod
     );
-    for (const a of unique) {
-      await prisma.$executeRawUnsafe(
-        `INSERT INTO aud_ticket_asignados (Tic_Cod, Usu_Cod, Per_Cod, Tia_Est, Tia_Fecha)
-         VALUES (?, ?, ?, 'A', NOW())`,
-        opts.ticCod,
-        a.usuCod,
-        a.perCod
-      );
+    if (!ticket) throw new TicketAvanceError("Ticket no encontrado.", 404);
+    if (String(ticket.Tic_Est) === "3") {
+      throw new TicketAvanceError("El encargado debe reabrir el ticket antes de asignarlo.", 409);
     }
-  }
+    await tx.$executeRawUnsafe(
+      `UPDATE tickets
+       SET Ase_Cod = ?,
+           Tic_Est = '2'
+       WHERE Tic_Cod = ?`,
+      primary,
+      opts.ticCod
+    );
+    if (ticketAsignadosEnabled(prisma)) {
+      await tx.$executeRawUnsafe(
+        `UPDATE aud_ticket_asignados SET Tia_Est = 'I' WHERE Tic_Cod = ? AND Tia_Est = 'A'`,
+        opts.ticCod
+      );
+      for (const a of unique) {
+        await tx.$executeRawUnsafe(
+          `INSERT INTO aud_ticket_asignados (Tic_Cod, Usu_Cod, Per_Cod, Tia_Est, Tia_Fecha)
+           VALUES (?, ?, ?, 'A', NOW())`,
+          opts.ticCod,
+          a.usuCod,
+          a.perCod
+        );
+      }
+    }
+  });
 
   const updated = (await listTickets(db, { ticCod: opts.ticCod, limit: 1 }))[0];
   return { ticket: updated, asignados: unique };
@@ -982,15 +986,24 @@ export async function updateTicketEstado(dbDis: string, ticCod: number, estado: 
   const code = TIC_ESTADO_CODE[estado];
   if (!code) throw new Error("Estado invalido");
 
-  await prisma.$executeRawUnsafe(
+  const updated = await prisma.$executeRawUnsafe(
     `UPDATE tickets
      SET Tic_Est = ?,
          Tic_Fec_Ter = CASE WHEN ? = '3' THEN NOW() ELSE Tic_Fec_Ter END
-     WHERE Tic_Cod = ?`,
+     WHERE Tic_Cod = ? AND IFNULL(Tic_Est, '0') <> '3'`,
     code,
     code,
     ticCod
   );
+  if (!updated) {
+    const [ticket] = await prisma.$queryRawUnsafe<Array<{ Tic_Est: string | null }>>(
+      `SELECT Tic_Est FROM tickets WHERE Tic_Cod = ?`, ticCod
+    );
+    if (!ticket) throw new TicketAvanceError("Ticket no encontrado.", 404);
+    if (String(ticket.Tic_Est) === "3") {
+      throw new TicketAvanceError("Solo el encargado puede reabrir el ticket.", 409);
+    }
+  }
   return { ok: true, estado, code };
 }
 
@@ -1041,21 +1054,30 @@ export async function createTicket(
     orgCod: data.orgCod,
   });
 
+  let id: number;
   try {
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO tickets
-        (Tic_Des, Tic_Fec_Cre, Tic_Fec_Ter, Tic_Tem, Tic_Evi_Pro, Emp_Cod, Usu_Cod, Tic_Est, Org_Cod, Tic_Cal, Tic_Obs, Tic_Tel, Pcs_Cod, Tic_Tip)
-       VALUES (?, NOW(), NOW(), ?, '', ?, ?, '0', ?, 0, ?, ?, ?, ?)`,
-      des,
-      titulo,
-      fk.emp,
-      fk.usu,
-      fk.org,
-      obs,
-      tel,
-      fk.pcs,
-      tip
-    );
+    id = await prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(
+        `INSERT INTO tickets
+          (Tic_Des, Tic_Fec_Cre, Tic_Fec_Ter, Tic_Tem, Tic_Evi_Pro, Emp_Cod, Usu_Cod, Tic_Est, Org_Cod, Tic_Cal, Tic_Obs, Tic_Tel, Pcs_Cod, Tic_Tip)
+         VALUES (?, NOW(), NOW(), ?, '', ?, ?, '0', ?, 0, ?, ?, ?, ?)`,
+        des,
+        titulo,
+        fk.emp,
+        fk.usu,
+        fk.org,
+        obs,
+        tel,
+        fk.pcs,
+        tip
+      );
+      const [inserted] = await tx.$queryRawUnsafe<Array<{ id: bigint | number }>>(
+        `SELECT LAST_INSERT_ID() AS id`
+      );
+      const codigo = Number(inserted?.id);
+      if (!Number.isSafeInteger(codigo) || codigo <= 0) throw new Error("No se obtuvo el identificador del ticket.");
+      return codigo;
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("Org_Cod")) {
@@ -1072,34 +1094,37 @@ export async function createTicket(
     throw err;
   }
 
-  const inserted = await prisma.$queryRawUnsafe<Array<{ id: bigint | number }>>(
-    `SELECT LAST_INSERT_ID() AS id`
-  );
-  const id = Number(inserted?.[0]?.id || 0);
   const created = (await listTickets(db, { ticCod: id, limit: 1 }))[0];
-  return created || { Tic_Cod: id, Tic_Titulo: titulo };
+  return created || { Tic_Cod: id, Tic_Titulo: titulo, Db_Origen: db };
 }
 
 /** Adjunta evidencias al cuerpo Tic_Des de un ticket ya creado. */
 export async function attachTicketEvidencias(dbDis: string, ticCod: number, rutas: string[]) {
   const db = sanitizeDbDis(dbDis);
   const prisma = getPrisma(db);
-  const adjPrefix = `gestion/adjuntos/monitoreo/evidencias/`;
-  const nuevos = rutas.map((r) => String(r).trim()).filter((r) => r.startsWith(adjPrefix));
+  const nuevos = Array.from(new Set(rutas.map((ruta) => ruta.trim()).filter((ruta) => rutaEvidenciaTicket(ruta, ticCod))));
+  if (nuevos.length > 20 || rutas.some((ruta) => !rutaEvidenciaTicket(ruta.trim(), ticCod))) {
+    throw new TicketAvanceError("La lista de evidencias del ticket es inválida.", 400);
+  }
   if (!nuevos.length) return { ok: true, adjuntos: [] as string[] };
 
-  const [row] = await prisma.$queryRawUnsafe<Array<{ Tic_Des: string | null }>>(
-    `SELECT CONVERT(Tic_Des USING utf8mb4) AS Tic_Des FROM tickets WHERE Tic_Cod = ? LIMIT 1`,
-    ticCod
-  );
-  if (!row) throw new Error("Ticket no encontrado");
+  return prisma.$transaction(async (tx) => {
+    const [row] = await tx.$queryRawUnsafe<Array<{ Tic_Des: string | null; Emp_Cod: number }>>(
+      `SELECT CONVERT(Tic_Des USING utf8mb4) AS Tic_Des, Emp_Cod FROM tickets WHERE Tic_Cod = ? FOR UPDATE`,
+      ticCod
+    );
+    if (!row) throw new TicketAvanceError("Ticket no encontrado.", 404);
 
-  const parsed = parseTicketWhatsApp(row.Tic_Des);
-  const merged = Array.from(new Set([...parsed.adjuntos, ...nuevos]));
-  const next = buildTicketWhatsAppBody({ ...parsed, adjuntos: merged });
-
-  await prisma.$executeRawUnsafe(`UPDATE tickets SET Tic_Des = ? WHERE Tic_Cod = ?`, next, ticCod);
-  return { ok: true, adjuntos: merged };
+    const parsed = parseTicketWhatsApp(row.Tic_Des);
+    const merged = Array.from(new Set([...parsed.adjuntos, ...nuevos]));
+    const evidencia = await copiarEvidenciaTicketExa(db, ticCod, row.Emp_Cod, nuevos, "problema");
+    const next = buildTicketWhatsAppBody({ ...parsed, adjuntos: merged });
+    await tx.$executeRawUnsafe(
+      `UPDATE tickets SET Tic_Des = ?, Tic_Evi_Pro = COALESCE(NULLIF(Tic_Evi_Pro, ''), ?) WHERE Tic_Cod = ?`,
+      next, evidencia, ticCod
+    );
+    return { ok: true, adjuntos: merged };
+  });
 }
 
 /** Mapea columna Kanban / acción UI → estado de ticket EXA. */

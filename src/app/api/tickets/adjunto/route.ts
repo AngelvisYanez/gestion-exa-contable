@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
     return new NextResponse("No encontrado", { status: 404 });
   }
 
-  const file = resolveTicketAdjuntoFile(stored);
+  const file = resolveTicketAdjuntoFile(stored, db);
   if (!file) return new NextResponse("No encontrado", { status: 404 });
 
   const ext = path.extname(file).slice(1).toLowerCase();
