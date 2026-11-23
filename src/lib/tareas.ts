@@ -25,6 +25,7 @@ import {
   normalizeHora,
   syncAllHorarios,
 } from "./monitoreo-horario";
+import { esTareaProyecto, type TareaProyecto } from "./tarea-proyectos";
 
 const COMPLEJIDADES = new Set(["Baja", "Media", "Alta", "Muy alta"]);
 
@@ -34,29 +35,34 @@ export function normalizeComplejidad(v?: string | null) {
 }
 
 /** Por base (exa / servicios). Una bandera global hacía fallar la otra BD con 1054. */
-const complejidadReadyByDb = new Map<string, boolean>();
-const complejidadEnsureInflight = new Map<string, Promise<boolean>>();
+const tareaColumns = {
+  Tar_Complejidad: "VARCHAR(20) NULL DEFAULT 'Media' AFTER Tar_Prioridad",
+  Tar_Proyecto: "VARCHAR(20) NULL",
+} as const;
+type TareaColumn = keyof typeof tareaColumns;
 
-async function detectComplejidadColumn(dbKey: string): Promise<boolean> {
+const tareaColumnsReady = new Set<string>();
+const tareaColumnsInflight = new Map<string, Promise<boolean>>();
+
+async function detectTareaColumn(dbKey: string, column: TareaColumn): Promise<boolean> {
   const prisma = getPrisma(dbKey);
   try {
     const cols = await prisma.$queryRawUnsafe<Array<{ Field: string }>>(
-      `SHOW COLUMNS FROM aud_tareas LIKE 'Tar_Complejidad'`
+      `SHOW COLUMNS FROM aud_tareas WHERE Field = '${column}'`
     );
     if (!cols.length) {
       try {
         await prisma.$executeRawUnsafe(
           `ALTER TABLE aud_tareas
-           ADD COLUMN Tar_Complejidad VARCHAR(20) NULL DEFAULT 'Media' AFTER Tar_Prioridad`
+           ADD COLUMN ${column} ${tareaColumns[column]}`
         );
       } catch {
         const again = await prisma.$queryRawUnsafe<Array<{ Field: string }>>(
-          `SHOW COLUMNS FROM aud_tareas LIKE 'Tar_Complejidad'`
+          `SHOW COLUMNS FROM aud_tareas WHERE Field = '${column}'`
         );
         if (!again.length) return false;
       }
     }
-    complejidadReadyByDb.set(dbKey, true);
     return true;
   } catch {
     // Sin cachear el fallo: la próxima petición reintenta (permisos o corte breve).
@@ -139,17 +145,24 @@ async function mapApoyoNombres(
 
 /** Asegura columna Tar_Complejidad en aud_tareas de esta base (EXA legacy). */
 export async function ensureTareaComplejidadColumn(dbDis: string): Promise<boolean> {
-  const key = sanitizeDbDis(dbDis);
-  const cached = complejidadReadyByDb.get(key);
-  if (cached === true) return true;
+  return ensureTareaColumn(dbDis, "Tar_Complejidad");
+}
 
-  const pending = complejidadEnsureInflight.get(key);
+async function ensureTareaColumn(dbDis: string, column: TareaColumn): Promise<boolean> {
+  const dbKey = sanitizeDbDis(dbDis);
+  const key = `${dbKey}:${column}`;
+  if (tareaColumnsReady.has(key)) return true;
+
+  const pending = tareaColumnsInflight.get(key);
   if (pending) return pending;
 
-  const job = detectComplejidadColumn(key).finally(() => {
-    complejidadEnsureInflight.delete(key);
-  });
-  complejidadEnsureInflight.set(key, job);
+  const job = detectTareaColumn(dbKey, column)
+    .then((ready) => {
+      if (ready) tareaColumnsReady.add(key);
+      return ready;
+    })
+    .finally(() => tareaColumnsInflight.delete(key));
+  tareaColumnsInflight.set(key, job);
   return job;
 }
 
@@ -333,6 +346,7 @@ export async function listTareas(dbDis: string, opts: {
     Tar_Titulo: string | null;
     Tar_Prioridad: string | null;
     Tar_Complejidad: string | null;
+    Tar_Proyecto: string | null;
     Tar_Estado: string | null;
     Tar_Fecha_Inicio: Date | string | null;
     Tar_Fecha_Fin: Date | string | null;
@@ -346,6 +360,9 @@ export async function listTareas(dbDis: string, opts: {
     Ava_Total: bigint | number | null;
   };
 
+  const proyectoSelect = await ensureTareaColumn(dbDis, "Tar_Proyecto")
+    ? "CONVERT(t.Tar_Proyecto USING utf8mb4) AS Tar_Proyecto,"
+    : "NULL AS Tar_Proyecto,";
   const complejidadSelect = hasComplejidad
     ? `CONVERT(t.Tar_Complejidad USING utf8mb4) AS Tar_Complejidad,`
     : `'Media' AS Tar_Complejidad,`;
@@ -358,6 +375,7 @@ export async function listTareas(dbDis: string, opts: {
       CONVERT(t.Tar_Descripcion USING utf8mb4) AS Tar_Descripcion,
       CONVERT(t.Tar_Prioridad USING utf8mb4) AS Tar_Prioridad,
       ${complejidadSelect}
+      ${proyectoSelect}
       ${apoyoSelect}
       CONVERT(t.Tar_Estado USING utf8mb4) AS Tar_Estado,
       t.Tar_Fecha_Inicio,
@@ -429,6 +447,7 @@ export async function listTareas(dbDis: string, opts: {
       Tar_Descripcion: parsed.texto || (t.Tar_Descripcion ? String(t.Tar_Descripcion) : null),
       Tar_Prioridad: t.Tar_Prioridad || "Media",
       Tar_Complejidad: normalizeComplejidad(t.Tar_Complejidad),
+      Tar_Proyecto: esTareaProyecto(t.Tar_Proyecto) ? t.Tar_Proyecto : null,
       Tar_Estado: etiquetaEstado(t.Tar_Estado),
       Tar_Fecha_Inicio: t.Tar_Fecha_Inicio,
       Tar_Fecha_Fin: t.Tar_Fecha_Fin,
@@ -536,6 +555,7 @@ export async function createTarea(
     descripcion?: string;
     prioridad?: string;
     complejidad?: string;
+    proyecto?: TareaProyecto;
     fechaInicio?: string;
     fechaFin?: string | null;
     estado?: string;
@@ -550,6 +570,10 @@ export async function createTarea(
   const empCod = data.empCod && data.empCod > 0 ? data.empCod : tasksEmpCod();
   const titulo = data.titulo.slice(0, 255);
   const complejidad = normalizeComplejidad(data.complejidad);
+  const proyecto = data.proyecto ?? null;
+  if (proyecto && !(await ensureTareaColumn(dbDis, "Tar_Proyecto"))) {
+    throw new Error("No se pudo habilitar el campo Proyecto en la base de datos.");
+  }
   const adjuntos = (data.adjuntos || [])
     .map((r) => String(r || "").trim())
     .filter((r) => r.startsWith("gestion/adjuntos/monitoreo/evidencias/"));
@@ -607,6 +631,14 @@ export async function createTarea(
     const tarCod = Number(inserted?.[0]?.id || 0);
     if (!tarCod) throw new Error("No se pudo obtener Tar_Cod de la tarea creada");
 
+    if (proyecto) {
+      await tx.$executeRawUnsafe(
+        `UPDATE aud_tareas SET Tar_Proyecto = ? WHERE Tar_Cod = ?`,
+        proyecto,
+        tarCod
+      );
+    }
+
     let estadoFinal = estado;
     if (data.perCodAsignar && data.perCodAsignar > 0) {
       await tx.$executeRawUnsafe(
@@ -639,6 +671,7 @@ export async function createTarea(
     Tar_Descripcion: parseTareaDescripcion(descripcion).texto || descripcion,
     Tar_Prioridad: prioridad,
     Tar_Complejidad: complejidad,
+    Tar_Proyecto: proyecto,
     Tar_Fecha_Inicio: fechaInicio,
     Tar_Fecha_Fin: fechaFin,
     Tar_Estado: etiquetaEstado(estadoFinal),
@@ -739,6 +772,7 @@ export async function updateTarea(
     descripcion: string;
     prioridad: string;
     complejidad: string;
+    proyecto: TareaProyecto | null;
     fechaInicio: string;
     fechaFin: string | null;
     estado: string;
@@ -835,6 +869,13 @@ export async function updateTarea(
     sets.push("Tar_Complejidad = ?");
     params.push(normalizeComplejidad(patch.complejidad));
   }
+  if (patch.proyecto !== undefined) {
+    if (!(await ensureTareaColumn(dbDis, "Tar_Proyecto"))) {
+      throw new Error("No se pudo habilitar el campo Proyecto en la base de datos.");
+    }
+    sets.push("Tar_Proyecto = ?");
+    params.push(patch.proyecto);
+  }
   if (patch.apoyoPerCod !== undefined && hasApoyo) {
     sets.push("Tar_Apoyo_Per_Cod = ?");
     params.push(patch.apoyoPerCod && patch.apoyoPerCod > 0 ? patch.apoyoPerCod : null);
@@ -882,6 +923,7 @@ export async function updateTarea(
     ...(patch.titulo != null ? { Tar_Titulo: patch.titulo } : {}),
     ...(patch.estado != null ? { Tar_Estado: etiquetaEstado(patch.estado) } : {}),
     ...(patch.complejidad != null ? { Tar_Complejidad: normalizeComplejidad(patch.complejidad) } : {}),
+    ...(patch.proyecto !== undefined ? { Tar_Proyecto: patch.proyecto } : {}),
     ...(patch.apoyoPerCod !== undefined ? { Tar_Apoyo_Per_Cod: patch.apoyoPerCod } : {}),
   };
 }
@@ -1118,6 +1160,7 @@ export async function getTareaDetalle(
     Tar_Descripcion: string | null;
     Tar_Prioridad: string | null;
     Tar_Complejidad: string | null;
+    Tar_Proyecto: string | null;
     Tar_Estado: string | null;
     Tar_Fecha_Inicio: Date | string | null;
     Tar_Fecha_Fin: Date | string | null;
@@ -1133,6 +1176,9 @@ export async function getTareaDetalle(
     Tar_Brief_Pdf: string | null;
     Tar_Brief_Fecha: Date | string | null;
   };
+  const proyectoSelect = await ensureTareaColumn(dbDis, "Tar_Proyecto")
+    ? "CONVERT(t.Tar_Proyecto USING utf8mb4) AS Tar_Proyecto,"
+    : "NULL AS Tar_Proyecto,";
   const complejidadSelect = hasComplejidad
     ? `CONVERT(t.Tar_Complejidad USING utf8mb4) AS Tar_Complejidad,`
     : `'Media' AS Tar_Complejidad,`;
@@ -1160,6 +1206,7 @@ export async function getTareaDetalle(
             CONVERT(t.Tar_Descripcion USING utf8mb4) AS Tar_Descripcion,
             CONVERT(t.Tar_Prioridad USING utf8mb4) AS Tar_Prioridad,
             ${complejidadSelect}
+            ${proyectoSelect}
             ${apoyoSelect}
             ${briefSelect}
             CONVERT(t.Tar_Estado USING utf8mb4) AS Tar_Estado,
@@ -1275,6 +1322,7 @@ export async function getTareaDetalle(
       Tar_Descripcion: descParsed.texto || null,
       Tar_Prioridad: t.Tar_Prioridad || "Media",
       Tar_Complejidad: normalizeComplejidad(t.Tar_Complejidad),
+      Tar_Proyecto: esTareaProyecto(t.Tar_Proyecto) ? t.Tar_Proyecto : null,
       Tar_Estado: etiquetaEstado(t.Tar_Estado),
       Tar_Fecha_Inicio: toIso(t.Tar_Fecha_Inicio),
       Tar_Fecha_Fin: toIso(t.Tar_Fecha_Fin),

@@ -13,6 +13,7 @@ import { hasRolePermission } from "@/lib/auth/role-permissions";
 import { roleLabel } from "@/lib/auth/users";
 import { useNotifications } from "@/contexts/NotificationsContext";
 import { usePagination } from "@/hooks/use-pagination";
+import { TAREA_PROYECTOS, type TareaProyecto } from "@/lib/tarea-proyectos";
 import { hoyFecha } from "@/lib/timezone";
 import {
   DateRangeFilter,
@@ -39,6 +40,7 @@ import { Select } from "@/components/ui/select";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { plainTextFromHtml } from "@/components/ui/rich-text";
 import { AvanceDialog } from "@/components/tareas/avance-dialog";
+import { TareaProyectoSelect } from "@/components/tareas/tarea-proyecto-select";
 import { TareaDetalleDialog } from "@/components/tareas/tarea-detalle-dialog";
 import { TicketVinculadoChip } from "@/components/tareas/ticket-vinculado-chip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -82,6 +84,7 @@ export default function TareasPage() {
   const [formTitulo, setFormTitulo] = useState("");
   const [formDesc, setFormDesc] = useState("");
   const [formPrio, setFormPrio] = useState("Media");
+  const [formProyecto, setFormProyecto] = useState<TareaProyecto | null>(null);
   const [formComplejidad, setFormComplejidad] = useState("Media");
   const [formFin, setFormFin] = useState("");
   const [formStandby, setFormStandby] = useState(false);
@@ -167,6 +170,7 @@ export default function TareasPage() {
     setFormTitulo("");
     setFormDesc("");
     setFormPrio("Media");
+    setFormProyecto(null);
     setFormComplejidad("Media");
     setFormFin("");
     setFormStandby(false);
@@ -227,6 +231,7 @@ export default function TareasPage() {
           descripcion: formDesc,
           prioridad: formPrio,
           complejidad: formComplejidad,
+          proyecto: formProyecto,
           fechaFin: formFin || null,
           ...(formStandby ? { estado: "Standby" } : {}),
           ...(canAssign ? { perCodAsignar: formPer ? Number(formPer) : undefined } : {}),
@@ -484,6 +489,9 @@ export default function TareasPage() {
                       </span>
                     </div>
                     <div className="line-clamp-2 text-sm font-bold">{t.Tar_Titulo}</div>
+                    {t.Tar_Proyecto && (
+                      <div className="mt-1 text-xs text-muted-foreground">{TAREA_PROYECTOS[t.Tar_Proyecto]}</div>
+                    )}
                     {t.Tar_Descripcion && (
                       <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
                         {plainTextFromHtml(t.Tar_Descripcion)}
@@ -563,6 +571,9 @@ export default function TareasPage() {
                         </TableCell>
                         <TableCell className="min-w-[260px]">
                           <div className="font-semibold leading-snug">{t.Tar_Titulo}</div>
+                          {t.Tar_Proyecto && (
+                            <div className="mt-1 text-xs text-muted-foreground">{TAREA_PROYECTOS[t.Tar_Proyecto]}</div>
+                          )}
                           <TicketVinculadoChip tickets={t.Tickets_Vinculados} className="mt-1" />
                           {t.Tar_Descripcion && (
                             <div className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
@@ -686,6 +697,12 @@ export default function TareasPage() {
                   placeholder="Describe la tarea con formato (negrita, listas, enlaces...)"
                 />
               </div>
+              <TareaProyectoSelect
+                id="nueva-tarea-proyecto"
+                value={formProyecto}
+                onChange={setFormProyecto}
+                disabled={formSaving}
+              />
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Prioridad</Label>

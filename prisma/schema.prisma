@@ -111,6 +111,7 @@ model aud_tareas {
   Tar_Prioridad         String    @default("Media") @db.VarChar(20)
   /// Baja | Media | Alta | Muy alta (ver sql/add_tarea_complejidad.sql)
   Tar_Complejidad       String?   @default("Media") @db.VarChar(20)
+  Tar_Proyecto          String?   @db.VarChar(20)
   /// Proceso de negocio (Tesoreria, Facturacion…) — brief
   Tar_Proceso           String?   @db.VarChar(120)
   /// Modulo funcional dentro del proceso

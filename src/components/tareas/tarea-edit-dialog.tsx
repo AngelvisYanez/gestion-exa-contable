@@ -21,6 +21,8 @@ import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { useAuth } from "@/contexts/AuthContext";
 import { hasRolePermission } from "@/lib/auth/role-permissions";
 import { roleLabel } from "@/lib/auth/users";
+import type { TareaProyecto } from "@/lib/tarea-proyectos";
+import { TareaProyectoSelect } from "@/components/tareas/tarea-proyecto-select";
 import type { TareaDetalle } from "@/lib/tareas";
 import { PlazoBadge } from "@/components/status-badges";
 import { PlazoSelector } from "@/components/tareas/plazo-selector";
@@ -61,6 +63,8 @@ export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, on
   const [titulo, setTitulo] = useState("");
   const [descripcion, setDescripcion] = useState("");
   const [prioridad, setPrioridad] = useState("Media");
+  const [proyectoGuardado, setProyectoGuardado] = useState<TareaProyecto | null>(null);
+  const [proyecto, setProyecto] = useState<TareaProyecto | null>(null);
   const [complejidad, setComplejidad] = useState("Media");
   const [fechaInicio, setFechaInicio] = useState("");
   const [fechaFin, setFechaFin] = useState("");
@@ -102,6 +106,9 @@ export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, on
         setTitulo(t?.Tar_Titulo || tarea?.Tar_Titulo || "");
         setDescripcion(t?.Tar_Descripcion || tarea?.Tar_Descripcion || "");
         setPrioridad(t?.Tar_Prioridad || tarea?.Tar_Prioridad || "Media");
+        const proyectoActual = t ? t.Tar_Proyecto : tarea?.Tar_Proyecto ?? null;
+        setProyectoGuardado(proyectoActual);
+        setProyecto(proyectoActual);
         setComplejidad(t?.Tar_Complejidad || tarea?.Tar_Complejidad || "Media");
         setFechaInicio(String(t?.Tar_Fecha_Inicio || tarea?.Tar_Fecha_Inicio || "").slice(0, 10));
         setFechaFin(String(t?.Tar_Fecha_Fin || tarea?.Tar_Fecha_Fin || "").slice(0, 10));
@@ -184,6 +191,7 @@ export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, on
           descripcion,
           prioridad,
           complejidad,
+          ...(proyecto !== proyectoGuardado ? { proyecto } : {}),
           fechaFin: fechaFin || null,
           ...(canAvance ? { estado } : {}),
           adjuntos,
@@ -242,6 +250,12 @@ export function TareaEditDialog({ open, tarea, detailUrl, extraBody, onClose, on
                 placeholder="Describe la tarea con formato (negrita, listas, enlaces...)"
               />
             </div>
+            <TareaProyectoSelect
+              id="editar-tarea-proyecto"
+              value={proyecto}
+              onChange={setProyecto}
+              disabled={saving}
+            />
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label>Prioridad</Label>

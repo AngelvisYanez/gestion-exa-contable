@@ -17,6 +17,7 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { CalendarClock, GripVertical, History, Maximize2, Ticket } from "lucide-react";
+import { TAREA_PROYECTOS } from "@/lib/tarea-proyectos";
 import { EstadoBadge, PrioridadBadge, PlazoBadge, ComplejidadBadge, fmtDate } from "@/components/status-badges";
 import { TicketVinculadoChip } from "@/components/tareas/ticket-vinculado-chip";
 import { Progress } from "@/components/ui/progress";
@@ -206,6 +207,9 @@ function KanbanCardBody({
             )}
           </div>
           <div className="break-words text-sm font-semibold leading-snug">{t.Tar_Titulo}</div>
+          {!esTicket && t.Tar_Proyecto && (
+            <div className="mt-0.5 text-[11px] text-muted-foreground">{TAREA_PROYECTOS[t.Tar_Proyecto]}</div>
+          )}
           {t.Tar_Descripcion && (
             <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">
               {plainTextFromHtml(t.Tar_Descripcion)}

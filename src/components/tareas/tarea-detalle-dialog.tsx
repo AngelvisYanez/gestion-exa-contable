@@ -24,6 +24,8 @@ import {
   Users,
 } from "lucide-react";
 import type { Tarea } from "@/components/dashboard/types";
+import { TAREA_PROYECTOS } from "@/lib/tarea-proyectos";
+import { Badge } from "@/components/ui/badge";
 import { ComplejidadBadge, EstadoBadge, PlazoBadge, PrioridadBadge, fmtDate } from "@/components/status-badges";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -305,6 +307,7 @@ export function TareaDetalleDialog({
   }, [tarCod, fetchReloadKey, capturasDias, rangoDesde, rangoHasta]);
 
   const t = data?.tarea;
+  const proyecto = t ? t.Tar_Proyecto : tarea?.Tar_Proyecto;
 
   useEffect(() => {
     setAlcance({
@@ -413,6 +416,9 @@ export function TareaDetalleDialog({
             <div className="flex flex-wrap items-center gap-2 pr-8">
               <span className="font-mono text-xs text-muted-foreground">#{tarea?.Tar_Cod}</span>
               <PrioridadBadge prioridad={t?.Tar_Prioridad ?? tarea?.Tar_Prioridad ?? "Media"} />
+              {proyecto && (
+                <Badge variant="outline">Proyecto: {TAREA_PROYECTOS[proyecto]}</Badge>
+              )}
               {(t?.Tar_Complejidad || tarea?.Tar_Complejidad) && (
                 <ComplejidadBadge complejidad={t?.Tar_Complejidad ?? tarea?.Tar_Complejidad} />
               )}

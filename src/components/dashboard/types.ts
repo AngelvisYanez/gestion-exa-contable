@@ -1,3 +1,5 @@
+import type { TareaProyecto } from "@/lib/tarea-proyectos";
+
 export type Kpis = {
   total: number;
   completadas: number;
@@ -17,6 +19,7 @@ export type Tarea = {
   Tar_Prioridad: string;
   /** Baja | Media | Alta | Muy alta */
   Tar_Complejidad?: string | null;
+  Tar_Proyecto?: TareaProyecto | null;
   Tar_Estado: string;
   Tar_Fecha_Inicio?: string | null;
   Tar_Fecha_Fin?: string | null;

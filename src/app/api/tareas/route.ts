@@ -7,6 +7,7 @@ import { listOfsercontCatalogo } from "@/lib/brief/catalog";
 import { generateTareaBrief } from "@/lib/brief/generate";
 import { tasksDbDis, tasksEmpCod } from "@/lib/empresa";
 import { developerUpdatePermission } from "@/lib/tarea-permissions";
+import { esTareaProyecto, type TareaProyecto } from "@/lib/tarea-proyectos";
 import { estadoTrasAvance } from "@/lib/standby";
 import { hasRolePermission } from "@/lib/auth/role-permissions";
 import {
@@ -146,6 +147,10 @@ export async function POST(req: NextRequest) {
       if (!titulo) {
         return NextResponse.json({ success: false, message: "Titulo requerido" }, { status: 400 });
       }
+      const proyecto = body.proyecto;
+      if (proyecto != null && !esTareaProyecto(proyecto)) {
+        return NextResponse.json({ success: false, message: "Proyecto inválido." }, { status: 400 });
+      }
       const perCodAsignar = session.role === "developer"
         ? await resolvePerCod(db, {
             perCod: session.perCod > 0 ? session.perCod : undefined,
@@ -162,6 +167,7 @@ export async function POST(req: NextRequest) {
         descripcion: body.descripcion,
         prioridad: body.prioridad,
         complejidad: body.complejidad,
+        proyecto: proyecto ?? undefined,
         fechaInicio: body.fechaInicio,
         fechaFin: body.fechaFin,
         estado:
@@ -228,6 +234,7 @@ export async function POST(req: NextRequest) {
         descripcion?: string;
         prioridad?: string;
         complejidad?: string;
+        proyecto?: TareaProyecto | null;
         fechaInicio?: string;
         fechaFin?: string | null;
         estado?: string;
@@ -238,6 +245,13 @@ export async function POST(req: NextRequest) {
       if (body.descripcion != null) patch.descripcion = String(body.descripcion);
       if (body.prioridad != null) patch.prioridad = String(body.prioridad);
       if (body.complejidad != null) patch.complejidad = String(body.complejidad);
+      const proyecto = body.proyecto;
+      if (proyecto !== undefined) {
+        if (proyecto !== null && !esTareaProyecto(proyecto)) {
+          return NextResponse.json({ success: false, message: "Proyecto inválido." }, { status: 400 });
+        }
+        patch.proyecto = proyecto;
+      }
       if (body.fechaInicio != null) patch.fechaInicio = String(body.fechaInicio);
       if (body.fechaFin !== undefined) patch.fechaFin = body.fechaFin ? String(body.fechaFin) : null;
       if (body.estado != null && body.estado !== "") patch.estado = String(body.estado);
@@ -254,7 +268,7 @@ export async function POST(req: NextRequest) {
         patch.apoyoPerCod = n;
       }
 
-      const contentKeys = ["titulo", "descripcion", "prioridad", "complejidad", "fechaInicio", "fechaFin", "adjuntos"] as const;
+      const contentKeys = ["titulo", "descripcion", "prioridad", "complejidad", "proyecto", "fechaInicio", "fechaFin", "adjuntos"] as const;
       const touchesContent = contentKeys.some((k) => patch[k] !== undefined);
       const wantsAssign =
         body.perCodAsignar !== undefined ||
