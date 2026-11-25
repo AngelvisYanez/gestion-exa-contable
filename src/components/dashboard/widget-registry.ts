@@ -172,8 +172,8 @@ export const MANAGER_CATALOG: WidgetMeta[] = [
   },
   {
     id: "creador-ejecutor",
-    title: "Creador vs ejecutor",
-    description: "Quien crea tareas frente a quien las ejecuta",
+    title: "Tareas creadas y asignadas",
+    description: "Comparativa por persona con ficha activa",
     defaultLayout: { i: "creador-ejecutor", x: 0, y: 76, w: 6, h: 9, minW: 4, minH: 6 },
   },
   {

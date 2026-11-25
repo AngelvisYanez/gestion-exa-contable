@@ -277,6 +277,15 @@ async function resolveTicketFks(
 /** Bandeja de la lista de tickets (encargado). */
 export type TicketBandeja = "todos" | "sin_asignar" | "asignados" | "resueltos";
 
+function busquedaTicketClauses(q: string | undefined, params: Array<string | number>) {
+  if (!q) return [];
+  const like = `%${q}%`;
+  params.push(like, like, like, like);
+  return [
+      `(CONVERT(t.Tic_Tem USING utf8mb4) LIKE ? OR CONVERT(t.Tic_Des USING utf8mb4) LIKE ? OR CONVERT(IFNULL(e.Emp_Nom,'') USING utf8mb4) LIKE ? OR CAST(t.Tic_Cod AS CHAR) LIKE ?)`
+  ];
+}
+
 export async function listTickets(
   dbDis: string,
   opts: {
@@ -285,6 +294,7 @@ export async function listTickets(
     bandeja?: TicketBandeja | string;
     q?: string;
     limit?: number;
+    sinLimite?: boolean;
     aseCod?: number;
     /** Varios Usu_Cod del mismo colaborador (multi-sucursal EXA). */
     aseCodes?: number[];
@@ -392,13 +402,7 @@ export async function listTickets(
     }
   }
   where.push(...fechaClauses(opts, params, "t.Tic_Fec_Cre"));
-  if (opts.q) {
-    where.push(
-      `(CONVERT(t.Tic_Tem USING utf8mb4) LIKE ? OR CONVERT(t.Tic_Des USING utf8mb4) LIKE ? OR CONVERT(IFNULL(e.Emp_Nom,'') USING utf8mb4) LIKE ? OR CAST(t.Tic_Cod AS CHAR) LIKE ?)`
-    );
-    const like = `%${opts.q}%`;
-    params.push(like, like, like, like);
-  }
+  where.push(...busquedaTicketClauses(opts.q, params));
 
   const limit = Math.min(Math.max(opts.limit || 200, 1), 2000);
 
@@ -452,7 +456,7 @@ export async function listTickets(
      LEFT JOIN ${paTable} pa ON pa.Prs_Cod = ua.Prs_Cod
      WHERE ${where.join(" AND ")}
      ORDER BY t.Tic_Fec_Cre DESC, t.Tic_Cod DESC
-     LIMIT ${limit}`,
+     ${opts.sinLimite ? "" : `LIMIT ${limit}`}`,
     ...params
   );
 
@@ -615,6 +619,7 @@ export async function listTicketsAsignados(
     perCodes?: number[];
     q?: string;
     limit?: number;
+    sinLimite?: boolean;
     ticCod?: number;
     desde?: string | null;
     hasta?: string | null;
@@ -631,6 +636,7 @@ export async function listTicketsAsignados(
       try {
         return await listTickets(db, opts);
       } catch (err) {
+        if (opts.sinLimite) throw err;
         console.error(`[tickets] ${db}:`, err instanceof Error ? err.message : err);
         return [] as Ticket[];
       }
@@ -646,7 +652,7 @@ export async function listTicketsAsignados(
   // Vínculo ticket → tarea ("Convertir a tarea") para mostrar/deshabilitar la acción.
   await attachTareaVinculada(merged);
   const limit = Math.min(Math.max(opts.limit || 200, 1), 2000);
-  return merged.slice(0, limit);
+  return opts.sinLimite ? merged : merged.slice(0, limit);
 }
 
 export function resumirTickets(tickets: Ticket[]) {
@@ -734,23 +740,21 @@ export async function countTicketsNuevos(dbDis: string) {
 
 export async function ticketsKpis(
   dbDis: string,
-  opts: { desde?: string | null; hasta?: string | null } = {}
+  opts: { desde?: string | null; hasta?: string | null; q?: string } = {}
 ) {
   const db = sanitizeDbDis(dbDis);
   const prisma = getPrisma(db);
   await ensureTicketAsignados(prisma);
   const extraAsignados = ticketAsignadosEnabled(prisma);
-  const estParams: Array<string | number> = [];
-  const estFecha = fechaClauses(opts, estParams, "Tic_Fec_Cre");
-  const estWhere = estFecha.length ? `WHERE ${estFecha.join(" AND ")}` : "";
-  const banParams: Array<string | number> = [];
-  const banFecha = fechaClauses(opts, banParams, "t.Tic_Fec_Cre");
-  const banWhere = banFecha.length ? `WHERE ${banFecha.join(" AND ")}` : "";
+  const params: Array<string | number> = [];
+  const filtros = [...fechaClauses(opts, params, "t.Tic_Fec_Cre"), ...busquedaTicketClauses(opts.q, params)];
+  const where = filtros.length ? `WHERE ${filtros.join(" AND ")}` : "";
+  const empresas = opts.q ? "LEFT JOIN empresas e ON e.Emp_Cod = t.Emp_Cod" : "";
   const [byEst, bandeja] = await Promise.all([
     prisma.$queryRawUnsafe<Array<{ Tic_Est: string; c: number | bigint }>>(
-      `SELECT CONVERT(Tic_Est USING utf8mb4) AS Tic_Est, COUNT(*) AS c
-       FROM tickets ${estWhere} GROUP BY Tic_Est`,
-      ...estParams
+      `SELECT CONVERT(t.Tic_Est USING utf8mb4) AS Tic_Est, COUNT(*) AS c
+       FROM tickets t ${empresas} ${where} GROUP BY t.Tic_Est`,
+      ...params
     ),
     prisma.$queryRawUnsafe<
       Array<{ sin_asignar: number | bigint; asignados: number | bigint; resueltos: number | bigint }>
@@ -778,9 +782,9 @@ export async function ticketsKpis(
              }
            ) AND t.Tic_Est <> '3' THEN 1 ELSE 0 END) AS asignados,
          SUM(CASE WHEN t.Tic_Est = '3' THEN 1 ELSE 0 END) AS resueltos
-       FROM tickets t
-       ${banWhere}`,
-      ...banParams
+       FROM tickets t ${empresas}
+       ${where}`,
+      ...params
     ),
   ]);
   const by: Record<string, number> = {};
@@ -807,20 +811,13 @@ export async function ticketsKpis(
 
 /** KPIs de tickets sumando EXA y Servicios (u otras bases permitidas). */
 export async function ticketsKpisBases(
-  opts: { desde?: string | null; hasta?: string | null; bases?: string[] } = {}
+  opts: { desde?: string | null; hasta?: string | null; q?: string; bases?: string[] } = {}
 ) {
   const bases = [
     ...new Set((opts.bases?.length ? opts.bases : await resolveTicketDatabaseIds()).map((b) => sanitizeDbDis(b))),
   ];
   const parts = await Promise.all(
-    bases.map(async (db) => {
-      try {
-        return await ticketsKpis(db, opts);
-      } catch (err) {
-        console.error(`[tickets] kpis ${db}:`, err instanceof Error ? err.message : err);
-        return null;
-      }
-    })
+    bases.map((db) => ticketsKpis(db, opts))
   );
   const acc = {
     total: 0,
@@ -833,7 +830,6 @@ export async function ticketsKpisBases(
     cerrados: 0,
   };
   for (const p of parts) {
-    if (!p) continue;
     acc.total += p.total;
     acc.nuevos += p.nuevos;
     acc.proceso += p.proceso;

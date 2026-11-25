@@ -122,21 +122,22 @@ type Metrics = {
   backlog: BacklogMetric;
   creadorEjecutor: CreadorEjecutorRow[];
   cargaJusta: CargaJustaMetric;
-  reapertura: ReaperturaMetric;
+  reapertura: ReaperturaMetric | null;
   complejidad: ComplejidadMetric;
   esfuerzo: EsfuerzoDev[];
   horasTarea: HorasTareaRow[];
   procesos: ProcesoActivoRow[];
   horario: HorarioAdherenciaRow[];
-  avanceSinActividad: AvanceSinActividadMetric;
+  avanceSinActividad: AvanceSinActividadMetric | null;
+  esfuerzoDisponible: boolean;
   bases: BaseComparativaRow[];
   desarrolladores: Array<{ Per_Cod: number; Nombre: string }>;
   filtro: { perCod: number | null };
   sinAsignar: number;
-  online: number;
-  ausente: number;
-  offline: number;
-  ticketsNuevos: number;
+  online: number | null;
+  ausente: number | null;
+  offline: number | null;
+  ticketsNuevos: number | null;
   rango: { desde: string; hasta: string; min: string; max: string };
 };
 
@@ -302,15 +303,15 @@ export default function HomePage() {
       case "equipo-cola":
         return (
           <EquipoColaWidget
-            online={m?.online ?? 0}
-            ausente={m?.ausente ?? 0}
-            offline={m?.offline ?? 0}
+            online={m?.online ?? null}
+            ausente={m?.ausente ?? null}
+            offline={m?.offline ?? null}
             sinAsignar={m?.sinAsignar ?? 0}
-            ticketsNuevos={m?.ticketsNuevos ?? 0}
+            ticketsNuevos={m?.ticketsNuevos ?? null}
           />
         );
       case "accesos":
-        return <ManagerAccesosWidget ticketsNuevos={m?.ticketsNuevos ?? 0} />;
+        return <ManagerAccesosWidget ticketsNuevos={m?.ticketsNuevos ?? null} />;
       case "chart-estado":
         return (
           <ApexEstadoWidget
@@ -432,23 +433,27 @@ export default function HomePage() {
       case "reapertura":
         return (
           <ReaperturaWidget
-            reapertura={m?.reapertura || { retrocesos: 0, tareas: 0, avances_total: 0, pct: 0 }}
+            reapertura={m?.reapertura ?? null}
           />
         );
       case "complejidad":
         return <ComplejidadWidget complejidad={m?.complejidad || { filas: [] }} />;
       case "esfuerzo":
+        if (!m?.esfuerzoDisponible) return <p className="text-xs text-muted-foreground">Telemetria no disponible</p>;
         return <EsfuerzoWidget rows={m?.esfuerzo || []} />;
       case "horas-tarea":
+        if (!m?.esfuerzoDisponible) return <p className="text-xs text-muted-foreground">Telemetria no disponible</p>;
         return <HorasTareaWidget rows={m?.horasTarea || []} />;
       case "procesos":
+        if (!m?.esfuerzoDisponible) return <p className="text-xs text-muted-foreground">Telemetria no disponible</p>;
         return <ProcesosWidget rows={m?.procesos || []} />;
       case "horario":
+        if (!m?.esfuerzoDisponible) return <p className="text-xs text-muted-foreground">Telemetria no disponible</p>;
         return <HorarioWidget rows={m?.horario || []} />;
       case "avance-sin-actividad":
         return (
           <AvanceSinActividadWidget
-            data={m?.avanceSinActividad || { con_avance: 0, sin_actividad: 0, pct: 0, tareas: [] }}
+            data={m?.avanceSinActividad ?? null}
           />
         );
       case "bases":
@@ -551,7 +556,7 @@ export default function HomePage() {
           </div>
         )}
 
-        {ready && (
+        {ready && m && !error && (
           <DashboardGrid
             role="manager"
             editMode={editMode}

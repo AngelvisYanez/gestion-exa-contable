@@ -587,6 +587,7 @@ export async function listIncidencias(
     where.push("Inc_Nivel = ?");
     params.push(opts.nivel);
   }
+  const filtrosBandeja = where.length - 1;
   const validDate = (value: string | undefined) => value && /^\d{4}-\d{2}-\d{2}$/.test(value);
   if (validDate(opts.fechaDesde)) {
     where.push("Inc_Ultima_Vez >= ?");
@@ -654,7 +655,11 @@ export async function listIncidencias(
 
   const allForKpis = await prisma.$queryRawUnsafe<
     Array<{ Inc_Estado: string; Inc_Nivel: string; Tar_Cod: number | null }>
-  >(`SELECT Inc_Estado, Inc_Nivel, Tar_Cod FROM aud_incidencias WHERE Inc_Est = 'A'`);
+  >(
+    `SELECT Inc_Estado, Inc_Nivel, Tar_Cod FROM aud_incidencias
+     WHERE ${[where[0], ...where.slice(filtrosBandeja + 1)].join(" AND ")}`,
+    ...params.slice(filtrosBandeja)
+  );
 
   const kpis = {
     total: allForKpis.length,

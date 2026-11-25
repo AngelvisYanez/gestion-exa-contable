@@ -1,6 +1,6 @@
 import { getPrisma, sanitizeDbDis } from "./db";
 import { tasksEmpCod } from "./empresa";
-import { getTareasDateBounds, listAsignables, listTareas, kpisTareas } from "./tareas";
+import { getTareasDateBounds, listAsignables, listTareas, kpisTareas, resumirTareas } from "./tareas";
 import { hoyFecha, toCalendarYmd } from "./timezone";
 import { CATEGORIAS_PLAZO, plazoDesdeFechas, type CategoriaPlazo } from "./plazo-tarea";
 import { loadMonitoreoReporte, type MonitoreoReporte } from "./reporte-monitoreo";
@@ -150,7 +150,7 @@ export type CreadorEjecutorRow = {
   creadas: number;
   /** Tareas donde figura como asignado. */
   ejecutadas: number;
-  /** creadas - ejecutadas: positivo = aporta mas de lo que ejecuta. */
+  /** Diferencia entre tareas creadas y asignadas. */
   balance: number;
 };
 
@@ -258,6 +258,7 @@ export type BaseComparativaRow = {
   /** Etiqueta legible (EXA, Servicios…). */
   label: string;
   es_actual: boolean;
+  disponible: boolean;
   total: number;
   completadas: number;
   proceso: number;
@@ -278,10 +279,10 @@ export type DashboardMetrics = {
   desarrolladores: DeveloperOption[];
   filtro: { perCod: number | null };
   sinAsignar: number;
-  online: number;
-  ausente: number;
-  offline: number;
-  ticketsNuevos?: number;
+  online: number | null;
+  ausente: number | null;
+  offline: number | null;
+  ticketsNuevos?: number | null;
   rango: { desde: string; hasta: string; min: string; max: string };
   comparativa: ComparativaDev[];
   /** Ranking de quien mas apoyo en tareas (por plazo). */
@@ -293,13 +294,14 @@ export type DashboardMetrics = {
   backlog: BacklogMetric;
   creadorEjecutor: CreadorEjecutorRow[];
   cargaJusta: CargaJustaMetric;
-  reapertura: ReaperturaMetric;
+  reapertura: ReaperturaMetric | null;
   complejidad: ComplejidadMetric;
   esfuerzo: EsfuerzoDev[];
   horasTarea: HorasTareaRow[];
   procesos: ProcesoActivoRow[];
   horario: HorarioAdherenciaRow[];
-  avanceSinActividad: AvanceSinActividadMetric;
+  avanceSinActividad: AvanceSinActividadMetric | null;
+  esfuerzoDisponible: boolean;
   /** KPIs por base disponible (EXA vs Servicios). */
   bases: BaseComparativaRow[];
 };
@@ -330,23 +332,24 @@ const YMD = /^\d{4}-\d{2}-\d{2}$/;
 
 function asYmd(v: unknown, fallback: string): string {
   const s = toCalendarYmd(v);
-  return YMD.test(s) ? s : fallback;
+  if (!YMD.test(s)) return fallback;
+  const date = new Date(`${s}T00:00:00Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === s ? s : fallback;
 }
 
 function addDays(fecha: string, days: number): string {
-  const [y, m, d] = fecha.split("-").map(Number);
-  const utc = new Date(Date.UTC(y, m - 1, d + days));
+  const utc = new Date(`${fecha}T00:00:00Z`);
+  utc.setUTCDate(utc.getUTCDate() + days);
   return utc.toISOString().slice(0, 10);
 }
 
 function enumerateDays(desde: string, hasta: string): string[] {
   const out: string[] = [];
   let cur = desde;
-  let guard = 0;
-  while (cur <= hasta && guard < 400) {
+  while (cur <= hasta) {
     out.push(cur);
+    if (cur === hasta) break;
     cur = addDays(cur, 1);
-    guard++;
   }
   return out;
 }
@@ -400,7 +403,10 @@ async function buildComparativa(
 ): Promise<ComparativaDev[]> {
   const prisma = getPrisma(dbDis);
   const dias = Math.max(1, Math.min(400, diasEntre(desde, hasta)));
-  const perFilter = perCod && perCod > 0 ? "AND a.Per_Cod = ?" : "";
+  const perFilter = perCod && perCod > 0 ? `AND EXISTS (
+           SELECT 1 FROM aud_tareas_asignadas a
+           WHERE a.Tar_Cod = t.Tar_Cod AND a.Tas_Est = 'A' AND a.Per_Cod = ?
+         )` : "";
 
   const plazoSql = `CASE
       WHEN t.Tar_Fecha_Inicio IS NULL OR t.Tar_Fecha_Fin IS NULL THEN 'Sin fechas'
@@ -794,7 +800,7 @@ async function buildReapertura(
   desde: string,
   hasta: string,
   perCod: number | null
-): Promise<ReaperturaMetric> {
+): Promise<ReaperturaMetric | null> {
   const prisma = getPrisma(dbDis);
   const perFilter = perCod && perCod > 0 ? "AND a.Per_Cod = ?" : "";
   const params: Array<string | number> = [emp, desde, hasta];
@@ -808,10 +814,15 @@ async function buildReapertura(
          COUNT(*) AS avances_total
        FROM aud_tareas_avances av
        INNER JOIN aud_tareas t ON t.Tar_Cod = av.Tar_Cod AND t.Tar_Est = 'A' AND t.Emp_Cod = ?
-       LEFT JOIN aud_tareas_asignadas a ON a.Tar_Cod = t.Tar_Cod AND a.Tas_Est = 'A'
-       LEFT JOIN aud_tareas_avances prev ON prev.Tar_Cod = av.Tar_Cod
-         AND prev.Ava_Est = 'A'
-         AND (prev.Ava_Fecha < av.Ava_Fecha OR (prev.Ava_Fecha = av.Ava_Fecha AND prev.Ava_Cod < av.Ava_Cod))
+       LEFT JOIN aud_tareas_avances prev ON prev.Ava_Cod = (
+         SELECT anterior.Ava_Cod
+         FROM aud_tareas_avances anterior
+         WHERE anterior.Tar_Cod = av.Tar_Cod AND anterior.Ava_Est = 'A'
+           AND (anterior.Ava_Fecha < av.Ava_Fecha
+             OR (anterior.Ava_Fecha = av.Ava_Fecha AND anterior.Ava_Cod < av.Ava_Cod))
+         ORDER BY anterior.Ava_Fecha DESC, anterior.Ava_Cod DESC
+         LIMIT 1
+       )
        WHERE av.Ava_Est = 'A'
          AND DATE(av.Ava_Fecha) >= ? AND DATE(av.Ava_Fecha) <= ?
          ${perFilter}`,
@@ -826,17 +837,23 @@ async function buildReapertura(
       pct: avancesTotal ? Math.round((retrocesos / avancesTotal) * 100) : 0,
     };
   } catch {
-    return { retrocesos: 0, tareas: 0, avances_total: 0, pct: 0 };
+    return null;
   }
 }
 
 /** Tareas con avance declarado en el rango pero sin telemetria medida. */
 function buildAvanceSinActividad(
   tareas: TareaFila[],
+  desde: string,
+  hasta: string,
   tarConTelemetria: Set<number>
 ): AvanceSinActividadMetric {
   const conAvance = tareas.filter(
-    (t) => (t.Ava_Porcentaje || 0) > 0 && t.Tar_Estado !== "Finalizada"
+    (t) => {
+      const fecha = ymdOf(t.Ava_Ultima_Fecha);
+      const pct = t.Ava_Porcentaje || 0;
+      return pct > 0 && pct < 100 && t.Tar_Estado !== "Finalizada" && fecha >= desde && fecha <= hasta;
+    }
   );
   const sinActividad = conAvance.filter((t) => !tarConTelemetria.has(t.Tar_Cod));
   return {
@@ -861,6 +878,7 @@ async function buildEsfuerzo(
   asignables: Array<{ Per_Cod: number; Nombre: string }>,
   tareas: TareaFila[]
 ): Promise<{
+  disponible: boolean;
   esfuerzo: EsfuerzoDev[];
   horasTarea: HorasTareaRow[];
   procesos: ProcesoActivoRow[];
@@ -873,6 +891,7 @@ async function buildEsfuerzo(
   const perParam = perCod && perCod > 0 ? [perCod] : [];
 
   const empty = {
+    disponible: false,
     esfuerzo: [] as EsfuerzoDev[],
     horasTarea: [] as HorasTareaRow[],
     procesos: [] as ProcesoActivoRow[],
@@ -889,6 +908,7 @@ async function buildEsfuerzo(
       clicks: bigint | number | null;
       teclas: bigint | number | null;
       lineas: bigint | number | null;
+      registros: bigint | number;
     };
     const perRows = await prisma.$queryRawUnsafe<PerAgg[]>(
       `SELECT Per_Cod AS Per_Cod,
@@ -897,7 +917,8 @@ async function buildEsfuerzo(
               COUNT(DISTINCT Tar_Cod) AS tareas,
               SUM(Tel_Clicks) AS clicks,
               SUM(Tel_Teclas) AS teclas,
-              SUM(Tel_Lineas_Estimadas) AS lineas
+              SUM(Tel_Lineas_Estimadas) AS lineas,
+              COUNT(*) AS registros
        FROM aud_dev_telemetria
        WHERE DATE(Tel_Fecha_Hora) >= ? AND DATE(Tel_Fecha_Hora) <= ?
          ${perFilter}
@@ -929,13 +950,13 @@ async function buildEsfuerzo(
          AND DATE(Tel_Fecha_Hora) >= ? AND DATE(Tel_Fecha_Hora) <= ?
          ${perFilter}
        GROUP BY Tar_Cod
-       ORDER BY segundos DESC
-       LIMIT 60`,
+       ORDER BY segundos DESC`,
       desde,
       hasta,
       ...perParam
     );
     const horasTarea: HorasTareaRow[] = tarRows
+      .filter((r) => taskByCod.has(Number(r.Tar_Cod)))
       .map((r) => {
         const cod = Number(r.Tar_Cod);
         const minutos = Math.round(Number(r.segundos || 0) / 60);
@@ -950,7 +971,7 @@ async function buildEsfuerzo(
       .slice(0, 10);
 
     const tarConTelemetria = new Set<number>(
-      tarRows.map((r) => Number(r.Tar_Cod)).filter((c) => c > 0)
+      tarRows.filter((r) => Number(r.segundos) > 0).map((r) => Number(r.Tar_Cod))
     );
 
     // Proceso/ventana activo mas frecuente.
@@ -969,7 +990,7 @@ async function buildEsfuerzo(
       hasta,
       ...perParam
     );
-    const totalProc = procRows.reduce((s, r) => s + Number(r.registros || 0), 0);
+    const totalProc = perRows.reduce((s, r) => s + Number(r.registros), 0);
     const procesos: ProcesoActivoRow[] = procRows.map((r) => ({
       nombre: String(r.proceso || "Sin datos"),
       registros: Number(r.registros || 0),
@@ -1041,7 +1062,7 @@ async function buildEsfuerzo(
       .filter((r) => r.hora_inicio)
       .sort((a, b) => a.pct - b.pct);
 
-    return { esfuerzo, horasTarea, procesos, horario, tarConTelemetria };
+    return { disponible: true, esfuerzo, horasTarea, procesos, horario, tarConTelemetria };
   } catch {
     /* telemetria opcional (tabla puede no existir) */
     return empty;
@@ -1060,7 +1081,8 @@ async function buildBases(
   emp: number,
   desde: string,
   hasta: string,
-  perCod: number | null
+  perCod: number | null,
+  actual: ReturnType<typeof resumirTareas>
 ): Promise<BaseComparativaRow[]> {
   const { allowedDatabases } = await import("./db");
   const bases = allowedDatabases().filter(
@@ -1069,7 +1091,7 @@ async function buildBases(
   const lista = bases.length ? bases : [dbActual];
   const rows = await Promise.all(
     lista.map(async (base): Promise<BaseComparativaRow> => {
-      const kpi = await kpisTareas(base, emp, {
+      const kpi = base === dbActual ? actual : await kpisTareas(base, emp, {
         desde,
         hasta,
         perCod: perCod || undefined,
@@ -1078,6 +1100,7 @@ async function buildBases(
         base,
         label: BASE_LABELS[base] || base,
         es_actual: base === dbActual,
+        disponible: kpi !== null,
         total: kpi?.total ?? 0,
         completadas: kpi?.completadas ?? 0,
         proceso: kpi?.proceso ?? 0,
@@ -1111,12 +1134,6 @@ async function buildSerieEquipo(
     const tmp = serieDesde;
     serieDesde = serieHasta;
     serieHasta = tmp;
-  }
-
-  const span = enumerateDays(serieDesde, serieHasta).length;
-  if (span > 45) {
-    const clipped = addDays(serieHasta, -44);
-    if (clipped > serieDesde) serieDesde = clipped;
   }
 
   const perFilter =
@@ -1296,12 +1313,12 @@ export async function getDashboardMetrics(
   const perCod =
     rawPer > 0 && asignables.some((a) => a.Per_Cod === rawPer) ? rawPer : null;
 
-  const [tareas, kpis, serieEquipo] = await Promise.all([
-    listTareas(db, { empCod: emp, desde, hasta, perCod: perCod || undefined }),
-    kpisTareas(db, emp, { desde, hasta, perCod: perCod || undefined }),
+  const [tareas, serieEquipo] = await Promise.all([
+    listTareas(db, { empCod: emp, desde, hasta, perCod: perCod || undefined, sinLimite: true }),
     buildSerieEquipo(db, emp, desde, hasta, perCod),
   ]);
 
+  const kpis = resumirTareas(tareas);
   const comparativa = await buildComparativa(db, emp, tareas, desde, hasta, perCod, asignables);
 
   const derivadas = buildTareasDerivadas(tareas, desde, hasta, hoy);
@@ -1339,7 +1356,7 @@ export async function getDashboardMetrics(
     const estado =
       t.Tar_Estado === "Finalizada" || (t.Ava_Porcentaje || 0) >= 100
         ? "Finalizada"
-        : t.Tar_Estado === "En Proceso"
+        : t.Tar_Estado === "En Proceso" || (t.Ava_Porcentaje || 0) > 0
           ? "En Proceso"
           : t.Tar_Estado === "Asignado"
             ? "Asignado"
@@ -1394,18 +1411,38 @@ export async function getDashboardMetrics(
   const cargaJusta = buildCargaJusta(porAsignado);
 
   const esfuerzoData = await buildEsfuerzo(db, emp, desde, hasta, perCod, asignables, tareas);
-  const avanceSinActividad = buildAvanceSinActividad(tareas, esfuerzoData.tarConTelemetria);
+  const avanceSinActividad = esfuerzoData.disponible
+    ? buildAvanceSinActividad(tareas, desde, hasta, esfuerzoData.tarConTelemetria)
+    : null;
 
-  // Creador vs ejecutor: quien crea tareas frente a quien las ejecuta.
+  const creadasPorPer = new Map<number, number>();
+  const usuarios = [...derivadas.creadorCreadas.keys()];
+  if (usuarios.length) {
+    const fichas = await getPrisma(db).$queryRawUnsafe<Array<{ Usu_Cod: number; Per_Cod: number }>>(
+      `SELECT u.Usu_Cod, MIN(p.Per_Cod) AS Per_Cod
+       FROM usuarios u
+       JOIN personal p ON p.Prs_Cod = u.Prs_Cod AND p.Emp_Cod = ? AND p.Per_Est = 'A'
+       WHERE u.Usu_Cod IN (${usuarios.map(() => "?").join(",")})
+       GROUP BY u.Usu_Cod`,
+      emp,
+      ...usuarios
+    );
+    for (const ficha of fichas) {
+      const per = Number(ficha.Per_Cod);
+      const creadas = derivadas.creadorCreadas.get(Number(ficha.Usu_Cod)) || 0;
+      creadasPorPer.set(per, (creadasPorPer.get(per) || 0) + creadas);
+    }
+  }
+
   const ejecutadasPorPer = new Map<number, number>();
   for (const r of porAsignado) ejecutadasPorPer.set(r.Per_Cod, r.total);
   const creadorEjecutor: CreadorEjecutorRow[] = [];
   const perCodesCreadores = new Set<number>([
-    ...derivadas.creadorCreadas.keys(),
+    ...creadasPorPer.keys(),
     ...ejecutadasPorPer.keys(),
   ]);
   for (const per of perCodesCreadores) {
-    const creadas = derivadas.creadorCreadas.get(per) || 0;
+    const creadas = creadasPorPer.get(per) || 0;
     const ejecutadas = ejecutadasPorPer.get(per) || 0;
     if (creadas === 0 && ejecutadas === 0) continue;
     creadorEjecutor.push({
@@ -1418,9 +1455,9 @@ export async function getDashboardMetrics(
   }
   creadorEjecutor.sort((a, b) => b.creadas - a.creadas || b.ejecutadas - a.ejecutadas);
 
-  let online = 0;
-  let ausente = 0;
-  let offline = 0;
+  let online: number | null = 0;
+  let ausente: number | null = 0;
+  let offline: number | null = 0;
   try {
     const prisma = getPrisma(db);
     const configs = await prisma.aud_dev_monitoreo_config.findMany(
@@ -1435,7 +1472,7 @@ export async function getDashboardMetrics(
       else offline++;
     }
   } catch {
-    /* monitoreo opcional */
+    online = ausente = offline = null;
   }
 
   return {
@@ -1481,6 +1518,7 @@ export async function getDashboardMetrics(
     procesos: esfuerzoData.procesos,
     horario: esfuerzoData.horario,
     avanceSinActividad,
-    bases: await buildBases(db, emp, desde, hasta, perCod),
+    esfuerzoDisponible: esfuerzoData.disponible,
+    bases: await buildBases(db, emp, desde, hasta, perCod, kpis),
   };
 }

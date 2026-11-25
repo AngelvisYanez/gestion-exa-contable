@@ -19,11 +19,11 @@ export async function GET(req: NextRequest) {
       hasta,
       perCod: Number.isFinite(perCod) && (perCod as number) > 0 ? perCod : null,
     });
-    let ticketsNuevos = 0;
+    let ticketsNuevos: number | null = null;
     try {
       ticketsNuevos = await countTicketsNuevos(db);
     } catch {
-      ticketsNuevos = 0;
+      // El resumen de tareas sigue disponible si falla la consulta de tickets.
     }
     return NextResponse.json({
       success: true,

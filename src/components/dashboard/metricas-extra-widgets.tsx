@@ -236,7 +236,7 @@ export function CreadorEjecutorWidget({ rows }: { rows: CreadorEjecutorRow[] }) 
   return (
     <div className="flex h-full min-h-0 flex-col gap-1.5 overflow-hidden">
       <p className="shrink-0 text-[10px] text-muted-foreground">
-        Creadas vs ejecutadas · balance positivo = crea mas de lo que ejecuta
+        Tareas creadas y asignadas por persona con ficha activa
       </p>
       <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-0.5">
         {visible.map((r) => (
@@ -244,7 +244,7 @@ export function CreadorEjecutorWidget({ rows }: { rows: CreadorEjecutorRow[] }) 
             <span className="truncate text-xs font-semibold">{nombreCorto(r.Nombre)}</span>
             <div className="flex shrink-0 items-center gap-2 text-[11px] tabular-nums">
               <span title="Creadas" className="text-sky-700">{r.creadas} cr</span>
-              <span title="Ejecutadas" className="text-emerald-700">{r.ejecutadas} ej</span>
+              <span title="Asignadas" className="text-emerald-700">{r.ejecutadas} asig.</span>
               <span
                 className={cn(
                   "rounded px-1.5 py-0.5 text-[10px] font-bold",
@@ -291,7 +291,8 @@ export function CargaJustaWidget({ carga }: { carga: CargaJustaMetric }) {
 }
 
 /** Tasa de reapertura: avances que retroceden. */
-export function ReaperturaWidget({ reapertura }: { reapertura: ReaperturaMetric }) {
+export function ReaperturaWidget({ reapertura }: { reapertura: ReaperturaMetric | null }) {
+  if (!reapertura) return <p className="text-xs text-muted-foreground">Historial de avances no disponible</p>;
   return (
     <div className="grid h-full min-h-0 grid-cols-2 gap-2 sm:grid-cols-4">
       <MetricCard
@@ -488,7 +489,7 @@ export function BasesWidget({ rows }: { rows: BaseComparativaRow[] }) {
   }
   const idx = Math.min(sel, rows.length - 1);
   const actual = rows[idx];
-  const maxTotal = Math.max(1, ...rows.map((r) => r.total));
+  const maxTotal = Math.max(1, ...rows.filter((r) => r.disponible).map((r) => r.total));
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 overflow-hidden">
       <div className="flex shrink-0 flex-wrap gap-1">
@@ -509,7 +510,7 @@ export function BasesWidget({ rows }: { rows: BaseComparativaRow[] }) {
           </button>
         ))}
       </div>
-      <div className="shrink-0 rounded-lg border border-sky-200 bg-sky-50/40 px-2.5 py-2">
+      {actual.disponible && <div className="shrink-0 rounded-lg border border-sky-200 bg-sky-50/40 px-2.5 py-2">
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs font-bold">
             {actual.label}
@@ -531,7 +532,7 @@ export function BasesWidget({ rows }: { rows: BaseComparativaRow[] }) {
           <span className={actual.atrasadas > 0 ? "text-red-600" : ""}>Atrasadas: <strong>{actual.atrasadas}</strong></span>
           <span>Avance prom.: <strong>{actual.avance_promedio}%</strong></span>
         </div>
-      </div>
+      </div>}
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
         {rows.map((r, i) => (
           <button
@@ -553,10 +554,10 @@ export function BasesWidget({ rows }: { rows: BaseComparativaRow[] }) {
                 )}
               </span>
               <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-                {r.total} tarea(s)
+                {r.disponible ? `${r.total} tarea(s)` : "Datos no disponibles"}
               </span>
             </div>
-            <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+            <div hidden={!r.disponible} className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
               <div
                 className="h-full rounded-full bg-sky-500"
                 style={{ width: `${Math.round((r.total / maxTotal) * 100)}%` }}
@@ -577,7 +578,8 @@ export function BasesWidget({ rows }: { rows: BaseComparativaRow[] }) {
     </div>
   );
 }
-export function AvanceSinActividadWidget({ data }: { data: AvanceSinActividadMetric }) {
+export function AvanceSinActividadWidget({ data }: { data: AvanceSinActividadMetric | null }) {
+  if (!data) return <p className="text-xs text-muted-foreground">Telemetria no disponible</p>;
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 overflow-hidden">
       <div className="grid shrink-0 grid-cols-2 gap-2">
@@ -585,7 +587,7 @@ export function AvanceSinActividadWidget({ data }: { data: AvanceSinActividadMet
           compact
           label="Sin actividad medida"
           value={`${data.pct}%`}
-          hint={`${data.sin_actividad} de ${data.con_avance} con avance`}
+          hint={`${data.sin_actividad} de ${data.con_avance} con ultimo avance en el periodo`}
           tone={data.pct <= 20 ? "success" : data.pct <= 50 ? "warning" : "danger"}
         />
         <MetricCard compact label="Con avance" value={data.con_avance} tone="info" />
@@ -593,7 +595,7 @@ export function AvanceSinActividadWidget({ data }: { data: AvanceSinActividadMet
       <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-0.5">
         {data.tareas.length === 0 && (
           <p className="py-6 text-center text-xs text-muted-foreground">
-            Toda tarea con avance tiene telemetria
+            {data.con_avance ? "Toda tarea evaluada tiene telemetria" : "Sin tareas abiertas con ultimo avance en el periodo"}
           </p>
         )}
         {data.tareas.map((t) => (

@@ -217,6 +217,7 @@ export default function IncidenciasPage() {
       setLogFiles(j.logFiles || []);
       setLogConfigured(!!j.logConfigured);
     } catch (e) {
+      setKpis(null);
       setError(e instanceof Error ? e.message : "Error");
     } finally {
       setLoading(false);
@@ -380,11 +381,11 @@ export default function IncidenciasPage() {
       <main className="mx-auto w-full min-w-0 max-w-[1400px] lg:max-w-none animate-fade-in px-4 py-6 sm:px-6">
         <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-5">
           {[
-            { label: "Total", value: kpis?.total ?? 0, tone: "text-sky-700" },
-            { label: "Nuevas", value: kpis?.nuevas ?? 0, tone: "text-amber-700" },
-            { label: "Fatales", value: kpis?.fatales ?? 0, tone: "text-brand-red" },
-            { label: "Con tarea", value: kpis?.conTarea ?? 0, tone: "text-primary" },
-            { label: "Cerradas", value: kpis?.ignoradas ?? 0, tone: "text-emerald-700" },
+            { label: "Total", value: kpis?.total ?? "—", tone: "text-sky-700" },
+            { label: "Nuevas", value: kpis?.nuevas ?? "—", tone: "text-amber-700" },
+            { label: "Fatales", value: kpis?.fatales ?? "—", tone: "text-brand-red" },
+            { label: "Con tarea", value: kpis?.conTarea ?? "—", tone: "text-primary" },
+            { label: "Cerradas", value: kpis?.ignoradas ?? "—", tone: "text-emerald-700" },
           ].map((k) => (
             <div key={k.label} className="rounded-xl border border-border/80 bg-card p-3 shadow-sm">
               <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">

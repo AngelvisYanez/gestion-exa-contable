@@ -181,20 +181,6 @@ export function DevDashboard({ userName }: { userName?: string }) {
         ? `${Math.round(((kpis.completadas || 0) / kpis.total) * 1000) / 10}%`
         : "—";
 
-  const tel: TelemetriaPersonal = telemetria ?? {
-    desde: "",
-    hasta: "",
-    horasActivas: 0,
-    actividad: 0,
-    clicks: 0,
-    teclas: 0,
-    lineas: 0,
-    registros: 0,
-    porTarea: [],
-    procesos: [],
-    horario: { activo: false, hora_inicio: null, hora_fin: null, registros: 0, dentro: 0, pct: 0 },
-  };
-
   const renderWidget = (id: string) => {
     switch (id) {
       case "kpis":
@@ -246,13 +232,17 @@ export function DevDashboard({ userName }: { userName?: string }) {
           />
         );
       case "tel-kpis":
-        return <DevTelemetriaKpisWidget tel={tel} />;
+        if (!telemetria) return <p className="text-xs text-muted-foreground">Telemetria no disponible</p>;
+        return <DevTelemetriaKpisWidget tel={telemetria} />;
       case "tel-tareas":
-        return <DevHorasTareaWidget tel={tel} tituloPorTar={tituloPorTar} />;
+        if (!telemetria) return <p className="text-xs text-muted-foreground">Telemetria no disponible</p>;
+        return <DevHorasTareaWidget tel={telemetria} tituloPorTar={tituloPorTar} />;
       case "tel-procesos":
-        return <DevProcesosWidget tel={tel} />;
+        if (!telemetria) return <p className="text-xs text-muted-foreground">Telemetria no disponible</p>;
+        return <DevProcesosWidget tel={telemetria} />;
       case "tel-horario":
-        return <DevHorarioWidget tel={tel} />;
+        if (!telemetria) return <p className="text-xs text-muted-foreground">Telemetria no disponible</p>;
+        return <DevHorarioWidget tel={telemetria} />;
       case "actividad":
         return <ActividadWidget />;
       case "accesos":
@@ -330,7 +320,7 @@ export function DevDashboard({ userName }: { userName?: string }) {
         </div>
       )}
 
-      {ready && (
+      {ready && kpis && !error && (
         <DashboardGrid
           role="developer"
           editMode={editMode}

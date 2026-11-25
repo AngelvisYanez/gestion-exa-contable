@@ -77,18 +77,18 @@ export function EquipoColaWidget({
   sinAsignar,
   ticketsNuevos,
 }: {
-  online: number;
-  ausente: number;
-  offline: number;
+  online: number | null;
+  ausente: number | null;
+  offline: number | null;
   sinAsignar: number;
-  ticketsNuevos: number;
+  ticketsNuevos: number | null;
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col gap-1.5 overflow-hidden">
       <div className="flex shrink-0 flex-wrap gap-1.5">
-        <Badge variant="success">{online} online</Badge>
-        <Badge variant="warning">{ausente} ausente</Badge>
-        <Badge variant="muted">{offline} off</Badge>
+        <Badge variant="success">{online ?? "—"} online</Badge>
+        <Badge variant="warning">{ausente ?? "—"} ausente</Badge>
+        <Badge variant="muted">{offline ?? "—"} off</Badge>
       </div>
       <div className="min-h-0 flex-1 rounded-lg border border-border/60 bg-muted/30 px-2.5 py-2">
         <div className="text-[10px] font-bold uppercase text-muted-foreground">Sin asignar</div>
@@ -96,7 +96,7 @@ export function EquipoColaWidget({
       </div>
       <div className="min-h-0 flex-1 rounded-lg border border-amber-200 bg-amber-50/60 px-2.5 py-2">
         <div className="text-[10px] font-bold uppercase text-amber-800">Tickets nuevos</div>
-        <div className="mt-0.5 text-xl font-bold tabular-nums leading-none text-amber-900">{ticketsNuevos}</div>
+        <div className="mt-0.5 text-xl font-bold tabular-nums leading-none text-amber-900">{ticketsNuevos ?? "—"}</div>
         <Link href="/tickets" className="mt-1 inline-flex text-[10px] font-bold text-amber-800 hover:underline">
           Ver bandeja →
         </Link>
@@ -161,7 +161,7 @@ export function AvancePersonaWidget({ rows }: { rows: AssigneeMetric[] }) {
   );
 }
 
-export function ManagerAccesosWidget({ ticketsNuevos }: { ticketsNuevos: number }) {
+export function ManagerAccesosWidget({ ticketsNuevos }: { ticketsNuevos: number | null }) {
   return (
     <div className="flex h-full min-h-0 flex-col justify-center gap-1.5 overflow-hidden">
       <Button type="button" variant="outline" size="sm" className="h-9 w-full min-w-0 justify-start gap-2 px-2.5" asChild>
@@ -175,7 +175,7 @@ export function ManagerAccesosWidget({ ticketsNuevos }: { ticketsNuevos: number 
         <Link href="/tickets" className="min-w-0">
           <Ticket className="size-3.5 shrink-0" />
           <span className="min-w-0 flex-1 truncate text-left">Tickets</span>
-          {ticketsNuevos > 0 && (
+          {ticketsNuevos != null && ticketsNuevos > 0 && (
             <Badge variant="danger" className="h-5 shrink-0 px-1.5 text-[10px]">
               {ticketsNuevos}
             </Badge>

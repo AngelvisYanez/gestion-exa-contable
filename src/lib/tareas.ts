@@ -268,6 +268,7 @@ export async function listTareas(dbDis: string, opts: {
   desde?: string;
   hasta?: string;
   plazo?: string;
+  sinLimite?: boolean;
 }) {
   const hasComplejidad = await ensureTareaComplejidadColumn(dbDis);
   const hasApoyo = await ensureTareaApoyoColumn(dbDis);
@@ -403,7 +404,7 @@ export async function listTareas(dbDis: string, opts: {
     FROM aud_tareas t
     WHERE ${where.join(" AND ")}
     ORDER BY COALESCE(t.Tar_Fecha_Culminacion, t.Tar_Fecha_Inicio) DESC, t.Tar_Cod DESC
-    LIMIT 300
+    ${opts.sinLimite ? "" : "LIMIT 300"}
   `;
 
   const rows = await prisma.$queryRawUnsafe<Row[]>(sql, ...params);
@@ -483,7 +484,12 @@ export async function kpisTareas(
     hasta: rango?.hasta,
     perCod: rango?.perCod,
     usuCreador: rango?.usuCreador,
+    sinLimite: true,
   });
+  return resumirTareas(rows);
+}
+
+export function resumirTareas(rows: Pick<Awaited<ReturnType<typeof listTareas>>[number], "Ava_Porcentaje" | "Tar_Estado" | "Tar_Fecha_Fin">[]) {
   const hoy = hoyFecha();
   let completadas = 0;
   let proceso = 0;
@@ -1092,9 +1098,11 @@ async function loadAvances(
      LEFT JOIN usuarios u ON u.Usu_Cod = av.Usu_Cod
      LEFT JOIN persona p ON p.Prs_Cod = u.Prs_Cod
      WHERE av.Ava_Est = 'A' AND av.Tar_Cod IN (${tarCodes.map(() => "?").join(",")})
+       ${hasta ? "AND av.Ava_Fecha <= ?" : ""}
      ORDER BY av.Tar_Cod ASC, av.Ava_Fecha ASC, av.Ava_Cod ASC
-     LIMIT 5000`,
-    ...tarCodes
+     ${desde || hasta ? "" : "LIMIT 5000"}`,
+    ...tarCodes,
+    ...(hasta ? [hasta] : [])
   );
 
   const prevByTar = new Map<number, number>();
@@ -1414,10 +1422,10 @@ export async function actividadPersonal(
 
   const tiempo = opts.perCod > 0
     ? await prisma.$queryRawUnsafe<Array<{ Tar_Cod: number | null; Dia: Date | string; segundos: bigint | number | null }>>(
-        `SELECT Tar_Cod, DATE(Tel_Fecha_Hora) AS Dia, SUM(Tel_Segundos_Activos) AS segundos
+        `SELECT Tar_Cod, DATE_FORMAT(DATE_SUB(Tel_Fecha_Hora, INTERVAL 5 HOUR), '%Y-%m-%d') AS Dia, SUM(Tel_Segundos_Activos) AS segundos
          FROM aud_dev_telemetria
          WHERE Per_Cod = ? AND Tel_Fecha_Hora >= ? AND Tel_Fecha_Hora <= ?
-         GROUP BY Tar_Cod, DATE(Tel_Fecha_Hora)`,
+         GROUP BY Tar_Cod, Dia`,
         opts.perCod,
         desde,
         hasta
@@ -1464,31 +1472,14 @@ export type TelemetriaPersonal = {
   };
 };
 
-const TELEMETRIA_PERSONAL_VACIA: TelemetriaPersonal = {
-  desde: "",
-  hasta: "",
-  horasActivas: 0,
-  actividad: 0,
-  clicks: 0,
-  teclas: 0,
-  lineas: 0,
-  registros: 0,
-  porTarea: [],
-  procesos: [],
-  horario: { activo: false, hora_inicio: null, hora_fin: null, registros: 0, dentro: 0, pct: 0 },
-};
-
-/**
- * Telemetria ExaMonitor de un desarrollador (aud_dev_telemetria), opcional:
- * si la tabla no existe devuelve la estructura vacia sin romper el dashboard.
- */
+/** Telemetria medida por ExaMonitor, cuando esta disponible. */
 export async function telemetriaPersonal(
   dbDis: string,
   perCod: number,
   desdeDia: string,
   hastaDia: string
-): Promise<TelemetriaPersonal> {
-  if (!perCod || perCod <= 0) return { ...TELEMETRIA_PERSONAL_VACIA, desde: desdeDia, hasta: hastaDia };
+): Promise<TelemetriaPersonal | null> {
+  if (!perCod || perCod <= 0) return null;
   const prisma = getPrisma(sanitizeDbDis(dbDis));
   try {
     await ensureMonitoreoSchema(prisma);
@@ -1551,7 +1542,7 @@ export async function telemetriaPersonal(
       desde,
       hasta
     );
-    const totalProc = procRows.reduce((s, r) => s + Number(r.registros || 0), 0);
+    const totalProc = Number(agg?.registros || 0);
     const procesos = procRows.map((r) => ({
       nombre: String(r.proceso || "Sin datos"),
       registros: Number(r.registros || 0),
@@ -1609,7 +1600,7 @@ export async function telemetriaPersonal(
       },
     };
   } catch {
-    return { ...TELEMETRIA_PERSONAL_VACIA, desde: desdeDia, hasta: hastaDia };
+    return null;
   }
 }
 

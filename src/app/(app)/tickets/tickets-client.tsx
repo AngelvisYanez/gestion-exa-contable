@@ -447,6 +447,7 @@ export default function TicketsPage({ mode = "all" }: { mode?: "all" | "mine" })
       setEmpresas(j.empresas || []);
       setKpis(j.kpis || null);
     } catch (e) {
+      setKpis(null);
       setError(e instanceof Error ? e.message : "Error");
     } finally {
       setLoading(false);
@@ -745,37 +746,37 @@ export default function TicketsPage({ mode = "all" }: { mode?: "all" | "mine" })
         <div className={cn("mb-5 grid grid-cols-2 gap-3", isMine ? "sm:grid-cols-3" : "sm:grid-cols-4")}>
           {(isMine
             ? [
-                { label: "Total", value: kpis?.total ?? 0, tone: "text-sky-700", id: "todos" as Bandeja },
+                { label: "Total", value: kpis?.total ?? "—", tone: "text-sky-700", id: "todos" as Bandeja },
                 {
                   label: "Abiertos",
-                  value: kpis?.asignados ?? 0,
+                  value: kpis?.asignados ?? "—",
                   tone: "text-violet-700",
                   id: "asignados" as Bandeja,
                 },
                 {
                   label: "Resueltos",
-                  value: kpis?.resueltos ?? kpis?.cerrados ?? 0,
+                  value: kpis?.resueltos ?? kpis?.cerrados ?? "—",
                   tone: "text-emerald-700",
                   id: "resueltos" as Bandeja,
                 },
               ]
             : [
-                { label: "Total", value: kpis?.total ?? 0, tone: "text-sky-700", id: "todos" as Bandeja },
+                { label: "Total", value: kpis?.total ?? "—", tone: "text-sky-700", id: "todos" as Bandeja },
                 {
                   label: "Sin asignar",
-                  value: kpis?.sin_asignar ?? kpis?.nuevos ?? 0,
+                  value: kpis?.sin_asignar ?? kpis?.nuevos ?? "—",
                   tone: "text-amber-700",
                   id: "sin_asignar" as Bandeja,
                 },
                 {
                   label: "Asignados",
-                  value: kpis?.asignados ?? 0,
+                  value: kpis?.asignados ?? "—",
                   tone: "text-violet-700",
                   id: "asignados" as Bandeja,
                 },
                 {
                   label: "Resueltos",
-                  value: kpis?.resueltos ?? kpis?.cerrados ?? 0,
+                  value: kpis?.resueltos ?? kpis?.cerrados ?? "—",
                   tone: "text-emerald-700",
                   id: "resueltos" as Bandeja,
                 },

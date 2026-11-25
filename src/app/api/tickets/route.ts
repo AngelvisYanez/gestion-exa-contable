@@ -138,10 +138,11 @@ export async function GET(req: NextRequest) {
               q: q || undefined,
               desde: desde || undefined,
               hasta: hasta || undefined,
-              limit: Math.max(limit, 500),
+              sinLimite: true,
             })
           : [];
-      const kpisMios = resumirTickets(assigned);
+      const resumen = resumirTickets(assigned);
+      const kpisMios = { ...resumen, asignados: resumen.total - resumen.resueltos };
       const vista =
         bandeja === "resueltos"
           ? "resueltos"
@@ -159,7 +160,7 @@ export async function GET(req: NextRequest) {
         db,
         source: "tickets-mios",
         solo_mios: true,
-        tickets,
+        tickets: tickets.slice(0, Math.min(Math.max(limit, 500), 2000)),
         kpis: kpisMios,
         bandeja: vista,
         desde: desde || null,
@@ -201,7 +202,7 @@ export async function GET(req: NextRequest) {
         limit,
         bases,
       }),
-      ticketsKpisBases({ desde: desde || undefined, hasta: hasta || undefined, bases }),
+      ticketsKpisBases({ desde: desde || undefined, hasta: hasta || undefined, q, bases }),
     ]);
 
     const payload: Record<string, unknown> = {

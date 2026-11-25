@@ -12,6 +12,7 @@ import {
   listTareas,
   ponerTareaEnStandby,
   registrarAvance,
+  resumirTareas,
   salirDeStandby,
   telemetriaPersonal,
 } from "@/lib/tareas";
@@ -94,6 +95,7 @@ export async function GET(req: NextRequest) {
           perCod,
           estado,
           q,
+          sinLimite: true,
         });
 
     const tareas = tareasRaw.map((t) => ({ ...t, tipo: "tarea" as const }));
@@ -104,7 +106,7 @@ export async function GET(req: NextRequest) {
             aseCodes,
             perCodes,
             q: q || undefined,
-            limit: 300,
+            sinLimite: true,
           })
         : [];
     const tickets = ticketsRaw.map(ticketAsTarea);
@@ -124,22 +126,6 @@ export async function GET(req: NextRequest) {
       return diff !== 0 ? diff : b.Tar_Cod - a.Tar_Cod;
     });
 
-    const hoy = hoyFecha();
-    let completadas = 0;
-    let proceso = 0;
-    let pendientes = 0;
-    let atrasadas = 0;
-    let suma = 0;
-    for (const t of items) {
-      const pct = t.Ava_Porcentaje || 0;
-      suma += pct;
-      if (t.Tar_Estado === "Finalizada" || pct >= 100) completadas++;
-      else if (pct > 0 || t.Tar_Estado === "En Proceso") proceso++;
-      else pendientes++;
-      const fin = t.Tar_Fecha_Fin ? String(t.Tar_Fecha_Fin).slice(0, 10) : "";
-      if (t.Tar_Estado !== "Finalizada" && pct < 100 && fin && fin < hoy) atrasadas++;
-    }
-    const total = items.length;
     const dias = parseInt(sp.get("dias") || "30", 10) || 30;
     const desdeQ = sp.get("desde") || undefined;
     const hastaQ = sp.get("hasta") || undefined;
@@ -176,13 +162,7 @@ export async function GET(req: NextRequest) {
         ? "Tu usuario EXA no tiene ficha en personal. Pide vincular tu Per_Cod para ver tus tareas. Los tickets asignados a tu usuario sí se listan."
         : null,
       kpis: {
-        total,
-        completadas,
-        proceso,
-        pendientes,
-        atrasadas,
-        avance_promedio: total ? Math.round(suma / total) : 0,
-        tasa_cumplimiento: total ? Math.round((completadas / total) * 1000) / 10 : 0,
+        ...resumirTareas(items),
         tareas: tareas.length,
         tickets: tickets.length,
       },
