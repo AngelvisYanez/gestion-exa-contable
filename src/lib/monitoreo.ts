@@ -25,6 +25,8 @@ export type TrabajoMonitorItem = {
   Ava_Ultima_Fecha: string | null;
   tipo: "tarea" | "ticket";
   Tic_Cod?: number;
+  /** Tarea creada desde este ticket ("Convertir a tarea"), si existe. */
+  Tar_Cod_Vinculado?: number | null;
   Db_Origen?: string;
   /** Etiqueta corta para listados (Mis tareas). */
   label: string;
@@ -293,6 +295,8 @@ export async function tareasActivasDev(
       Ava_Ultima_Fecha: t.Tic_Fecha_Asignacion || t.Tic_Fecha_Llegada || null,
       tipo: "ticket",
       Tic_Cod: t.Tic_Cod,
+      /** Tarea creada con "Convertir a tarea", si existe. */
+      Tar_Cod_Vinculado: t.Tar_Cod ?? null,
       Db_Origen: t.Db_Origen,
       label,
       Empresa: empresa,

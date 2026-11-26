@@ -572,6 +572,7 @@ async function handle(req: NextRequest) {
             Proceso: detalleTicket.Proceso || null,
             Asignado_Nombre: detalleTicket.Asignado_Nombre || null,
             Db_Origen: detalleTicket.Db_Origen || null,
+            Tar_Cod_Vinculado: detalleTicket.Tar_Cod ?? null,
           },
           evidencias: detalleTicket.Evidencias || [],
           avances: avances.slice(0, 8).map((a) => ({

@@ -32,7 +32,7 @@ from win_shell import (
     start_input_counter,
 )
 
-AGENT_VERSION = "2.14.7-flet"
+AGENT_VERSION = "2.14.8-flet"
 TAREA_PROYECTOS = {
     "": "Sin proyecto",
     "relavera": "Exa Relavera",
@@ -1153,6 +1153,9 @@ class ExaMonitorApp:
         ]
         if origen_txt:
             top_left.append(badge(origen_txt, C["muted_bg"], C["text"]))
+        tar_vinculada = int(t.get("Tar_Cod_Vinculado") or 0) if is_ticket else 0
+        if tar_vinculada:
+            top_left.append(badge(f"Tarea #{tar_vinculada}", C["tarea_bg"], C["tarea_fg"]))
         if not is_ticket:
             plazo = plazo_tarea(t.get("Tar_Fecha_Inicio"), fin, estado)
             plazo_colors = {
@@ -1882,6 +1885,7 @@ class ExaMonitorApp:
         puede_asignar = bool(trabajo.get("puede_asignar"))
         pct_actual = int(trabajo.get("Ava_Porcentaje") or 0)
         estado = trabajo.get("Estado") or ""
+        tar_vinculada = int(trabajo.get("Tar_Cod_Vinculado") or 0) if tipo == "ticket" else 0
 
         ebg, efg = estado_style(estado)
         prio = trabajo.get("Prioridad") or "Media"
@@ -1992,6 +1996,11 @@ class ExaMonitorApp:
                         "Asignado el",
                         str(trabajo.get("Fecha_Asignacion") or "")[:16].replace("T", " ") or None,
                     ),
+                    meta_row(
+                        ft.Icons.TASK_ALT,
+                        "Convertido a tarea",
+                        f"#{tar_vinculada} · se resuelve cuando la tarea llegue al 100%" if tar_vinculada else None,
+                    ),
                 ]
                 if x is not None
             ]
@@ -2088,7 +2097,7 @@ class ExaMonitorApp:
                     *[
                         ft.Row(
                             [
-                                ft.Icon(ft.Icons.CONFIRMATION_NUMBER_ICON, size=16, color=C["ticket_fg"]),
+                                ft.Icon(ft.Icons.CONFIRMATION_NUMBER_OUTLINED, size=16, color=C["ticket_fg"]),
                                 ft.Text(
                                     f"#{t.get('Tic_Cod')}",
                                     size=12,
@@ -2171,7 +2180,11 @@ class ExaMonitorApp:
         )
         lbl_delta = ft.Text(f"igual que {pct_actual}%", size=11, color=C["text_muted"])
         lbl_resolucion = ft.Text(
-            "Al registrar 100%, el ticket quedará resuelto y se podrá notificar al cliente.",
+            (
+                f"Ticket convertido en la tarea #{tar_vinculada}: el 100% se registra en la tarea, no aquí."
+                if tar_vinculada
+                else "Al registrar 100%, el ticket quedará resuelto y se podrá notificar al cliente."
+            ),
             size=11,
             color="#92400e",
             visible=tipo == "ticket" and pct_actual == 100,

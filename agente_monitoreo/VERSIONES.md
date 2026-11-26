@@ -6,6 +6,7 @@ La versión vigente del código es `AGENT_VERSION` en `exa_agent.py`.
 
 | Versión | Ejecutable local | Qué cambió |
 | --- | --- | --- |
+| 2.14.8-flet | `dist/v2.14.8/ExaMonitor.exe` | Corrige el icono de tickets vinculados que cerraba el detalle de tareas con error. Los tickets convertidos en tarea muestran la tarea vinculada y solo se resuelven al llegar la tarea al 100%. |
 | 2.14.7-flet | `dist/v2.14.7/ExaMonitor.exe` | Selección de proyecto al crear una tarea, etiqueta en el detalle y edición según los permisos de Gestión. |
 | 2.14.6-flet | `dist/v2.14.6-tabs/ExaMonitor.exe` | Pestañas Trabajo activo, Tareas del equipo y Capacitaciones. La lista sincronizada con Gestión muestra proyecto, responsable, empresa, cliente, fecha, duración y estado. |
 | 2.14.5-flet | `dist/v2.14.5-review/ExaMonitor.exe` | Cabecera compacta, resumen en indicadores, filtros agrupados y tarjetas más claras. El modal de nueva tarea organiza datos, planificación, responsable y archivos en secciones; los errores llevan al inicio del formulario. Los cuadros se ajustan al ancho de la ventana. Actualización verificada con dos ejecutables PyInstaller: reemplazo real y arranque de la versión nueva. |

@@ -8,6 +8,7 @@ import {
 import { toPublicCaptureUrl } from "./captures";
 import { getPrisma, sanitizeDbDis } from "./db";
 import { copiarEvidenciaTicketExa, rutaEvidenciaTicket } from "./ticket-adjuntos";
+import { tareaVinculadaDeTicket } from "./ticket-tarea";
 
 const ready = new Set<string>();
 
@@ -237,6 +238,16 @@ export async function registrarAvanceTicket(dbDis: string, opts: RegistrarAvance
   const db = sanitizeDbDis(dbDis);
   const prisma = getPrisma(db);
   await ensureTicketAvances(prisma);
+  if (opts.porcentaje >= 100) {
+    // Un ticket convertido en tarea solo se resuelve cuando la tarea llega al 100%.
+    const tarCod = await tareaVinculadaDeTicket(opts.ticCod, db);
+    if (tarCod) {
+      throw new TicketAvanceError(
+        `Este ticket está convertido en la tarea #${tarCod}. Regístralo al 100% en la tarea para resolverlo.`,
+        409
+      );
+    }
+  }
   return registrarAvanceTicketConPrisma(prisma, opts, db);
 }
 
