@@ -10,6 +10,7 @@ import {
   setMonitoreoConfig,
 } from "@/lib/tareas";
 import { hoyFecha } from "@/lib/timezone";
+import { esPerCodEnGestion } from "@/lib/panel-usuarios";
 import { getPrisma } from "@/lib/db";
 import { ensureMonitoreoSchema } from "@/lib/monitoreo-global";
 import { conexionesDiarias } from "@/lib/monitoreo-conexiones";
@@ -86,6 +87,12 @@ export async function POST(req: NextRequest) {
     const perCod = Number(body.Per_Cod || 0);
     if (perCod <= 0) {
       return NextResponse.json({ success: false, message: "Per_Cod inválido" }, { status: 400 });
+    }
+    if (!(await esPerCodEnGestion(getPrisma(db), perCod))) {
+      return NextResponse.json(
+        { success: false, message: "Solo se configura el monitoreo de usuarios de la gestion con rol." },
+        { status: 400 }
+      );
     }
     const cfg = await setMonitoreoConfig(db, perCod, {
       activo: body.Mon_Activo != null ? Number(body.Mon_Activo) : undefined,

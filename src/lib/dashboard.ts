@@ -515,7 +515,8 @@ async function buildComparativa(
       const c = row.categorias[cat];
       return c.total > 0 || c.avances > 0 || c.culminadas > 0 || c.apoyos > 0;
     });
-    if (conDatos) out.push(row);
+    // Solo integrantes de la gestion con rol; otros usuarios de la empresa no cuentan.
+    if (conDatos && nombres.has(row.Per_Cod)) out.push(row);
   }
   return out.sort((a, b) => b.total - a.total);
 }
@@ -886,7 +887,14 @@ async function buildEsfuerzo(
   tarConTelemetria: Set<number>;
 }> {
   const prisma = getPrisma(dbDis);
-  const perFilter = perCod && perCod > 0 ? "AND Per_Cod = ?" : "";
+  // Sin filtro individual, solo cuenta la telemetria de quienes estan en la gestion.
+  const gestionPer = asignables.map((a) => Number(a.Per_Cod)).filter((n) => Number.isFinite(n) && n > 0);
+  const perFilter =
+    perCod && perCod > 0
+      ? "AND Per_Cod = ?"
+      : gestionPer.length
+        ? `AND Per_Cod IN (${gestionPer.join(",")})`
+        : "AND 1 = 0";
   const nombreByPer = new Map(asignables.map((a) => [a.Per_Cod, a.Nombre]));
   const perParam = perCod && perCod > 0 ? [perCod] : [];
 
@@ -1005,9 +1013,9 @@ async function buildEsfuerzo(
       Mon_Hora_Inicio: string;
       Mon_Hora_Fin: string;
     };
-    const configs = await prisma.aud_dev_monitoreo_config.findMany(
-      perCod ? { where: { Per_Cod: perCod } } : undefined
-    );
+    const configs = await prisma.aud_dev_monitoreo_config.findMany({
+      where: { Per_Cod: perCod ? perCod : { in: gestionPer } },
+    });
     const cfgByPer = new Map<number, HorarioCfg>(
       configs.map((c) => [
         c.Per_Cod,
@@ -1460,9 +1468,11 @@ export async function getDashboardMetrics(
   let offline: number | null = 0;
   try {
     const prisma = getPrisma(db);
-    const configs = await prisma.aud_dev_monitoreo_config.findMany(
-      perCod ? { where: { Per_Cod: perCod } } : undefined
-    );
+    const configs = await prisma.aud_dev_monitoreo_config.findMany({
+      where: {
+        Per_Cod: perCod ? perCod : { in: asignables.map((a) => Number(a.Per_Cod)) },
+      },
+    });
     const now = Date.now();
     for (const c of configs) {
       const last = c.Mon_Ultima_Conexion ? new Date(c.Mon_Ultima_Conexion).getTime() : 0;

@@ -272,6 +272,31 @@ export async function findPanelActivo(
   };
 }
 
+/**
+ * Indica si una ficha (Per_Cod) pertenece a alguien activo en la gestion con rol.
+ * Solo ellos se monitorean; el resto de usuarios de la empresa se ignora.
+ */
+export async function esPerCodEnGestion(
+  prisma: PrismaClient,
+  perCod: number
+): Promise<boolean> {
+  if (!perCod || perCod <= 0) return false;
+  await ensurePanelUsuarios(prisma);
+  const rows = await prisma.$queryRawUnsafe<Array<{ n: number }>>(
+    `SELECT 1 AS n FROM aud_panel_usuarios pan
+     WHERE pan.Pan_Est = 'A'
+       AND pan.Pan_Rol IN ('developer', 'manager', 'atencion')
+       AND (
+         pan.Per_Cod = ?
+         OR pan.Prs_Cod = (SELECT per.Prs_Cod FROM personal per WHERE per.Per_Cod = ? LIMIT 1)
+       )
+     LIMIT 1`,
+    perCod,
+    perCod
+  );
+  return rows.length > 0;
+}
+
 /** Quienes reciben tareas: encargado, desarrollador y atencion al cliente. */
 export async function listPerCodAsignables(
   dbDis: string

@@ -21,6 +21,7 @@ import {
   upsertPresencia,
 } from "@/lib/monitoreo";
 import { ensureMonitoreoSchema } from "@/lib/monitoreo-global";
+import { esPerCodEnGestion } from "@/lib/panel-usuarios";
 import { registrarConexionDiaria } from "@/lib/monitoreo-conexiones";
 import { parseAsignadosTicket, parsePerCodsTarea } from "@/lib/monitoreo-asignacion";
 import {
@@ -236,6 +237,9 @@ async function handle(req: NextRequest) {
     if (accion === "heartbeat" || accion === "check_status") {
       const perCod = parseInt(pick(form, json, req, "Per_Cod"), 10) || 0;
       if (perCod <= 0) return jsonRes("error", "Codigo de desarrollador invalido.");
+      if (!(await esPerCodEnGestion(prisma, perCod))) {
+        return jsonRes("error", "Este usuario no esta habilitado en la gestion; no se monitorea.");
+      }
 
       const ventana = pick(form, json, req, "ventana_activa");
       const proceso = pick(form, json, req, "proceso_activo");
@@ -385,6 +389,9 @@ async function handle(req: NextRequest) {
     if (accion === "subir_telemetria") {
       const perCod = parseInt(pick(form, json, req, "Per_Cod"), 10) || 0;
       if (perCod <= 0) return jsonRes("error", "Codigo de desarrollador invalido.");
+      if (!(await esPerCodEnGestion(prisma, perCod))) {
+        return jsonRes("error", "Este usuario no esta habilitado en la gestion; no se monitorea.");
+      }
 
       const tarRaw = pick(form, json, req, "Tar_Cod");
       const ticRaw = pick(form, json, req, "Tic_Cod");

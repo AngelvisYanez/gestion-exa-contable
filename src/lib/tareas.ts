@@ -1614,20 +1614,20 @@ export async function listDevsMonitoreo(
   await ensureHorarioSchema(prisma);
   await syncAllHorarios(prisma);
 
-  const configs = await prisma.aud_dev_monitoreo_config.findMany();
-  const perCodes = configs.map((c) => c.Per_Cod);
+  // Solo se monitorea a quienes estan activos en la gestion con rol asignado.
+  const { listPerCodAsignables } = await import("./panel-usuarios");
+  const perCodes = (await listPerCodAsignables(dbDis)).map((m) => m.perCod);
 
-  // Also include personal with recent telemetry even without config
-  const recentTel = await prisma.aud_dev_telemetria.findMany({
-    where: {
-      Tel_Fecha_Hora: { gte: new Date(Date.now() - 7 * 24 * 3600 * 1000) },
-    },
-    select: { Per_Cod: true },
-    distinct: ["Per_Cod"],
-  });
-  for (const t of recentTel) {
-    if (!perCodes.includes(t.Per_Cod)) perCodes.push(t.Per_Cod);
-  }
+  const recentTel = soloActivos && perCodes.length
+    ? await prisma.aud_dev_telemetria.findMany({
+        where: {
+          Tel_Fecha_Hora: { gte: new Date(Date.now() - 7 * 24 * 3600 * 1000) },
+          Per_Cod: { in: perCodes },
+        },
+        select: { Per_Cod: true },
+        distinct: ["Per_Cod"],
+      })
+    : [];
 
   type DevRow = {
     Per_Cod: number;
@@ -1648,12 +1648,7 @@ export async function listDevsMonitoreo(
   let personal: DevRow[];
 
   if (perCodes.length === 0) {
-    personal = await prisma.personal.findMany({
-      where: { Per_Est: "A" },
-      include: { persona: true, config: true },
-      take: 50,
-      orderBy: { Per_Cod: "asc" },
-    });
+    personal = [];
   } else {
     personal = await prisma.personal.findMany({
       where: {
@@ -2148,17 +2143,19 @@ function mapColaborador(p: {
   };
 }
 
-/** Personal activo Emp_Cod MATRIZ (96). Usado por ExaMonitor / búsqueda amplia. */
+/** Personal activo de la gestion (aud_panel_usuarios). Usado por la configuracion de ExaMonitor. */
 export async function listColaboradores(dbDis: string, filtro = "") {
   const prisma = getPrisma(sanitizeDbDis(dbDis));
   await ensureHorarioSchema(prisma);
   await syncAllHorarios(prisma);
 
-  const empCod = tasksEmpCod();
+  const { listPerCodAsignables } = await import("./panel-usuarios");
+  const gestion = (await listPerCodAsignables(dbDis)).map((m) => m.perCod);
+  if (!gestion.length) return [];
   const rows = await prisma.personal.findMany({
     where: {
       Per_Est: "A",
-      Emp_Cod: empCod,
+      Per_Cod: { in: gestion },
       ...(filtro
         ? {
             OR: [
