@@ -8,7 +8,8 @@ import { hasRolePermission, type RolePermissionKey } from "@/lib/auth/role-permi
 import { loadRolePermissions } from "@/lib/auth/role-permissions-db";
 import { saveEvidencia, saveScreenshot, toPublicCaptureUrl } from "@/lib/captures";
 import { altDatabase, getPrisma, telemetriaMirrorEnabled } from "@/lib/db";
-import { consumeDevNotifications, publishAsignacion, publishEvent } from "@/lib/events";
+import { consumeDevNotifications, eventoTextoPlano, publishAsignacion, publishEvent } from "@/lib/events";
+import { tareaContexto } from "@/lib/event-context";
 import { tasksDbDis, tasksEmpCod } from "@/lib/empresa";
 import {
   findDesarrollador,
@@ -94,7 +95,7 @@ function mapNotificaciones(perCod: number, usuCod?: number) {
     id: n.id,
     tipo: n.type,
     titulo: n.title,
-    mensaje: n.message,
+    mensaje: eventoTextoPlano(n),
     Tar_Cod: n.tarCod ?? null,
     Tic_Cod: n.ticCod ?? null,
     kind: n.kind || null,
@@ -337,19 +338,26 @@ async function handle(req: NextRequest) {
         if (err instanceof AsignacionInvalidaError) return jsonRes("error", err.message);
         throw err;
       }
+      const ctxNueva = await tareaContexto(dbDis, tarea.Tar_Cod);
       if (asignadoFinal) {
         publishAsignacion({
           kind: "tarea", title: "Nueva tarea asignada",
-          message: `#${tarea.Tar_Cod} · ${tarea.Tar_Titulo}`,
+          message: ctxNueva.asignadoA
+            ? `ExaMonitor creó la tarea y la asignó a ${ctxNueva.asignadoA}.`
+            : "ExaMonitor creó la tarea y la asignó.",
           db: dbDis, tarCod: tarea.Tar_Cod, perCod: asignadoFinal,
           estado: tarea.Tar_Estado, actor: "ExaMonitor",
+          titulo: tarea.Tar_Titulo, prioridad: ctxNueva.prioridad || tarea.Tar_Prioridad,
+          asignadoA: ctxNueva.asignadoA, fechaFin: ctxNueva.fechaFin,
         });
       } else {
         publishEvent({
           type: "tarea_creada", title: "Nueva tarea",
-          message: `#${tarea.Tar_Cod} · ${tarea.Tar_Titulo}`,
+          message: "ExaMonitor creó una tarea sin asignar.",
           db: dbDis, tarCod: tarea.Tar_Cod,
-          estado: tarea.Tar_Estado, actor: "ExaMonitor",
+          estado: tarea.Tar_Estado, actor: "ExaMonitor", kind: "tarea",
+          titulo: tarea.Tar_Titulo, prioridad: ctxNueva.prioridad || tarea.Tar_Prioridad,
+          fechaFin: ctxNueva.fechaFin,
         });
       }
       const { tareas } = await bandejaAgente(prisma, perCod, usuCod);
@@ -378,10 +386,13 @@ async function handle(req: NextRequest) {
       }
 
       const tarea = await updateTarea(dbDis, tarCod, { proyecto: proyecto || null });
+      const ctxProy = await tareaContexto(dbDis, tarCod);
       publishEvent({
         type: "tarea_actualizada", title: "Tarea actualizada",
-        message: `#${tarCod} · Proyecto actualizado`,
-        db: dbDis, tarCod, actor: sesion.name,
+        message: `${sesion.name || "Alguien"} cambió el proyecto a «${proyecto || "sin proyecto"}».`,
+        db: dbDis, tarCod, actor: sesion.name, kind: "tarea",
+        titulo: ctxProy.titulo, prioridad: ctxProy.prioridad, asignadoA: ctxProy.asignadoA,
+        estado: ctxProy.estado,
       });
       return jsonRes("ok", "Proyecto actualizado.", { tarea });
     }
@@ -741,17 +752,24 @@ async function handle(req: NextRequest) {
       }
       const estadoFinal = estadoTrasAvance({ porcentaje: res.porcentaje, enStandby });
 
+      const ctxAv = await tareaContexto(dbDis, tarCod);
       publishEvent({
         type: "avance_registrado",
-        title: "Avance registrado",
+        title: res.porcentaje >= 100 ? "Tarea completada" : "Avance registrado",
         message:
-          `ExaMonitor · #${tarCod} · ${res.porcentaje}%` +
-          (enStandby ? " · standby (sin fecha de fin)" : ""),
+          `ExaMonitor reportó ${res.porcentaje}% de avance` +
+          (enStandby ? " y dejó la tarea en standby (sin fecha de fin)" : "") +
+          ".",
         db: dbDis,
         tarCod,
         porcentaje: res.porcentaje,
         actor: "ExaMonitor",
         estado: estadoFinal,
+        kind: "tarea",
+        titulo: ctxAv.titulo,
+        prioridad: ctxAv.prioridad,
+        asignadoA: ctxAv.asignadoA,
+        fechaFin: ctxAv.fechaFin,
       });
 
       let tareas;
@@ -824,14 +842,17 @@ async function handle(req: NextRequest) {
       });
       publishEvent({
         type: "avance_registrado",
-        title: "Avance de ticket",
-        message: `ExaMonitor · ticket #${ticCod} · ${res.porcentaje}%`,
+        title: res.porcentaje >= 100 ? "Ticket resuelto" : "Avance de ticket",
+        message: `ExaMonitor reportó ${res.porcentaje}% de avance en el ticket.`,
         db: ticketDb,
         ticCod,
         porcentaje: res.porcentaje,
         actor: "ExaMonitor",
         estado: res.estado || mio.Tic_Estado,
         kind: "ticket",
+        titulo: mio.Tic_Titulo,
+        prioridad: mio.Tic_Prioridad,
+        asignadoA: mio.Asignado_Nombre || undefined,
       });
       let tareas;
       try {
@@ -888,13 +909,17 @@ async function handle(req: NextRequest) {
       await updateTicketEstado(ticketDb, ticCod, estado);
       publishEvent({
         type: "estado_cambiado",
-        title: "Ticket actualizado",
-        message: `ExaMonitor · ticket #${ticCod} → ${estado}`,
+        title: "Estado de ticket actualizado",
+        message: `ExaMonitor cambió el estado de «${mio.Tic_Estado || "—"}» a «${estado}».`,
         db: ticketDb,
         ticCod,
         estado,
+        estadoAnterior: mio.Tic_Estado,
         kind: "ticket",
         actor: "ExaMonitor",
+        titulo: mio.Tic_Titulo,
+        prioridad: mio.Tic_Prioridad,
+        asignadoA: mio.Asignado_Nombre || undefined,
       });
 
       const { tareas } = await bandejaAgente(prisma, perCod, usuCod || undefined);
@@ -986,13 +1011,16 @@ async function handle(req: NextRequest) {
         publishAsignacion({
           kind: "ticket",
           title: "Ticket asignado",
-          message: `#${ticCod} · ${titulo} → ${nombre}`,
+          message: `${actor} asignó el ticket a ${nombre}.`,
           db: ticketDb,
           ticCod,
           perCod: elegido.perCod,
           usuCod: elegido.usuCod,
           estado: res.ticket?.Tic_Estado || "Asignado",
           actor,
+          titulo,
+          prioridad: res.ticket?.Tic_Prioridad,
+          asignadoA: nombre,
         });
       }
 
@@ -1071,13 +1099,15 @@ async function handle(req: NextRequest) {
         publishAsignacion({
           kind: "tarea",
           title: "Tarea asignada",
-          message: `#${tarCod} · ${titulo} → ${nombre}`,
+          message: `${actor} asignó la tarea a ${nombre}.`,
           db: dbDis,
           tarCod,
           perCod: id,
           usuCod: row?.Usu_Cod,
           estado,
           actor,
+          titulo,
+          asignadoA: nombre,
         });
       }
 

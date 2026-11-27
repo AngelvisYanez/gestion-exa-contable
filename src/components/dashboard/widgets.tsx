@@ -9,6 +9,8 @@ import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useNotifications } from "@/contexts/NotificationsContext";
+import { useAuth } from "@/contexts/AuthContext";
+import { notificationTarget } from "@/lib/notif-links";
 import { Columns3, History, LayoutList, Plus, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FilterBar } from "@/components/list-controls";
@@ -126,28 +128,43 @@ export function KpisWidget({ kpis }: { kpis: Kpis | null }) {
 }
 
 export function ActividadWidget() {
-  const { items } = useNotifications();
+  const { items, openNotification } = useNotifications();
+  const { user } = useAuth();
   const recent = items.slice(0, 5);
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-1.5 overflow-hidden">
-      {recent.map((n) => (
-        <div
-          key={n.id}
-          className={cn(
-            "min-w-0 shrink-0 overflow-hidden rounded-lg border border-border/60 bg-background px-2.5 py-1.5",
-            !n.read && "border-sky-200 bg-sky-50/50"
-          )}
-        >
-          <div className="flex items-start justify-between gap-2">
-            <span className="min-w-0 truncate text-xs font-bold">{n.title}</span>
-            <span className="shrink-0 text-[10px] text-muted-foreground">
-              {new Date(n.at).toLocaleTimeString("es-EC", { hour: "2-digit", minute: "2-digit" })}
-            </span>
-          </div>
-          <p className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground">{n.message}</p>
-        </div>
-      ))}
+      {recent.map((n) => {
+        const clickable = notificationTarget(n, user) != null;
+        const ref = n.tarCod && n.kind !== "ticket" ? `Tarea #${n.tarCod}` : n.ticCod ? `Ticket #${n.ticCod}` : "";
+        return (
+          <button
+            type="button"
+            key={n.id}
+            onClick={() => openNotification(n)}
+            className={cn(
+              "min-w-0 shrink-0 overflow-hidden rounded-lg border border-border/60 bg-background px-2.5 py-1.5 text-left",
+              clickable ? "cursor-pointer hover:bg-muted/50" : "cursor-default",
+              !n.read && "border-sky-200 bg-sky-50/50"
+            )}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <span className="min-w-0 truncate text-xs font-bold">{n.title}</span>
+              <span className="shrink-0 text-[10px] text-muted-foreground">
+                {new Date(n.at).toLocaleTimeString("es-EC", { hour: "2-digit", minute: "2-digit" })}
+              </span>
+            </div>
+            {(ref || n.titulo) && (
+              <p className="mt-0.5 line-clamp-1 text-[11px] font-semibold">
+                {ref}
+                {ref && n.titulo ? " · " : ""}
+                {n.titulo}
+              </p>
+            )}
+            <p className="line-clamp-1 text-[11px] text-muted-foreground">{n.message}</p>
+          </button>
+        );
+      })}
       {recent.length === 0 && (
         <p className="py-6 text-center text-xs text-muted-foreground">
           La actividad del equipo aparecera aqui en tiempo real.

@@ -24,8 +24,45 @@ export type AppEvent = {
   /** Destinatario: usuario EXA (tickets.Ase_Cod). */
   usuCod?: number;
   kind?: "tarea" | "ticket";
+  /** Título de la tarea/ticket afectado (para mostrarlo completo en la notificación). */
+  titulo?: string;
+  prioridad?: string;
+  /** Responsable(s) de la tarea/ticket. */
+  asignadoA?: string;
+  estadoAnterior?: string;
+  /** Plazo (YYYY-MM-DD) de la tarea. */
+  fechaFin?: string;
+  /** Texto adicional (resumen del avance, motivo, etc.). */
+  detalle?: string;
+  /** El elemento ya no existe (p. ej. tarea eliminada): la notificación no enlaza a nada. */
+  sinEnlace?: boolean;
   at: string;
 };
+
+/** Texto plano completo (para clientes sin UI enriquecida, p. ej. ExaMonitor o notificaciones del sistema). */
+export function eventoTextoPlano(e: AppEvent): string {
+  const ref = e.tarCod && e.kind !== "ticket"
+    ? `Tarea #${e.tarCod}`
+    : e.ticCod
+      ? `Ticket #${e.ticCod}`
+      : "";
+  const cabecera = [ref, e.titulo ? `«${e.titulo}»` : ""].filter(Boolean).join(" ");
+  const meta = [
+    e.estado ? `Estado: ${e.estado}` : "",
+    e.porcentaje != null ? `Avance: ${e.porcentaje}%` : "",
+    e.prioridad ? `Prioridad: ${e.prioridad}` : "",
+    e.asignadoA ? `Responsable: ${e.asignadoA}` : "",
+    e.fechaFin ? `Plazo: ${e.fechaFin}` : "",
+  ].filter(Boolean);
+  return [
+    cabecera,
+    e.message,
+    e.detalle ? `«${e.detalle}»` : "",
+    meta.join(" · "),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
 
 type Listener = (event: AppEvent) => void;
 
@@ -157,6 +194,11 @@ export function publishAsignacion(opts: {
   usuCod?: number;
   estado?: string;
   actor?: string;
+  titulo?: string;
+  prioridad?: string;
+  asignadoA?: string;
+  fechaFin?: string;
+  detalle?: string;
 }) {
   return publishEvent({
     type: opts.kind === "ticket" ? "ticket_asignado" : "tarea_asignada",
@@ -172,6 +214,11 @@ export function publishAsignacion(opts: {
     estado: opts.estado,
     actor: opts.actor,
     kind: opts.kind,
+    titulo: opts.titulo,
+    prioridad: opts.prioridad,
+    asignadoA: opts.asignadoA,
+    fechaFin: opts.fechaFin,
+    detalle: opts.detalle,
   });
 }
 

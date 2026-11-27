@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 import { middleware } from "./middleware";
 import { createSessionToken, SESSION_COOKIE } from "./lib/auth/session";
 import type { ExaAuthUser } from "./lib/auth/exaLogin";
+import { effectiveRolePermissions } from "./lib/auth/role-permissions";
 
 async function requestConSesion(url: string, rol: ExaAuthUser["role"]) {
   const token = await createSessionToken({
@@ -74,18 +75,7 @@ it("bloquea tickets si el rol no tiene tickets.ver", async () => {
     empCod: 96,
     dbDis: "exa",
     teamName: "Dev Uno",
-    permissions: {
-      "tareas.ver": true,
-      "tareas.crear": true,
-      "tareas.editar": true,
-      "tareas.asignar": false,
-      "tareas.eliminar": false,
-      "tareas.avance": true,
-      "tickets.ver": false,
-      "tickets.crear": false,
-      "tickets.asignar": false,
-      "tickets.avance": false,
-    },
+    permissions: effectiveRolePermissions("developer", { "tickets.ver": false }),
   });
   const request = new NextRequest("https://gestion.exacontable.com/tickets", {
     headers: { cookie: `${SESSION_COOKIE}=${token}` },

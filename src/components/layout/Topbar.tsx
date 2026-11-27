@@ -5,6 +5,7 @@ import { ChevronDown, Download, LogOut, Menu, Settings } from "lucide-react";
 import Link from "next/link";
 import { EXAMONITOR_LATEST_DOWNLOAD } from "@/lib/examonitor-release";
 import { roleLabel } from "@/lib/auth/users";
+import { hasRolePermission } from "@/lib/auth/role-permissions";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSidebar } from "@/contexts/SidebarContext";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
@@ -142,7 +143,7 @@ export default function Topbar({ title, subtitle, showDbSelector = true }: Props
                   </Select>
                 </div>
               )}
-              {user?.role === "manager" && (
+              {hasRolePermission(user, "configuracion.administrar") && (
                 <>
                   <Link
                     href="/configuracion/usuarios"

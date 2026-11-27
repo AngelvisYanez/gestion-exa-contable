@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/auth/session";
-import { canAssignWork, canSeeOversight } from "@/lib/auth/users";
 import { hasRolePermission } from "@/lib/auth/role-permissions";
 import { publishAsignacion, publishEvent } from "@/lib/events";
+import { resumenAvance, tareaContexto, ticketContexto } from "@/lib/event-context";
 import { resolveTicketDatabaseIds, sanitizeDbDis } from "@/lib/db";
 import { tasksDbDis, tasksEmpCod } from "@/lib/empresa";
 import { createTarea, setTareaAsignados } from "@/lib/tareas";
@@ -77,9 +77,9 @@ export async function GET(req: NextRequest) {
     const detalleCod = parseInt(sp.get("detalle") || "0", 10);
     if (detalleCod > 0) {
       const session = await getSessionFromRequest(req);
-      if (!canSeeOversight(session?.role)) {
+      if (!hasRolePermission(session, "monitoreo.ver")) {
         return NextResponse.json(
-          { success: false, message: "Solo encargados pueden ver historial de capturas." },
+          { success: false, message: "Tu rol no puede ver el historial de capturas." },
           { status: 403 }
         );
       }
@@ -266,23 +266,14 @@ export async function POST(req: NextRequest) {
       ? "tickets.crear"
       : action === "assign"
         ? "tickets.asignar"
-        : "tickets.avance";
+        : action === "convertir_tarea"
+          ? "tickets.convertir"
+          : action === "reabrir"
+            ? "tickets.reabrir"
+            : "tickets.avance";
+    // Cada accion se abre con su permiso; el desarrollador sigue asignando solo a si mismo.
     if (!hasRolePermission(session, needed)) {
       return NextResponse.json({ success: false, message: "Tu rol no tiene permiso para esa accion." }, { status: 403 });
-    }
-
-    if (!canAssignWork(session?.role)) {
-      // El desarrollador puede moverse entre estados/avance y asignarse
-      // tickets a si mismo (la asignacion se valida mas abajo).
-      const devOk =
-        session?.role === "developer" &&
-        (action === "estado" || action === "avance" || action === "assign");
-      if (!devOk) {
-        return NextResponse.json(
-          { success: false, message: "No tienes acceso a esa accion." },
-          { status: 403 }
-        );
-      }
     }
 
     if (action === "create") {
@@ -307,11 +298,17 @@ export async function POST(req: NextRequest) {
       publishEvent({
         type: "tarea_creada",
         title: "Nuevo ticket",
-        message: `#${(ticket as { Tic_Cod: number }).Tic_Cod} · ${String(body.titulo || "").slice(0, 80)}`,
+        message: [
+          `${session?.name || "Alguien"} registró un ticket nuevo`,
+          body.empresa ? `de ${String(body.empresa).slice(0, 60)}` : "",
+        ].filter(Boolean).join(" ") + ".",
         db,
         ticCod: (ticket as { Tic_Cod: number }).Tic_Cod,
         kind: "ticket",
         actor: session?.name,
+        titulo: String((ticket as { Tic_Titulo?: string }).Tic_Titulo || body.titulo || "").slice(0, 120) || undefined,
+        prioridad: body.prioridad ? String(body.prioridad) : undefined,
+        detalle: body.proceso ? `Proceso: ${String(body.proceso).slice(0, 120)}` : undefined,
       });
       return NextResponse.json({ success: true, ticket });
     }
@@ -328,16 +325,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "convertir_tarea") {
-      // Decisión manual de atención al cliente o el encargado.
-      if (!canAssignWork(session.role)) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "Solo atención al cliente o el encargado pueden convertir un ticket en tarea.",
-          },
-          { status: 403 }
-        );
-      }
+      // Decisión manual de quien tenga el permiso de convertir (ya validado arriba).
       const ticCod = Number(body.Tic_Cod || 0);
       if (!ticCod) {
         return NextResponse.json({ success: false, message: "Tic_Cod requerido" }, { status: 400 });
@@ -414,15 +402,24 @@ export async function POST(req: NextRequest) {
       }
 
       await linkTicketTarea({ tarCod, ticCod, ticDb });
+      const ctxConv = await tareaContexto(tasksDb, tarCod);
       publishEvent({
         type: "tarea_creada",
         title: "Ticket convertido a tarea",
-        message: `Ticket #${ticCod} · tarea #${tarCod} · ${String(ticket.Tic_Titulo || "").slice(0, 60)}`,
+        message:
+          `${session?.name || "Alguien"} convirtió el ticket #${ticCod} en la tarea #${tarCod}` +
+          (ctxConv.asignadoA ? ` y la asignó a ${ctxConv.asignadoA}` : "") +
+          ".",
         db: tasksDb,
         tarCod,
         ticCod,
         kind: "tarea",
         actor: session?.name,
+        titulo: ticket.Tic_Titulo || ctxConv.titulo,
+        prioridad: ctxConv.prioridad || prioridad,
+        estado: ctxConv.estado,
+        asignadoA: ctxConv.asignadoA,
+        fechaFin: ctxConv.fechaFin,
       });
       return NextResponse.json({ success: true, tarea, Tic_Cod: ticCod, Tar_Cod: tarCod });
     }
@@ -483,13 +480,16 @@ export async function POST(req: NextRequest) {
         publishAsignacion({
           kind: "ticket",
           title: "Ticket asignado",
-          message: `#${ticCod} · ${titulo} → ${nombre}`,
+          message: `${session?.name || "Alguien"} asignó el ticket a ${nombre}.`,
           db: ticketDb,
           ticCod,
           perCod: dest.perCod ?? undefined,
           usuCod: dest.usuCod,
           estado: res.ticket?.Tic_Estado || "Asignado",
           actor: session?.name,
+          titulo,
+          prioridad: res.ticket?.Tic_Prioridad,
+          asignadoA: nombre,
         });
       }
       return NextResponse.json({ success: true, ...res });
@@ -537,37 +537,43 @@ export async function POST(req: NextRequest) {
       });
       publishEvent({
         type: "avance_registrado",
-        title: "Avance de ticket",
-        message: `${session?.name || "Usuario"} · ticket #${ticCod} · ${res.porcentaje}%`,
+        title: res.porcentaje >= 100 ? "Ticket resuelto" : "Avance de ticket",
+        message: `${session?.name || "Alguien"} reportó ${res.porcentaje}% de avance en el ticket.`,
         db: ticketDb,
         ticCod,
         porcentaje: res.porcentaje,
         actor: session?.name,
         estado: res.estado || mio.Tic_Estado,
         kind: "ticket",
+        titulo: mio.Tic_Titulo,
+        prioridad: mio.Tic_Prioridad,
+        asignadoA: mio.Asignado_Nombre || undefined,
+        detalle: resumenAvance(body),
       });
       return NextResponse.json({ success: true, ...res, Tic_Cod: ticCod });
     }
 
     if (action === "reabrir") {
-      if (session.role !== "manager") {
-        return NextResponse.json({ success: false, message: "Solo el encargado puede reabrir el ticket." }, { status: 403 });
-      }
       const ticCod = Number(body.Tic_Cod);
       const ticketDb = String(body.Db_Origen || body.Ses_Dat_Dis || "");
       if (!Number.isSafeInteger(ticCod) || ticCod <= 0 || !(await resolveTicketDatabaseIds()).includes(ticketDb)) {
         return NextResponse.json({ success: false, message: "Ticket o base de origen inválidos." }, { status: 400 });
       }
+      const ctxReab = await ticketContexto(ticketDb, ticCod);
       await reabrirTicket(ticketDb, ticCod, session.usuCod);
       publishEvent({
         type: "estado_cambiado",
         title: "Ticket reabierto",
-        message: `Ticket #${ticCod} reabierto`,
+        message: `${session.name || "Alguien"} reabrió el ticket${ctxReab.estado ? ` (estaba «${ctxReab.estado}»)` : ""}.`,
         db: ticketDb,
         ticCod,
         estado: "En Proceso",
+        estadoAnterior: ctxReab.estado,
         kind: "ticket",
         actor: session.name,
+        titulo: ctxReab.titulo,
+        prioridad: ctxReab.prioridad,
+        asignadoA: ctxReab.asignadoA,
       });
       return NextResponse.json({ success: true });
     }
@@ -601,16 +607,21 @@ export async function POST(req: NextRequest) {
         }
         ticketDb = mio.Db_Origen || db;
       }
+      const ctxEst = await ticketContexto(ticketDb, ticCod);
       await updateTicketEstado(ticketDb, ticCod, estado);
       publishEvent({
         type: "estado_cambiado",
-        title: "Ticket actualizado",
-        message: `#${ticCod} → ${estado}`,
+        title: "Estado de ticket actualizado",
+        message: `${session?.name || "Alguien"} cambió el estado de «${ctxEst.estado || "—"}» a «${estado}».`,
         db: ticketDb,
         ticCod,
         estado,
+        estadoAnterior: ctxEst.estado,
         kind: "ticket",
         actor: session?.name,
+        titulo: ctxEst.titulo,
+        prioridad: ctxEst.prioridad,
+        asignadoA: ctxEst.asignadoA,
       });
       return NextResponse.json({ success: true });
     }

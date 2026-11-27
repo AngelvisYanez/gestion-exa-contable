@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/auth/session";
-import { canSeeOversight } from "@/lib/auth/users";
+import { hasAnyRolePermission } from "@/lib/auth/role-permissions";
 
 export const dynamic = "force-dynamic";
 type Project = "relavera" | "ofsercont";
@@ -15,7 +15,7 @@ const runIdPattern = /^run-[a-zA-Z0-9-]+$/;
 
 async function authorize(req: NextRequest) {
   const session = await getSessionFromRequest(req);
-  if (!session || !canSeeOversight(session.role)) return null;
+  if (!session || !hasAnyRolePermission(session, ["plan_accion.ver", "configuracion.administrar"])) return null;
   return session;
 }
 function authHeader(key: string) { return `Basic ${Buffer.from(`${key}:`).toString("base64")}`; }

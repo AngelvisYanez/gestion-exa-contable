@@ -361,7 +361,9 @@ export async function generateTareaBrief(input: GenerateBriefInput): Promise<Gen
       publishEvent({
         type: "brief_generado",
         title: "Brief de desarrollo listo",
-        message: `#${input.tarCod} · ${titulo} (${tipo}) → ${mdRel}`,
+        message: `Se generó el brief ${tipo} de la tarea. Está en los adjuntos (${mdRel}).`,
+        titulo,
+        asignadoA: asignadosNombres.length ? asignadosNombres.join(", ") : undefined,
         db: input.dbDis,
         tarCod: input.tarCod,
         perCod: r.perCod,
@@ -374,7 +376,9 @@ export async function generateTareaBrief(input: GenerateBriefInput): Promise<Gen
     publishEvent({
       type: "brief_generado",
       title: "Brief de desarrollo listo",
-      message: `#${input.tarCod} · ${titulo} (${tipo}) → ${mdRel}`,
+      message: `Se generó el brief ${tipo} de la tarea. Está en los adjuntos (${mdRel}).`,
+      titulo,
+      asignadoA: asignadosNombres.length ? asignadosNombres.join(", ") : undefined,
       db: input.dbDis,
       tarCod: input.tarCod,
       actor: input.actor,

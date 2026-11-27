@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/auth/session";
+import { hasRolePermission } from "@/lib/auth/role-permissions";
 import { getPrisma } from "@/lib/db";
 import { CAPACITACION_PROYECTOS, nombreProyectoCapacitacion } from "@/lib/capacitaciones-proyectos";
 import { listAsignables } from "@/lib/tareas";
@@ -12,12 +13,12 @@ const validText = (value: unknown, max: number) => typeof value === "string" && 
 
 export async function GET(req: NextRequest) {
   const session = await getSessionFromRequest(req);
-  if (session?.role !== "manager" && session?.role !== "developer") return bad("Tu rol no tiene acceso a capacitaciones.", 403);
+  if (!session || !hasRolePermission(session, "capacitaciones.ver")) return bad("Tu rol no tiene acceso a capacitaciones.", 403);
   try {
     const proyecto = req.nextUrl.searchParams.get("proyecto");
     if (proyecto && !CAPACITACION_PROYECTOS.some((p) => p.id === proyecto)) return bad("Proyecto inválido.");
     if (req.nextUrl.searchParams.get("view") === "miembros") {
-      if (session.role !== "manager") return bad("Solo encargados.", 403);
+      if (!hasRolePermission(session, "capacitaciones.gestionar")) return bad("Tu rol no puede gestionar capacitaciones.", 403);
       if (!proyecto || !CAPACITACION_PROYECTOS.some((p) => p.id === proyecto)) return bad("Proyecto inválido.");
       const miembros = await listAsignables(proyecto);
       return NextResponse.json({ success: true, miembros: miembros.map((m) => ({ Per_Cod: m.Per_Cod, Nombre: m.Nombre })) });
@@ -39,12 +40,13 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const session = await getSessionFromRequest(req);
-  if (session?.role !== "manager" && session?.role !== "developer") return bad("Tu rol no tiene acceso a capacitaciones.", 403);
+  if (!session || !hasRolePermission(session, "capacitaciones.ver")) return bad("Tu rol no tiene acceso a capacitaciones.", 403);
   try {
     const body = await req.json();
     if (!validText(body.titulo, 255) || !validText(body.empresa, 180) || !validText(body.cliente, 180)) return bad("Completa título, empresa y cliente.");
     const proyecto = String(body.proyecto || "");
-    const autoAsignar = session.role === "developer";
+    // Sin permiso de gestionar, la capacitacion queda a nombre de quien la programa.
+    const autoAsignar = !hasRolePermission(session, "capacitaciones.gestionar");
     const responsable = autoAsignar ? session.perCod : Number(body.responsablePerCod);
     if (autoAsignar && !responsable) return bad("Tu cuenta necesita una ficha de personal para crear capacitaciones.");
     if (!CAPACITACION_PROYECTOS.some((p) => p.id === proyecto)) return bad("Proyecto inválido.");
@@ -63,7 +65,7 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   const session = await getSessionFromRequest(req);
-  if (session?.role !== "manager") return bad("Solo encargados.", 403);
+  if (!session || !hasRolePermission(session, "capacitaciones.gestionar")) return bad("Tu rol no puede gestionar capacitaciones.", 403);
   try {
     const { id } = await req.json();
     if (!Number.isSafeInteger(id) || id < 1) return bad("Identificador inválido.");

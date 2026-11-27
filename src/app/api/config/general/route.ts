@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/auth/session";
+import { hasRolePermission } from "@/lib/auth/role-permissions";
 import {
   PROJECTS,
   TEAM_DEVELOPERS,
@@ -27,9 +28,9 @@ export async function GET(req: NextRequest) {
     if (!session) {
       return NextResponse.json({ success: false, message: "No autenticado" }, { status: 401 });
     }
-    if (session.role !== "manager") {
+    if (!hasRolePermission(session, "configuracion.administrar")) {
       return NextResponse.json(
-        { success: false, message: "Acceso solo para encargados." },
+        { success: false, message: "Tu rol no tiene acceso a la configuracion." },
         { status: 403 }
       );
     }

@@ -18,6 +18,23 @@ export function detailIdFromSearch(search: string): number | null {
   return Number.isSafeInteger(id) ? id : null;
 }
 
+/** Se dispara cuando la URL cambia a `?detalle=` sin recargar la página actual. */
+export const DETAIL_LINK_EVENT = "exa-detail-link";
+
+/**
+ * Abre un enlace de detalle. Si ya estamos en esa pantalla solo actualiza la URL y avisa a la
+ * página (que no se vuelve a montar); si no, navega con el router de Next.
+ */
+export function navigateToDetail(router: { push: (href: string) => void }, href: string) {
+  const url = new URL(href, window.location.origin);
+  if (url.pathname === window.location.pathname) {
+    window.history.pushState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+    window.dispatchEvent(new Event(DETAIL_LINK_EVENT));
+    return;
+  }
+  router.push(`${url.pathname}${url.search}${url.hash}`);
+}
+
 export function clearDetailLink(...params: string[]) {
   const url = new URL(window.location.href);
   url.searchParams.delete("detalle");

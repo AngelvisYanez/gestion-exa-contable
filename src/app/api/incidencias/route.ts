@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { hasRolePermission } from "@/lib/auth/role-permissions";
 import { publishAsignacion, publishEvent } from "@/lib/events";
+import { tareaContexto } from "@/lib/event-context";
 import { tasksDbDis } from "@/lib/empresa";
 import {
   analizarIncidencia,
@@ -112,24 +113,38 @@ export async function POST(req: NextRequest) {
       });
       if (!res.already) {
         const titulo = res.tarea?.Tar_Titulo || "error EXA";
+        const ctx = await tareaContexto(db, res.Tar_Cod);
+        const autor = session?.name || "Alguien";
         if (perCodAsignar && perCodAsignar > 0) {
           publishAsignacion({
             kind: "tarea",
             title: "Tarea desde incidencia",
-            message: `#${res.Tar_Cod} · ${titulo}`,
+            message: ctx.asignadoA
+              ? `${autor} creó una tarea a partir de una incidencia y la asignó a ${ctx.asignadoA}.`
+              : `${autor} creó una tarea a partir de una incidencia y la asignó.`,
             db,
             tarCod: res.Tar_Cod,
             perCod: perCodAsignar,
             estado: res.tarea?.Tar_Estado,
+            actor: session?.name,
+            titulo: ctx.titulo || titulo,
+            prioridad: ctx.prioridad,
+            asignadoA: ctx.asignadoA,
+            fechaFin: ctx.fechaFin,
           });
         } else {
           publishEvent({
             type: "tarea_creada",
             title: "Tarea desde incidencia",
-            message: `#${res.Tar_Cod} · ${titulo}`,
+            message: `${autor} creó una tarea a partir de una incidencia (sin asignar).`,
             db,
             tarCod: res.Tar_Cod,
             estado: res.tarea?.Tar_Estado,
+            actor: session?.name,
+            kind: "tarea",
+            titulo: ctx.titulo || titulo,
+            prioridad: ctx.prioridad,
+            fechaFin: ctx.fechaFin,
           });
         }
       }

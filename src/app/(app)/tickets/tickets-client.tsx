@@ -24,7 +24,7 @@ import {
 import { PrioridadBadge } from "@/components/status-badges";
 import { useAuth } from "@/contexts/AuthContext";
 import { hasRolePermission } from "@/lib/auth/role-permissions";
-import { canAssignWork, roleLabel } from "@/lib/auth/users";
+import { roleLabel } from "@/lib/auth/users";
 import { useNotifications } from "@/contexts/NotificationsContext";
 import { usePagination } from "@/hooks/use-pagination";
 import { Alert } from "@/components/ui/alert";
@@ -51,7 +51,7 @@ import { fmtFechaHoraZona } from "@/lib/timezone";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { plainTextFromHtml } from "@/components/ui/rich-text";
 import { cn } from "@/lib/utils";
-import { clearDetailLink, detailIdFromSearch } from "@/lib/detail-link";
+import { DETAIL_LINK_EVENT, clearDetailLink, detailIdFromSearch } from "@/lib/detail-link";
 import { TAR_PRIORIDADES, normalizePrioridad } from "@/lib/domain-constants";
 import { PLAZOS_TAREA, ayudaPlazo, type PlazoTarea } from "@/lib/plazo";
 import {
@@ -163,9 +163,9 @@ export default function TicketsPage({ mode = "all" }: { mode?: "all" | "mine" })
   const soloAsignarme = user?.role === "developer";
   const puedeCrear = hasRolePermission(user, "tickets.crear");
   const puedeAvanzar = hasRolePermission(user, "tickets.avance");
-  const puedeReabrir = puedeAvanzar && user?.role === "manager";
-  // Convertir ticket → tarea: lo determina atención al cliente o el encargado.
-  const puedeConvertir = canAssignWork(user?.role);
+  const puedeReabrir = hasRolePermission(user, "tickets.reabrir");
+  // Convertir ticket → tarea: depende del permiso del rol.
+  const puedeConvertir = hasRolePermission(user, "tickets.convertir");
   const { lastTaskEventAt } = useNotifications();
 
   const [loading, setLoading] = useState(true);
@@ -209,30 +209,42 @@ export default function TicketsPage({ mode = "all" }: { mode?: "all" | "mine" })
   const [convertSaving, setConvertSaving] = useState(false);
   const [convertError, setConvertError] = useState("");
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (!params.has("detalle")) return;
-    const id = detailIdFromSearch(window.location.search);
-    const origen = params.get("db");
-    if (id === null || !origen) {
-      setLinkError("El enlace del ticket no es válido.");
-      return;
-    }
-    const controller = new AbortController();
-    fetch(`/api/tickets?item=${id}&db=${encodeURIComponent(origen)}${isMine ? "&mios=1" : ""}`, { signal: controller.signal })
-      .then(async (res) => {
-        const body = await res.json();
-        if (!res.ok || !body.success) throw new Error(body.message || "No se pudo abrir el ticket.");
-        return body;
-      })
-      .then((body) => {
-        setLinkedTicket(body.ticket);
-        setDetalleCod(id);
-        setDetalleDb(origen);
-      })
-      .catch((error) => {
-        if (!controller.signal.aborted) setLinkError(error instanceof Error ? error.message : "No se pudo abrir el ticket.");
-      });
-    return () => controller.abort();
+    let controller: AbortController | null = null;
+    // Se ejecuta al montar y cada vez que una notificación cambia ?detalle= sin recargar.
+    const openFromUrl = () => {
+      const params = new URLSearchParams(window.location.search);
+      if (!params.has("detalle")) return;
+      setLinkError("");
+      const id = detailIdFromSearch(window.location.search);
+      const origen = params.get("db");
+      if (id === null || !origen) {
+        setLinkError("El enlace del ticket no es válido.");
+        return;
+      }
+      controller?.abort();
+      const current = new AbortController();
+      controller = current;
+      fetch(`/api/tickets?item=${id}&db=${encodeURIComponent(origen)}${isMine ? "&mios=1" : ""}`, { signal: current.signal })
+        .then(async (res) => {
+          const body = await res.json();
+          if (!res.ok || !body.success) throw new Error(body.message || "No se pudo abrir el ticket.");
+          return body;
+        })
+        .then((body) => {
+          setLinkedTicket(body.ticket);
+          setDetalleCod(id);
+          setDetalleDb(origen);
+        })
+        .catch((error) => {
+          if (!current.signal.aborted) setLinkError(error instanceof Error ? error.message : "No se pudo abrir el ticket.");
+        });
+    };
+    openFromUrl();
+    window.addEventListener(DETAIL_LINK_EVENT, openFromUrl);
+    return () => {
+      controller?.abort();
+      window.removeEventListener(DETAIL_LINK_EVENT, openFromUrl);
+    };
   }, [isMine]);
   const opcionesDev = useMemo(() => {
     const byName = new Map<string, { nombre: string; usuCods: Set<number> }>();

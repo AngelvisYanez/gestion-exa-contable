@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { resolvePerCod } from "@/lib/auth/resolvePer";
-import { canAssignWork, canSeeOversight, matchTeamMember } from "@/lib/auth/users";
+import { matchTeamMember } from "@/lib/auth/users";
 import { publishAsignacion, publishEvent } from "@/lib/events";
+import { tareaContexto } from "@/lib/event-context";
 import { listOfsercontCatalogo } from "@/lib/brief/catalog";
 import { generateTareaBrief } from "@/lib/brief/generate";
 import { tasksDbDis, tasksEmpCod } from "@/lib/empresa";
@@ -77,7 +78,7 @@ export async function GET(req: NextRequest) {
         capturasDias,
         capturasDesde,
         capturasHasta,
-        includeCapturas: canSeeOversight(session?.role),
+        includeCapturas: hasRolePermission(session, "monitoreo.ver"),
         capturasLimit: parseInt(sp.get("capturas_limit") || "80", 10) || 80,
       });
       if (!detalle) {
@@ -86,7 +87,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         success: true,
         db,
-        can_view_capturas: canSeeOversight(session?.role),
+        can_view_capturas: hasRolePermission(session, "monitoreo.ver"),
         ...detalle,
       });
     }
@@ -183,26 +184,38 @@ export async function POST(req: NextRequest) {
         perCodAsignar,
       });
 
+      const ctx = await tareaContexto(db, tarea.Tar_Cod);
+      const autor = session?.name || "Alguien";
       if (perCodAsignar && perCodAsignar > 0) {
         publishAsignacion({
           kind: "tarea",
           title: "Nueva tarea asignada",
-          message: `#${tarea.Tar_Cod} · ${tarea.Tar_Titulo}`,
+          message: ctx.asignadoA
+            ? `${autor} creó la tarea y la asignó a ${ctx.asignadoA}.`
+            : `${autor} creó la tarea y la asignó.`,
           db,
           tarCod: tarea.Tar_Cod,
           perCod: perCodAsignar,
           estado: tarea.Tar_Estado,
           actor: session?.name,
+          titulo: tarea.Tar_Titulo,
+          prioridad: ctx.prioridad || tarea.Tar_Prioridad,
+          asignadoA: ctx.asignadoA,
+          fechaFin: ctx.fechaFin,
         });
       } else {
         publishEvent({
           type: "tarea_creada",
           title: "Nueva tarea",
-          message: `#${tarea.Tar_Cod} · ${tarea.Tar_Titulo}`,
+          message: `${autor} creó una tarea sin asignar.`,
           db,
           tarCod: tarea.Tar_Cod,
           estado: tarea.Tar_Estado,
           actor: session?.name,
+          kind: "tarea",
+          titulo: tarea.Tar_Titulo,
+          prioridad: ctx.prioridad || tarea.Tar_Prioridad,
+          fechaFin: ctx.fechaFin,
         });
       }
       return NextResponse.json({ success: true, tarea });
@@ -286,13 +299,6 @@ export async function POST(req: NextRequest) {
       if (wantsAssign && !hasRolePermission(session, "tareas.asignar")) {
         return NextResponse.json({ success: false, message: "Tu rol no puede asignar tareas." }, { status: 403 });
       }
-      if (wantsAssign && !canAssignWork(session.role)) {
-        return NextResponse.json(
-          { success: false, message: "Solo encargado o atencion al cliente pueden asignar la tarea." },
-          { status: 403 }
-        );
-      }
-
       if (Object.keys(patch).length === 0 && !wantsAssign) {
         return NextResponse.json({ success: false, message: "Sin campos para actualizar" }, { status: 400 });
       }
@@ -314,8 +320,6 @@ export async function POST(req: NextRequest) {
         if (wantsApoyo && !access?.isCreator && !access?.isAssigned) {
           return NextResponse.json({ success: false, message: "No puedes editar esa tarea." }, { status: 403 });
         }
-      } else if (touchesContent && !canAssignWork(session.role)) {
-        return NextResponse.json({ success: false, message: "No puedes editar esa tarea." }, { status: 403 });
       }
 
       // El apoyo debe ser una persona del equipo autorizado (misma regla que asignación).
@@ -329,8 +333,12 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      const antes = await tareaContexto(db, tarCod);
       let tarea = Object.keys(patch).length ? await updateTarea(db, tarCod, patch) : { Tar_Cod: tarCod };
+      const autor = session?.name || "Alguien";
 
+      let asignacionPublicada = false;
+      let desasignada = false;
       if (wantsAssign) {
         let perCods: number[] = [];
         if (Array.isArray(body.asignados)) {
@@ -346,16 +354,26 @@ export async function POST(req: NextRequest) {
           const asig = await setTareaAsignados(db, tarCod, perCods);
           tarea = { ...tarea, ...asig };
           if (perCods.length) {
+            const despues = await tareaContexto(db, tarCod);
             publishAsignacion({
               kind: "tarea",
               title: "Tarea asignada",
-              message: `#${tarCod} asignada`,
+              message: despues.asignadoA
+                ? `${autor} asignó la tarea a ${despues.asignadoA}.`
+                : `${autor} asignó la tarea.`,
               db,
               tarCod,
               perCod: perCods[0],
               estado: asig.Tar_Estado,
               actor: session?.name,
+              titulo: despues.titulo || antes.titulo,
+              prioridad: despues.prioridad || antes.prioridad,
+              asignadoA: despues.asignadoA,
+              fechaFin: despues.fechaFin,
             });
+            asignacionPublicada = true;
+          } else {
+            desasignada = true;
           }
         } catch (e) {
           if (e instanceof AsignacionInvalidaError) {
@@ -365,18 +383,41 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      const estado = patch.estado || (tarea as { Tar_Estado?: string }).Tar_Estado;
-      publishEvent({
-        type: patch.estado ? "estado_cambiado" : "tarea_actualizada",
-        title: patch.estado ? "Estado actualizado" : "Tarea actualizada",
-        message: patch.estado
-          ? `#${tarCod} movida a «${patch.estado}»`
-          : `#${tarCod} · cambios guardados`,
-        db,
-        tarCod,
-        estado,
-        actor: session?.name,
-      });
+      // Si solo se asignó, el aviso de asignación ya describe el cambio.
+      if (!(asignacionPublicada && Object.keys(patch).length === 0)) {
+        const estado = patch.estado || (tarea as { Tar_Estado?: string }).Tar_Estado;
+        const cambios: string[] = [];
+        if (patch.titulo !== undefined) cambios.push("título");
+        if (patch.descripcion !== undefined) cambios.push("descripción");
+        if (patch.prioridad !== undefined) cambios.push("prioridad");
+        if (patch.complejidad !== undefined) cambios.push("complejidad");
+        if (patch.proyecto !== undefined) cambios.push("proyecto");
+        if (patch.fechaInicio !== undefined) cambios.push("fecha de inicio");
+        if (patch.fechaFin !== undefined) cambios.push("plazo");
+        if (patch.adjuntos !== undefined) cambios.push("adjuntos");
+        if (patch.apoyoPerCod !== undefined) cambios.push("apoyo");
+        if (desasignada) cambios.push("asignación (quedó sin responsable)");
+        const despuesCtx = await tareaContexto(db, tarCod);
+        publishEvent({
+          type: patch.estado ? "estado_cambiado" : "tarea_actualizada",
+          title: patch.estado ? "Estado actualizado" : "Tarea actualizada",
+          message: patch.estado
+            ? `${autor} cambió el estado de «${antes.estado || "—"}» a «${patch.estado}».`
+            : cambios.length
+              ? `${autor} modificó: ${cambios.join(", ")}.`
+              : `${autor} guardó cambios en la tarea.`,
+          db,
+          tarCod,
+          estado,
+          estadoAnterior: patch.estado ? antes.estado : undefined,
+          actor: session?.name,
+          kind: "tarea",
+          titulo: despuesCtx.titulo || antes.titulo,
+          prioridad: despuesCtx.prioridad || antes.prioridad,
+          asignadoA: despuesCtx.asignadoA,
+          fechaFin: despuesCtx.fechaFin,
+        });
+      }
       return NextResponse.json({ success: true, tarea });
     }
 
@@ -384,17 +425,12 @@ export async function POST(req: NextRequest) {
       if (!hasRolePermission(session, "tareas.eliminar")) {
         return NextResponse.json({ success: false, message: "Tu rol no puede eliminar tareas." }, { status: 403 });
       }
-      if (!canSeeOversight(session?.role)) {
-        return NextResponse.json(
-          { success: false, message: "Solo el encargado puede borrar tareas." },
-          { status: 403 }
-        );
-      }
       const tarCod = Number(body.Tar_Cod || 0);
       if (!tarCod) {
         return NextResponse.json({ success: false, message: "Tar_Cod requerido" }, { status: 400 });
       }
       let tarea: { Tar_Cod: number; Tar_Titulo: string };
+      const antesBorrar = await tareaContexto(db, tarCod);
       try {
         tarea = await deleteTarea(db, tarCod);
       } catch (e) {
@@ -406,10 +442,16 @@ export async function POST(req: NextRequest) {
       publishEvent({
         type: "tarea_actualizada",
         title: "Tarea eliminada",
-        message: `#${tarCod}${tarea.Tar_Titulo ? ` · ${tarea.Tar_Titulo}` : ""}`,
+        message: `${session?.name || "Alguien"} eliminó la tarea${antesBorrar.asignadoA ? ` (estaba asignada a ${antesBorrar.asignadoA})` : ""}.`,
         db,
         tarCod,
         actor: session?.name,
+        kind: "tarea",
+        titulo: tarea.Tar_Titulo || antesBorrar.titulo,
+        prioridad: antesBorrar.prioridad,
+        estado: antesBorrar.estado,
+        asignadoA: antesBorrar.asignadoA,
+        sinEnlace: true,
       });
       return NextResponse.json({ success: true, tarea });
     }
@@ -461,18 +503,25 @@ export async function POST(req: NextRequest) {
         // Un avance sin nota de standby reanuda la tarea (si estaba en pausa).
         await salirDeStandby(db, tarCod);
       }
+      const ctxAv = await tareaContexto(db, tarCod);
       publishEvent({
         type: "avance_registrado",
-        title: "Avance registrado",
+        title: res.porcentaje >= 100 ? "Tarea completada" : "Avance registrado",
         message:
-          `#${tarCod} · ${res.porcentaje}%` +
-          (resumen ? ` — ${resumen.slice(0, 80)}` : "") +
-          (enStandby ? " · standby (sin fecha de fin)" : ""),
+          `${session?.name || "Alguien"} reportó ${res.porcentaje}% de avance` +
+          (enStandby ? " y dejó la tarea en standby (sin fecha de fin)" : "") +
+          ".",
         db,
         tarCod,
         porcentaje: res.porcentaje,
         estado: estadoTrasAvance({ porcentaje: res.porcentaje, enStandby }),
         actor: session?.name,
+        kind: "tarea",
+        titulo: ctxAv.titulo,
+        prioridad: ctxAv.prioridad,
+        asignadoA: ctxAv.asignadoA,
+        fechaFin: ctxAv.fechaFin,
+        detalle: resumen ? resumen.slice(0, 200) : undefined,
       });
       return NextResponse.json({ success: true, ...res });
     }
@@ -481,9 +530,9 @@ export async function POST(req: NextRequest) {
       if (!hasRolePermission(session, "tareas.editar")) {
         return NextResponse.json({ success: false, message: "Tu rol no puede editar tareas." }, { status: 403 });
       }
-      if (!canSeeOversight(session?.role)) {
+      if (!hasRolePermission(session, "monitoreo.ver")) {
         return NextResponse.json(
-          { success: false, message: "Solo el encargado puede generar el brief." },
+          { success: false, message: "Tu rol no puede generar el brief." },
           { status: 403 }
         );
       }

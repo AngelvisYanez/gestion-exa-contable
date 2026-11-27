@@ -10,7 +10,11 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { AppEvent } from "@/lib/events";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/AuthContext";
+import { eventoTextoPlano, type AppEvent } from "@/lib/events";
+import { navigateToDetail } from "@/lib/detail-link";
+import { notificationTarget } from "@/lib/notif-links";
 import {
   isEventTypeEnabled,
   loadNotifPrefs,
@@ -28,6 +32,8 @@ type NotificationsContextValue = {
   markAllRead: () => void;
   markRead: (id: string) => void;
   clearAll: () => void;
+  /** Marca como leída y abre el detalle del elemento. Devuelve false si no tiene destino. */
+  openNotification: (n: AppNotification) => boolean;
   lastTaskEventAt: number;
   prefs: NotifPrefs;
 };
@@ -45,6 +51,30 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   const seen = useRef(new Set<string>());
   const prefsRef = useRef(prefs);
   prefsRef.current = prefs;
+  const router = useRouter();
+  const { user } = useAuth();
+  const userRef = useRef(user);
+  userRef.current = user;
+  const routerRef = useRef(router);
+  routerRef.current = router;
+
+  const markRead = useCallback((id: string) => {
+    setItems((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+  }, []);
+
+  const openNotification = useCallback(
+    (n: AppNotification) => {
+      markRead(n.id);
+      const target = notificationTarget(n, userRef.current);
+      if (!target) return false;
+      setToast((t) => (t?.id === n.id ? null : t));
+      navigateToDetail(routerRef.current, target.href);
+      return true;
+    },
+    [markRead]
+  );
+  const openNotificationRef = useRef(openNotification);
+  openNotificationRef.current = openNotification;
 
   useEffect(() => {
     setPrefs(loadNotifPrefs());
@@ -76,7 +106,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     if (current.toast) {
       setToast(note);
       if (toastTimer.current) clearTimeout(toastTimer.current);
-      toastTimer.current = setTimeout(() => setToast(null), 4500);
+      toastTimer.current = setTimeout(() => setToast(null), 8000);
     }
 
     if (
@@ -87,7 +117,16 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       (event.type === "tarea_asignada" || event.type === "ticket_asignado")
     ) {
       try {
-        new Notification(event.title, { body: event.message, tag: event.id });
+        const desktop = new Notification(event.title, {
+          body: eventoTextoPlano(event),
+          tag: event.id,
+        });
+        // Al pulsarla se trae la ventana al frente y se abre el detalle correspondiente.
+        desktop.onclick = () => {
+          window.focus();
+          openNotificationRef.current(note);
+          desktop.close();
+        };
       } catch {
         /* ignore */
       }
@@ -119,6 +158,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         "tarea_actualizada",
         "avance_registrado",
         "estado_cambiado",
+        "brief_generado",
         "message",
       ]) {
         es.addEventListener(type, onMessage);
@@ -152,9 +192,6 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   const markAllRead = useCallback(() => {
     setItems((prev) => prev.map((n) => ({ ...n, read: true })));
   }, []);
-  const markRead = useCallback((id: string) => {
-    setItems((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
-  }, []);
   const clearAll = useCallback(() => {
     setItems([]);
     seen.current.clear();
@@ -171,10 +208,11 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       markAllRead,
       markRead,
       clearAll,
+      openNotification,
       lastTaskEventAt,
       prefs,
     }),
-    [items, unread, toast, dismissToast, markAllRead, markRead, clearAll, lastTaskEventAt, prefs]
+    [items, unread, toast, dismissToast, markAllRead, markRead, clearAll, openNotification, lastTaskEventAt, prefs]
   );
 
   return (

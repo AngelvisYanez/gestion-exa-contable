@@ -45,7 +45,7 @@ import { TareaDetalleDialog } from "@/components/tareas/tarea-detalle-dialog";
 import { TicketVinculadoChip } from "@/components/tareas/ticket-vinculado-chip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { clearDetailLink, detailIdFromSearch } from "@/lib/detail-link";
+import { DETAIL_LINK_EVENT, clearDetailLink, detailIdFromSearch } from "@/lib/detail-link";
 import {
   EVIDENCIA_ACCEPT,
   EVIDENCIA_HELP,
@@ -112,28 +112,40 @@ export default function TareasPage() {
     ?? tareas.find((t) => t.Tar_Cod === detalleCod) ?? null;
 
   useEffect(() => {
-    const raw = new URLSearchParams(window.location.search).get("detalle");
-    if (raw === null) return;
-    const id = detailIdFromSearch(window.location.search);
-    if (id === null) {
-      setLinkError("El enlace de la tarea no es válido.");
-      return;
-    }
-    const controller = new AbortController();
-    fetch(`/api/tareas?detalle=${id}`, { signal: controller.signal })
-      .then(async (res) => {
-        const body = await res.json();
-        if (!res.ok || !body.success) throw new Error(body.message || "No se pudo abrir la tarea.");
-        return body;
-      })
-      .then((body) => {
-        setLinkedTarea({ ...body.tarea, Asignados: body.asignados || [] });
-        setDetalleCod(id);
-      })
-      .catch((error) => {
-        if (!controller.signal.aborted) setLinkError(error instanceof Error ? error.message : "No se pudo abrir la tarea.");
-      });
-    return () => controller.abort();
+    let controller: AbortController | null = null;
+    // Se ejecuta al montar y cada vez que una notificación cambia ?detalle= sin recargar.
+    const openFromUrl = () => {
+      const raw = new URLSearchParams(window.location.search).get("detalle");
+      if (raw === null) return;
+      setLinkError("");
+      const id = detailIdFromSearch(window.location.search);
+      if (id === null) {
+        setLinkError("El enlace de la tarea no es válido.");
+        return;
+      }
+      controller?.abort();
+      const current = new AbortController();
+      controller = current;
+      fetch(`/api/tareas?detalle=${id}`, { signal: current.signal })
+        .then(async (res) => {
+          const body = await res.json();
+          if (!res.ok || !body.success) throw new Error(body.message || "No se pudo abrir la tarea.");
+          return body;
+        })
+        .then((body) => {
+          setLinkedTarea({ ...body.tarea, Asignados: body.asignados || [] });
+          setDetalleCod(id);
+        })
+        .catch((error) => {
+          if (!current.signal.aborted) setLinkError(error instanceof Error ? error.message : "No se pudo abrir la tarea.");
+        });
+    };
+    openFromUrl();
+    window.addEventListener(DETAIL_LINK_EVENT, openFromUrl);
+    return () => {
+      controller?.abort();
+      window.removeEventListener(DETAIL_LINK_EVENT, openFromUrl);
+    };
   }, []);
 
   const loadTareas = useCallback(async () => {

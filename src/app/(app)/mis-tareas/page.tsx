@@ -46,6 +46,7 @@ import {
 import { fechaEnZona, hoyFecha, startOfDayZona } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
 import { plainTextFromHtml } from "@/components/ui/rich-text";
+import { DETAIL_LINK_EVENT, clearDetailLink, detailIdFromSearch } from "@/lib/detail-link";
 
 type Kpis = {
   total: number;
@@ -122,12 +123,51 @@ export default function MisTareasPage() {
   const [avanceKey, setAvanceKey] = useState<string | null>(null);
   const [detalleKey, setDetalleKey] = useState<string | null>(null);
   const [detalleReload, setDetalleReload] = useState(0);
+  const [linkedTarea, setLinkedTarea] = useState<Tarea | null>(null);
+  const [linkError, setLinkError] = useState("");
   const [reporteOpen, setReporteOpen] = useState(false);
 
   const avanceTarea = avanceKey ? tareas.find((t) => workItemKey(t) === avanceKey) ?? null : null;
   const detalleItem = detalleKey ? tareas.find((t) => workItemKey(t) === detalleKey) ?? null : null;
-  const detalleTarea = detalleItem && !esTicket(detalleItem) ? detalleItem : null;
+  const detalleTarea = detalleItem && !esTicket(detalleItem) ? detalleItem : detalleKey ? null : linkedTarea;
   const detalleTicket = detalleItem && esTicket(detalleItem) ? detalleItem : null;
+
+  // Abre el detalle desde ?detalle=ID (notificaciones y enlaces compartidos), al montar y
+  // cada vez que una notificación cambia la URL sin recargar la página.
+  useEffect(() => {
+    let controller: AbortController | null = null;
+    const openFromUrl = () => {
+      if (new URLSearchParams(window.location.search).get("detalle") === null) return;
+      setLinkError("");
+      const id = detailIdFromSearch(window.location.search);
+      if (id === null) {
+        setLinkError("El enlace de la tarea no es válido.");
+        return;
+      }
+      controller?.abort();
+      const current = new AbortController();
+      controller = current;
+      fetch(`/api/mis-tareas?project=exa&detalle=${id}`, { signal: current.signal })
+        .then(async (res) => {
+          const body = await res.json();
+          if (!res.ok || !body.success) throw new Error(body.message || "No se pudo abrir la tarea.");
+          return body;
+        })
+        .then((body) => {
+          setDetalleKey(null);
+          setLinkedTarea({ ...body.tarea, Asignados: body.asignados || [] });
+        })
+        .catch((e) => {
+          if (!current.signal.aborted) setLinkError(e instanceof Error ? e.message : "No se pudo abrir la tarea.");
+        });
+    };
+    openFromUrl();
+    window.addEventListener(DETAIL_LINK_EVENT, openFromUrl);
+    return () => {
+      controller?.abort();
+      window.removeEventListener(DETAIL_LINK_EVENT, openFromUrl);
+    };
+  }, []);
 
   const loadTareas = useCallback(async (proj: string) => {
     setLoading(true);
@@ -349,9 +389,9 @@ export default function MisTareasPage() {
           )}
         </FilterBar>
 
-        {error && (
+        {(error || linkError) && (
           <div className="mb-4">
-            <Alert variant="destructive">{error}</Alert>
+            <Alert variant="destructive">{error || linkError}</Alert>
           </div>
         )}
         {warning && (
@@ -759,7 +799,7 @@ export default function MisTareasPage() {
         <TareaDetalleDialog
           tarea={detalleTarea}
           detailUrl={(cod) => `/api/mis-tareas?project=exa&detalle=${cod}`}
-          onClose={() => setDetalleKey(null)}
+          onClose={() => { setDetalleKey(null); setLinkedTarea(null); clearDetailLink(); }}
           onRegistrarAvance={canAdvanceTask ? (t) => setAvanceKey(workItemKey(t)) : undefined}
           editExtraBody={{ Ses_Dat_Dis: "exa" }}
           onSaved={async () => {

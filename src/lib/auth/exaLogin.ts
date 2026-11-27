@@ -2,6 +2,7 @@ import { createHash } from "crypto";
 import { getPrisma } from "@/lib/db";
 import { EMPRESA_TAREAS, tasksDbDis, tasksEmpCod } from "@/lib/empresa";
 import { findPanelActivo, setPanelUsuario } from "@/lib/panel-usuarios";
+import { ACTOR_SISTEMA, registrarAuditoria } from "./auditoria-panel";
 import { ensurePersonalForEmp, resolvePerCod } from "./resolvePer";
 import { matchTeamMember, PROJECTS, type UserRole } from "./users";
 import { loadRolePermissions } from "./role-permissions-db";
@@ -117,10 +118,21 @@ export async function authenticateByCedula(
 
       let panel = await findPanelActivo(prisma, user.Usu_Cod);
       if (forcedManager && panel?.rol !== "manager") {
-        await setPanelUsuario(dbDis, user.Usu_Cod, panel ? "role" : "add", "manager");
+        await setPanelUsuario(dbDis, user.Usu_Cod, panel ? "role" : "add", "manager", {
+          actor: ACTOR_SISTEMA,
+          accion: "encargado_forzado",
+          detalle: "Su cedula esta configurada como encargado; se asigno el rol al iniciar sesion.",
+        });
         panel = await findPanelActivo(prisma, user.Usu_Cod);
       }
       if (!panel) {
+        await registrarAuditoria({
+          accion: "login_rechazado",
+          actor: { usuCod: user.Usu_Cod, nombre: fullName || String(ced) },
+          objetivoUsuCod: user.Usu_Cod,
+          objetivoNombre: fullName || String(ced),
+          detalle: "Usuario valido en EXA, pero no esta habilitado en la gestion.",
+        });
         return {
           user: null,
           reason:

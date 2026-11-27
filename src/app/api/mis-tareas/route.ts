@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { hasRolePermission } from "@/lib/auth/role-permissions";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { publishEvent } from "@/lib/events";
+import { resumenAvance, tareaContexto } from "@/lib/event-context";
 import { tasksDbDis, tasksEmpCod } from "@/lib/empresa";
 import {
   actividadPersonal,
@@ -42,11 +43,13 @@ export async function GET(req: NextRequest) {
   if (!session) {
     return NextResponse.json({ success: false, message: "Debe iniciar sesion." }, { status: 401 });
   }
+  // Quien supervisa el monitoreo puede ver cualquier proyecto, tarea y captura.
+  const supervisa = hasRolePermission(session, "monitoreo.ver");
 
   try {
     const sp = req.nextUrl.searchParams;
     const project = sp.get("project") || session.projects[0] || tasksDbDis();
-    if (!session.projects.includes(project) && session.role !== "manager") {
+    if (!session.projects.includes(project) && !supervisa) {
       return NextResponse.json({ success: false, message: "Sin acceso a este proyecto." }, { status: 403 });
     }
     // Scope fijo MATRIZ: personal y tareas de Emp 96 estan en exa
@@ -57,7 +60,7 @@ export async function GET(req: NextRequest) {
     const detalleCod = parseInt(sp.get("detalle") || "0", 10);
     if (detalleCod > 0) {
       const propias = perCod > 0 ? await listTareas(db, { perCod }) : [];
-      if (session.role !== "manager" && !propias.some((t) => t.Tar_Cod === detalleCod)) {
+      if (!supervisa && !propias.some((t) => t.Tar_Cod === detalleCod)) {
         return NextResponse.json(
           { success: false, message: "Esa tarea no esta asignada a ti." },
           { status: 403 }
@@ -70,7 +73,7 @@ export async function GET(req: NextRequest) {
         capturasDias,
         capturasDesde,
         capturasHasta,
-        includeCapturas: session.role === "manager",
+        includeCapturas: supervisa,
         capturasLimit: parseInt(sp.get("capturas_limit") || "80", 10) || 80,
       });
       if (!detalle) {
@@ -79,7 +82,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         success: true,
         db,
-        can_view_capturas: session.role === "manager",
+        can_view_capturas: supervisa,
         ...detalle,
       });
     }
@@ -189,10 +192,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, message: "Debe iniciar sesion." }, { status: 401 });
   }
 
+  const supervisa = hasRolePermission(session, "monitoreo.ver");
+
   try {
     const body = await req.json();
     const project = String(body.project || session.projects[0] || tasksDbDis());
-    if (!session.projects.includes(project) && session.role !== "manager") {
+    if (!session.projects.includes(project) && !supervisa) {
       return NextResponse.json({ success: false, message: "Sin acceso a este proyecto." }, { status: 403 });
     }
     const db = tasksDbDis();
@@ -235,13 +240,17 @@ export async function POST(req: NextRequest) {
       await updateTicketEstado(mio.Db_Origen || db, ticCod, estado);
       publishEvent({
         type: "estado_cambiado",
-        title: "Ticket actualizado",
-        message: `${session.name || "Usuario"} · ticket #${ticCod} → ${estado}`,
+        title: "Estado de ticket actualizado",
+        message: `${session.name || "Alguien"} cambió el estado de «${mio.Tic_Estado || "—"}» a «${estado}».`,
         db: mio.Db_Origen || db,
         ticCod,
         estado,
+        estadoAnterior: mio.Tic_Estado,
         kind: "ticket",
         actor: session.name,
+        titulo: mio.Tic_Titulo,
+        prioridad: mio.Tic_Prioridad,
+        asignadoA: mio.Asignado_Nombre || undefined,
       });
       return NextResponse.json({ success: true, Tic_Cod: ticCod, estado });
     }
@@ -287,14 +296,18 @@ export async function POST(req: NextRequest) {
       });
       publishEvent({
         type: "avance_registrado",
-        title: "Avance de ticket",
-        message: `${session.name || "Usuario"} · ticket #${ticCod} · ${res.porcentaje}%`,
+        title: res.porcentaje >= 100 ? "Ticket resuelto" : "Avance de ticket",
+        message: `${session.name || "Alguien"} reportó ${res.porcentaje}% de avance en el ticket.`,
         db: mio.Db_Origen || db,
         ticCod,
         porcentaje: res.porcentaje,
         actor: session.name,
         estado: res.estado || mio.Tic_Estado,
         kind: "ticket",
+        titulo: mio.Tic_Titulo,
+        prioridad: mio.Tic_Prioridad,
+        asignadoA: mio.Asignado_Nombre || undefined,
+        detalle: resumenAvance(body),
       });
       return NextResponse.json({ success: true, ...res, Tic_Cod: ticCod });
     }
@@ -354,17 +367,25 @@ export async function POST(req: NextRequest) {
         // Un avance sin nota de standby reanuda la tarea (si estaba en pausa).
         await salirDeStandby(db, tarCod);
       }
+      const ctxAv = await tareaContexto(db, tarCod);
       publishEvent({
         type: "avance_registrado",
-        title: "Avance registrado",
+        title: res.porcentaje >= 100 ? "Tarea completada" : "Avance registrado",
         message:
-          `${session.name || "Usuario"} · #${tarCod} · ${res.porcentaje}%` +
-          (enStandby ? " · standby (sin fecha de fin)" : ""),
+          `${session.name || "Alguien"} reportó ${res.porcentaje}% de avance` +
+          (enStandby ? " y dejó la tarea en standby (sin fecha de fin)" : "") +
+          ".",
         db,
         tarCod,
         porcentaje: res.porcentaje,
         actor: session.name,
         estado: estadoTrasAvance({ porcentaje: res.porcentaje, enStandby }),
+        kind: "tarea",
+        titulo: ctxAv.titulo,
+        prioridad: ctxAv.prioridad,
+        asignadoA: ctxAv.asignadoA,
+        fechaFin: ctxAv.fechaFin,
+        detalle: resumenAvance(body),
       });
       return NextResponse.json({ success: true, ...res });
     }

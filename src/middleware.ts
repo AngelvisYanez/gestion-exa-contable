@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/auth/session";
-import { canSeeOversight } from "@/lib/auth/users";
 import { hasRolePermission } from "@/lib/auth/role-permissions";
 
 function deny(req: NextRequest, message: string) {
@@ -57,28 +56,48 @@ export async function middleware(req: NextRequest) {
     return deny(req, "Tu rol no tiene acceso a tickets.");
   }
 
+  if ((pathname === "/mis-tareas" || pathname.startsWith("/api/mis-tareas")) &&
+      !hasRolePermission(session, "mis_tareas.ver")) {
+    return deny(req, "Tu rol no tiene acceso a Mis tareas.");
+  }
+
   if ((pathname === "/capacitaciones" || pathname === "/api/capacitaciones") &&
-      session.role !== "manager" && session.role !== "developer") {
+      !hasRolePermission(session, "capacitaciones.ver")) {
     return deny(req, "Tu rol no tiene acceso a capacitaciones.");
   }
 
-  const oversight =
-    pathname.startsWith("/plan-de-accion") ||
-    pathname.startsWith("/monitoreo") ||
-    pathname.startsWith("/configuracion") ||
-    pathname.startsWith("/api/incidencias") ||
-    pathname.startsWith("/api/dashboard") ||
-    pathname.startsWith("/api/config");
+  // Cada seccion de gestion se abre con su propio permiso (Configuracion → Usuarios → Permisos).
+  const puedeConfigurar = hasRolePermission(session, "configuracion.administrar");
+
+  if (pathname.startsWith("/plan-de-accion") && !hasRolePermission(session, "plan_accion.ver")) {
+    return deny(req, "Tu rol no tiene acceso al plan de accion.");
+  }
+  // Incidencias lo usan el plan de accion y la pantalla de configuracion.
+  if (pathname.startsWith("/api/incidencias") &&
+      !hasRolePermission(session, "plan_accion.ver") && !puedeConfigurar) {
+    return deny(req, "Tu rol no tiene acceso a incidencias.");
+  }
+  if ((pathname.startsWith("/monitoreo") || pathname.startsWith("/api/dashboard")) &&
+      !hasRolePermission(session, "monitoreo.ver")) {
+    return deny(req, "Tu rol no tiene acceso al monitoreo.");
+  }
+  // El mapa y el asistente del plan de accion viven bajo /configuracion pero pertenecen a ese modulo.
+  const esPlanAccion =
+    pathname.startsWith("/configuracion/floorplan") || pathname.startsWith("/api/config/floorplan");
+  if (esPlanAccion && !puedeConfigurar && !hasRolePermission(session, "plan_accion.ver")) {
+    return deny(req, "Tu rol no tiene acceso al plan de accion.");
+  }
+  if (!esPlanAccion &&
+      (pathname.startsWith("/configuracion") || pathname.startsWith("/api/config")) &&
+      !puedeConfigurar) {
+    return deny(req, "Tu rol no tiene acceso a la configuracion.");
+  }
 
   const devsAsignables =
     pathname.startsWith("/api/devs") &&
     req.method === "GET" &&
     req.nextUrl.searchParams.get("view") === "colaboradores" &&
     req.nextUrl.searchParams.get("asignables") === "1";
-
-  if (oversight && !canSeeOversight(session.role)) {
-    return deny(req, "Solo el encargado puede ver monitoreo y configuracion.");
-  }
 
   // Listado del equipo: lo necesita todo rol que registre avances para elegir
   // quien ayudo. El desarrollador no asigna tareas, pero si las avanza, asi que
@@ -87,8 +106,10 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  if (pathname.startsWith("/api/devs") && !canSeeOversight(session.role)) {
-    return deny(req, "Solo el encargado consulta el monitoreo.");
+  // El monitoreo y la configuracion de ExaMonitor comparten esta API.
+  if (pathname.startsWith("/api/devs") &&
+      !hasRolePermission(session, "monitoreo.ver") && !puedeConfigurar) {
+    return deny(req, "Tu rol no tiene acceso al monitoreo.");
   }
 
   return NextResponse.next();

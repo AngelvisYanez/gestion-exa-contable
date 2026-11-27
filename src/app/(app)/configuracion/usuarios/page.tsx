@@ -5,11 +5,7 @@ import { Loader2, RefreshCw, Search, UserMinus, UserPlus } from "lucide-react";
 import Topbar from "@/components/layout/Topbar";
 import { useAuth } from "@/contexts/AuthContext";
 import { roleLabel, type UserRole } from "@/lib/auth/users";
-import {
-  defaultRolePermissions,
-  type RolePermissionKey,
-  type RolePermissions,
-} from "@/lib/auth/role-permissions";
+import type { RolePermissionKey, RolePermissions } from "@/lib/auth/role-permissions";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,7 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { PaginationBar } from "@/components/list-controls";
 import { Select } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePagination } from "@/hooks/use-pagination";
 import {
   Table,
@@ -27,6 +23,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { PermisosTab } from "@/components/usuarios/permisos-tab";
+import { AuditoriaTab } from "@/components/usuarios/auditoria-tab";
 
 type Row = {
   Usu_Cod: number;
@@ -38,23 +36,9 @@ type Row = {
   Pan_Rol: UserRole | null;
 };
 
-const ROLES: UserRole[] = ["developer", "atencion", "manager"];
+type Seccion = "equipo" | "empresa" | "permisos" | "auditoria";
 
-const PERMISOS: Array<{ modulo: string; accion: string; key?: RolePermissionKey; porRol: Record<UserRole, string> }> = [
-  { modulo: "Tareas", accion: "Ver", key: "tareas.ver", porRol: { developer: "Creadas por mi", atencion: "Todas", manager: "Todas" } },
-  { modulo: "Tareas", accion: "Crear", key: "tareas.crear", porRol: { developer: "Sin asignar", atencion: "Si", manager: "Si" } },
-  { modulo: "Tareas", accion: "Editar contenido", key: "tareas.editar", porRol: { developer: "Solo propias", atencion: "Todas", manager: "Todas" } },
-  { modulo: "Tareas", accion: "Asignar", key: "tareas.asignar", porRol: { developer: "No", atencion: "Si", manager: "Si" } },
-  { modulo: "Tareas", accion: "Eliminar", key: "tareas.eliminar", porRol: { developer: "No", atencion: "No", manager: "Si" } },
-  { modulo: "Tareas", accion: "Estado y avance", key: "tareas.avance", porRol: { developer: "Propias y asignadas", atencion: "Si", manager: "Si" } },
-  { modulo: "Tickets", accion: "Ver", key: "tickets.ver", porRol: { developer: "Todos", atencion: "Todos", manager: "Todos" } },
-  { modulo: "Tickets", accion: "Crear", key: "tickets.crear", porRol: { developer: "No", atencion: "Si", manager: "Si" } },
-  { modulo: "Tickets", accion: "Asignar", key: "tickets.asignar", porRol: { developer: "Solo a sí mismo", atencion: "Si", manager: "Si" } },
-  { modulo: "Tickets", accion: "Estado y avance", key: "tickets.avance", porRol: { developer: "Solo asignados", atencion: "Si", manager: "Si" } },
-  { modulo: "Mis tareas", accion: "Ver asignadas", porRol: { developer: "Si", atencion: "Si", manager: "Si" } },
-  { modulo: "Monitoreo", accion: "Ver", porRol: { developer: "No", atencion: "No", manager: "Si" } },
-  { modulo: "Configuracion", accion: "Administrar", porRol: { developer: "No", atencion: "No", manager: "Si" } },
-];
+const ROLES: UserRole[] = ["developer", "atencion", "manager"];
 
 function roleVariant(rol: string | null) {
   if (rol === "manager") return "info" as const;
@@ -65,6 +49,7 @@ function roleVariant(rol: string | null) {
 export default function UsuariosConfigPage() {
   const { db } = useAuth();
   const [rows, setRows] = useState<Row[]>([]);
+  const [seccion, setSeccion] = useState<Seccion>("equipo");
   const [q, setQ] = useState("");
   const [roleFilter, setRoleFilter] = useState<UserRole | "todos">("todos");
   const [loading, setLoading] = useState(true);
@@ -78,7 +63,6 @@ export default function UsuariosConfigPage() {
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
-    setRolePermissions(null);
     try {
       const res = await fetch(`/api/config/usuarios?Ses_Dat_Dis=${encodeURIComponent(db)}`);
       const j = await res.json();
@@ -109,6 +93,10 @@ export default function UsuariosConfigPage() {
   const gestionPager = usePagination(enGestion, { initialSize: 10, resetKey: `${q}|${roleFilter}` });
   const empresaPager = usePagination(disponibles, { initialSize: 10, resetKey: q });
 
+  const totalGestion = rows.filter((r) => r.enPanel).length;
+  const totalFuera = rows.length - totalGestion;
+  const rolesVisibles = roleFilter === "todos" ? ROLES : [roleFilter];
+
   const act = async (usuCod: number, action: "add" | "remove" | "role", rol?: UserRole) => {
     setBusy(usuCod);
     setError("");
@@ -136,27 +124,68 @@ export default function UsuariosConfigPage() {
     }
   };
 
-  const changePermission = async (rol: UserRole, permiso: RolePermissionKey, habilitado: boolean) => {
-    const id = `${rol}:${permiso}`;
-    setBusyPermission(id);
+  const postPermisos = async (body: Record<string, unknown>, key: string, exito: string) => {
+    setBusyPermission(key);
     setError("");
     setOk("");
     try {
       const res = await fetch("/api/config/usuarios", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "permission", rol, permiso, habilitado }),
+        body: JSON.stringify(body),
       });
       const j = await res.json();
       if (!res.ok || !j.success) throw new Error(j.message || "No se pudo guardar el permiso");
       setRolePermissions(j.rolePermissions);
-      setOk("Permiso actualizado. Los usuarios de ese rol deben volver a iniciar sesion.");
+      setOk(exito);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al actualizar el permiso");
     } finally {
       setBusyPermission("");
     }
   };
+
+  const changePermission = (rol: UserRole, permiso: RolePermissionKey, habilitado: boolean) =>
+    postPermisos(
+      { action: "permission", rol, permiso, habilitado },
+      `${rol}:${permiso}`,
+      "Permiso actualizado. Los usuarios de ese rol deben volver a iniciar sesion."
+    );
+
+  const resetPermissions = (rol: UserRole) =>
+    postPermisos(
+      { action: "reset_permissions", rol },
+      `reset:${rol}`,
+      `Se restablecieron los valores iniciales de ${roleLabel(rol)}. Deben volver a iniciar sesion.`
+    );
+
+  const filtros = (conRol: boolean) => (
+    <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+      <div className="relative min-w-0 w-full flex-1 sm:min-w-[220px]">
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          className="pl-9"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Nombre o cedula..."
+          aria-label="Buscar usuario"
+        />
+      </div>
+      {conRol && (
+        <Select
+          aria-label="Filtrar usuarios por rol"
+          className="w-full sm:w-[190px]"
+          value={roleFilter}
+          onChange={(e) => setRoleFilter(e.target.value as UserRole | "todos")}
+        >
+          <option value="todos">Todos los roles</option>
+          {ROLES.map((rol) => (
+            <option key={rol} value={rol}>{roleLabel(rol)}</option>
+          ))}
+        </Select>
+      )}
+    </div>
+  );
 
   return (
     <>
@@ -166,24 +195,209 @@ export default function UsuariosConfigPage() {
           <CardHeader>
             <CardTitle>Equipo de la gestion</CardTitle>
             <CardDescription>
-              Usuarios activos de la empresa en EXA. Quienes estan en la gestion pueden entrar al
-              panel. Atencion al cliente asigna tareas y tickets, sin monitoreo, capturas ni
-              configuracion.
+              Solo quienes estan en la gestion con un rol pueden entrar al panel y se les hace
+              monitoreo. Los permisos de cada rol se configuran en su pestana y todo cambio queda en la
+              auditoria.
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-            <div className="relative min-w-0 w-full flex-1 sm:min-w-[220px]">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                className="pl-9"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Nombre o cedula..."
-              />
-            </div>
+          <CardContent className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="secondary" onClick={() => void load()} disabled={loading}>
+              {loading ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+              Actualizar
+            </Button>
+            <Badge variant="info">{totalGestion} en gestion</Badge>
+            <Badge variant="muted">{rows.length} en la empresa</Badge>
+          </CardContent>
+        </Card>
+
+        {error && <Alert variant="destructive">{error}</Alert>}
+        {ok && <Alert variant="success">{ok}</Alert>}
+
+        <Tabs value={seccion} onValueChange={(v) => setSeccion(v as Seccion)} className="w-full min-w-0">
+          <TabsList>
+            <TabsTrigger value="equipo">Equipo ({totalGestion})</TabsTrigger>
+            <TabsTrigger value="empresa">Empresa ({totalFuera})</TabsTrigger>
+            <TabsTrigger value="permisos">Permisos</TabsTrigger>
+            <TabsTrigger value="auditoria">Auditoria</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="equipo">
+            <Card className="w-full min-w-0 overflow-hidden">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">En la gestion</CardTitle>
+                <CardDescription>
+                  Cada persona tiene un rol; el rol define sus permisos y es lo que se monitorea.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pb-3">{filtros(true)}</CardContent>
+              <Table className="responsive-card-table min-w-[640px] lg:min-w-0">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="min-w-[180px]">Usuario</TableHead>
+                    <TableHead className="min-w-[240px]">Rol</TableHead>
+                    <TableHead className="w-[120px]" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {gestionPager.slice.map((r) => (
+                    <TableRow key={r.Usu_Cod}>
+                      <TableCell data-label="Usuario">
+                        <div className="font-semibold">{r.Nombre}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {[r.Cedula && `Cedula ${r.Cedula}`, r.Sucursal, r.Per_Cod ? `Per ${r.Per_Cod}` : "Sin ficha"]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </div>
+                      </TableCell>
+                      <TableCell data-label="Rol">
+                        <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                          <Badge variant={roleVariant(r.Pan_Rol)} className="w-fit">
+                            {roleLabel(r.Pan_Rol)}
+                          </Badge>
+                          <Select
+                            aria-label={`Rol de ${r.Nombre}`}
+                            className="h-8 w-full min-w-0 text-xs sm:w-[180px]"
+                            value={r.Pan_Rol || "developer"}
+                            disabled={busy === r.Usu_Cod}
+                            onChange={(e) =>
+                              void act(r.Usu_Cod, "role", e.target.value as UserRole)
+                            }
+                          >
+                            {ROLES.map((rol) => (
+                              <option key={rol} value={rol}>
+                                {roleLabel(rol)}
+                              </option>
+                            ))}
+                          </Select>
+                        </div>
+                      </TableCell>
+                      <TableCell data-label="Acción" className="text-right">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="w-full sm:w-auto"
+                          disabled={busy === r.Usu_Cod}
+                          onClick={() => void act(r.Usu_Cod, "remove")}
+                        >
+                          <UserMinus className="size-3.5" />
+                          Quitar
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {!loading && enGestion.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={3} className="text-sm text-muted-foreground">
+                        Nadie de este filtro esta en la gestion.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+              <div className="px-4 pb-4">
+                <PaginationBar
+                  page={gestionPager.page}
+                  totalPages={gestionPager.totalPages}
+                  total={gestionPager.total}
+                  from={gestionPager.from}
+                  to={gestionPager.to}
+                  pageSize={gestionPager.pageSize}
+                  onPageChange={gestionPager.setPage}
+                  onPageSizeChange={gestionPager.setPageSize}
+                />
+              </div>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="empresa">
+            <Card className="w-full min-w-0 overflow-hidden">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Usuarios de la empresa</CardTitle>
+                <CardDescription>
+                  Activos en EXA que todavia no estan en la gestion: no entran al panel ni se monitorean
+                  hasta que les asignes un rol.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pb-3">{filtros(false)}</CardContent>
+              <Table className="responsive-card-table min-w-[560px] lg:min-w-0">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="min-w-[180px]">Usuario</TableHead>
+                    <TableHead className="min-w-[180px]">Rol al agregar</TableHead>
+                    <TableHead className="w-[130px]" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {empresaPager.slice.map((r) => (
+                    <TableRow key={r.Usu_Cod}>
+                      <TableCell data-label="Usuario">
+                        <div className="font-semibold">{r.Nombre}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {[r.Cedula && `Cedula ${r.Cedula}`, r.Sucursal].filter(Boolean).join(" · ")}
+                        </div>
+                      </TableCell>
+                      <TableCell data-label="Rol al agregar">
+                        <Select
+                          aria-label={`Rol al agregar a ${r.Nombre}`}
+                          className="h-8 w-full min-w-0 text-xs sm:w-[180px]"
+                          value={rolNuevo[r.Usu_Cod] || "developer"}
+                          onChange={(e) =>
+                            setRolNuevo((prev) => ({
+                              ...prev,
+                              [r.Usu_Cod]: e.target.value as UserRole,
+                            }))
+                          }
+                        >
+                          {ROLES.map((rol) => (
+                            <option key={rol} value={rol}>
+                              {roleLabel(rol)}
+                            </option>
+                          ))}
+                        </Select>
+                      </TableCell>
+                      <TableCell data-label="Acción" className="text-right">
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="w-full sm:w-auto"
+                          disabled={busy === r.Usu_Cod}
+                          onClick={() => void act(r.Usu_Cod, "add", rolNuevo[r.Usu_Cod] || "developer")}
+                        >
+                          <UserPlus className="size-3.5" />
+                          Agregar
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {!loading && disponibles.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={3} className="text-sm text-muted-foreground">
+                        No hay mas usuarios de la empresa fuera de la gestion.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+              <div className="px-4 pb-4">
+                <PaginationBar
+                  page={empresaPager.page}
+                  totalPages={empresaPager.totalPages}
+                  total={empresaPager.total}
+                  from={empresaPager.from}
+                  to={empresaPager.to}
+                  pageSize={empresaPager.pageSize}
+                  onPageChange={empresaPager.setPage}
+                  onPageSizeChange={empresaPager.setPageSize}
+                />
+              </div>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="permisos" className="space-y-3">
             <Select
-              aria-label="Filtrar usuarios y permisos por rol"
-              className="w-full sm:w-[190px]"
+              aria-label="Filtrar permisos por rol"
+              className="w-full sm:w-[220px]"
               value={roleFilter}
               onChange={(e) => setRoleFilter(e.target.value as UserRole | "todos")}
             >
@@ -192,234 +406,20 @@ export default function UsuariosConfigPage() {
                 <option key={rol} value={rol}>{roleLabel(rol)}</option>
               ))}
             </Select>
-            <Button type="button" variant="secondary" onClick={() => void load()} disabled={loading}>
-              {loading ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-              Actualizar
-            </Button>
-            <Badge variant="info">{rows.filter((r) => r.enPanel).length} en gestion</Badge>
-            <Badge variant="muted">{rows.length} en la empresa</Badge>
-          </CardContent>
-        </Card>
-
-        {error && <Alert variant="destructive">{error}</Alert>}
-        {ok && <Alert variant="success">{ok}</Alert>}
-
-        <Card className="w-full min-w-0 overflow-hidden">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Permisos por rol</CardTitle>
-            <CardDescription>
-              El filtro muestra los usuarios y permisos de cada rol. Puedes restringir los permisos activos;
-              los limites propios de cada rol siguen vigentes. Los usuarios deben volver a iniciar sesion para aplicar cambios.
-            </CardDescription>
-          </CardHeader>
-          <p className="px-4 pb-2 text-xs text-muted-foreground sm:hidden">Desliza la tabla para ver todos los roles.</p>
-          <Table className="min-w-[580px]">
-            <TableHeader>
-              <TableRow>
-                <TableHead>Modulo</TableHead>
-                <TableHead>Accion</TableHead>
-                {(roleFilter === "todos" ? ROLES : [roleFilter]).map((rol) => (
-                  <TableHead key={rol}>{roleLabel(rol)}</TableHead>
-                ))}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {PERMISOS.map((permiso) => (
-                <TableRow key={`${permiso.modulo}-${permiso.accion}`}>
-                  <TableCell className="font-medium">{permiso.modulo}</TableCell>
-                  <TableCell>{permiso.accion}</TableCell>
-                  {(roleFilter === "todos" ? ROLES : [roleFilter]).map((rol) => {
-                    const available = permiso.key ? defaultRolePermissions(rol)[permiso.key] : false;
-                    const enabled = permiso.key
-                      ? (rolePermissions?.[rol]?.[permiso.key] ?? available)
-                      : permiso.porRol[rol] !== "No";
-                    const viewKey: RolePermissionKey | undefined = permiso.key?.startsWith("tareas.")
-                      ? "tareas.ver"
-                      : permiso.key?.startsWith("tickets.")
-                        ? "tickets.ver"
-                        : undefined;
-                    const requiresView = Boolean(viewKey && permiso.key !== viewKey &&
-                      !(rolePermissions?.[rol]?.[viewKey] ?? defaultRolePermissions(rol)[viewKey]));
-                    return (
-                      <TableCell key={rol}>
-                        <div className="flex items-center gap-2">
-                          {permiso.key && available && (
-                            <Switch
-                              aria-label={`${enabled ? "Desactivar" : "Activar"} ${permiso.accion.toLowerCase()} para ${roleLabel(rol)}`}
-                              checked={enabled && !requiresView}
-                              disabled={busyPermission !== "" || loading || !rolePermissions || requiresView}
-                              onCheckedChange={(checked) => void changePermission(rol, permiso.key!, checked)}
-                            />
-                          )}
-                          <span className="text-xs">{requiresView ? "Requiere Ver" : enabled ? permiso.porRol[rol] : "No"}</span>
-                        </div>
-                      </TableCell>
-                    );
-                  })}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
-
-        <Card className="w-full min-w-0 overflow-hidden">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">En la gestion</CardTitle>
-          </CardHeader>
-          <Table className="responsive-card-table min-w-[640px] lg:min-w-0">
-            <TableHeader>
-              <TableRow>
-                <TableHead className="min-w-[180px]">Usuario</TableHead>
-                <TableHead className="min-w-[240px]">Rol</TableHead>
-                <TableHead className="w-[120px]" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {gestionPager.slice.map((r) => (
-                <TableRow key={r.Usu_Cod}>
-                  <TableCell data-label="Usuario">
-                    <div className="font-semibold">{r.Nombre}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {[r.Cedula && `Cedula ${r.Cedula}`, r.Sucursal, r.Per_Cod ? `Per ${r.Per_Cod}` : "Sin ficha"]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </div>
-                  </TableCell>
-                  <TableCell data-label="Rol">
-                    <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-                      <Badge variant={roleVariant(r.Pan_Rol)} className="w-fit">
-                        {roleLabel(r.Pan_Rol)}
-                      </Badge>
-                      <Select
-                        className="h-8 w-full min-w-0 text-xs sm:w-[180px]"
-                        value={r.Pan_Rol || "developer"}
-                        disabled={busy === r.Usu_Cod}
-                        onChange={(e) =>
-                          void act(r.Usu_Cod, "role", e.target.value as UserRole)
-                        }
-                      >
-                        {ROLES.map((rol) => (
-                          <option key={rol} value={rol}>
-                            {roleLabel(rol)}
-                          </option>
-                        ))}
-                      </Select>
-                    </div>
-                  </TableCell>
-                  <TableCell data-label="Acción" className="text-right">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="w-full sm:w-auto"
-                      disabled={busy === r.Usu_Cod}
-                      onClick={() => void act(r.Usu_Cod, "remove")}
-                    >
-                      <UserMinus className="size-3.5" />
-                      Quitar
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {!loading && enGestion.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={3} className="text-sm text-muted-foreground">
-                    Nadie de este filtro esta en la gestion.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-          <div className="px-4 pb-4">
-            <PaginationBar
-              page={gestionPager.page}
-              totalPages={gestionPager.totalPages}
-              total={gestionPager.total}
-              from={gestionPager.from}
-              to={gestionPager.to}
-              pageSize={gestionPager.pageSize}
-              onPageChange={gestionPager.setPage}
-              onPageSizeChange={gestionPager.setPageSize}
+            <PermisosTab
+              roles={rolesVisibles}
+              rolePermissions={rolePermissions}
+              loading={loading}
+              busy={busyPermission}
+              onToggle={(rol, permiso, habilitado) => void changePermission(rol, permiso, habilitado)}
+              onReset={(rol) => void resetPermissions(rol)}
             />
-          </div>
-        </Card>
+          </TabsContent>
 
-        <Card className="w-full min-w-0 overflow-hidden">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Usuarios de la empresa</CardTitle>
-            <CardDescription>Activos en EXA que todavia no entran al panel.</CardDescription>
-          </CardHeader>
-          <Table className="responsive-card-table min-w-[560px] lg:min-w-0">
-            <TableHeader>
-              <TableRow>
-                <TableHead className="min-w-[180px]">Usuario</TableHead>
-                <TableHead className="min-w-[180px]">Rol al agregar</TableHead>
-                <TableHead className="w-[130px]" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {empresaPager.slice.map((r) => (
-                <TableRow key={r.Usu_Cod}>
-                  <TableCell data-label="Usuario">
-                    <div className="font-semibold">{r.Nombre}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {[r.Cedula && `Cedula ${r.Cedula}`, r.Sucursal].filter(Boolean).join(" · ")}
-                    </div>
-                  </TableCell>
-                  <TableCell data-label="Rol al agregar">
-                    <Select
-                      className="h-8 w-full min-w-0 text-xs sm:w-[180px]"
-                      value={rolNuevo[r.Usu_Cod] || "developer"}
-                      onChange={(e) =>
-                        setRolNuevo((prev) => ({
-                          ...prev,
-                          [r.Usu_Cod]: e.target.value as UserRole,
-                        }))
-                      }
-                    >
-                      {ROLES.map((rol) => (
-                        <option key={rol} value={rol}>
-                          {roleLabel(rol)}
-                        </option>
-                      ))}
-                    </Select>
-                  </TableCell>
-                  <TableCell data-label="Acción" className="text-right">
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="w-full sm:w-auto"
-                      disabled={busy === r.Usu_Cod}
-                      onClick={() => void act(r.Usu_Cod, "add", rolNuevo[r.Usu_Cod] || "developer")}
-                    >
-                      <UserPlus className="size-3.5" />
-                      Agregar
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {!loading && disponibles.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={3} className="text-sm text-muted-foreground">
-                    No hay mas usuarios de la empresa fuera de la gestion.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-          <div className="px-4 pb-4">
-            <PaginationBar
-              page={empresaPager.page}
-              totalPages={empresaPager.totalPages}
-              total={empresaPager.total}
-              from={empresaPager.from}
-              to={empresaPager.to}
-              pageSize={empresaPager.pageSize}
-              onPageChange={empresaPager.setPage}
-              onPageSizeChange={empresaPager.setPageSize}
-            />
-          </div>
-        </Card>
+          <TabsContent value="auditoria">
+            <AuditoriaTab activa={seccion === "auditoria"} />
+          </TabsContent>
+        </Tabs>
       </main>
     </>
   );

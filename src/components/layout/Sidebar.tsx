@@ -30,7 +30,6 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 type NavLeaf = {
   href: string;
   label: string;
-  roles?: UserRole[];
   permission?: RolePermissionKey;
   icon: React.ReactNode;
 };
@@ -52,7 +51,6 @@ const navGroups: NavGroup[] = [
       {
         href: "/tareas",
         label: "Tareas",
-        roles: ["manager", "atencion", "developer"],
         permission: "tareas.ver",
         icon: <ClipboardList className="w-[17px] h-[17px]" strokeWidth={1.8} />,
       },
@@ -71,6 +69,7 @@ const navGroups: NavGroup[] = [
       {
         href: "/mis-tareas",
         label: "Mis tareas",
+        permission: "mis_tareas.ver",
         icon: <ListTodo className="w-[17px] h-[17px]" strokeWidth={1.8} />,
       },
     ],
@@ -81,19 +80,19 @@ const navGroups: NavGroup[] = [
       {
         href: "/plan-de-accion",
         label: "Plan de Acción",
-        roles: ["manager"],
+        permission: "plan_accion.ver",
         icon: <ClipboardList className="w-[17px] h-[17px]" strokeWidth={1.8} />,
       },
       {
         href: "/capacitaciones",
         label: "Capacitaciones",
-        roles: ["manager", "developer"],
+        permission: "capacitaciones.ver",
         icon: <CalendarDays className="w-[17px] h-[17px]" strokeWidth={1.8} />,
       },
       {
         href: "/monitoreo",
         label: "Monitoreo",
-        roles: ["manager"],
+        permission: "monitoreo.ver",
         icon: <Activity className="w-[17px] h-[17px]" strokeWidth={1.8} />,
       },
     ],
@@ -104,31 +103,31 @@ const navGroups: NavGroup[] = [
       {
         href: "/configuracion",
         label: "Configuracion",
-        roles: ["manager"],
+        permission: "configuracion.administrar",
         icon: <Settings className="w-[17px] h-[17px]" strokeWidth={1.8} />,
       },
       {
         href: "/configuracion/general",
         label: "General",
-        roles: ["manager"],
+        permission: "configuracion.administrar",
         icon: <Building2 className="w-[17px] h-[17px]" strokeWidth={1.8} />,
       },
       {
         href: "/configuracion/usuarios",
         label: "Usuarios",
-        roles: ["manager"],
+        permission: "configuracion.administrar",
         icon: <Users className="w-[17px] h-[17px]" strokeWidth={1.8} />,
       },
       {
         href: "/configuracion/incidencias",
         label: "Incidencias",
-        roles: ["manager"],
+        permission: "configuracion.administrar",
         icon: <AlertTriangle className="w-[17px] h-[17px]" strokeWidth={1.8} />,
       },
       {
         href: "/configuracion/examonitor",
         label: "ExaMonitor",
-        roles: ["manager"],
+        permission: "configuracion.administrar",
         icon: <Monitor className="w-[17px] h-[17px]" strokeWidth={1.8} />,
       },
     ],
@@ -137,7 +136,6 @@ const navGroups: NavGroup[] = [
 
 function isAllowed(user: { role: UserRole; permissions?: RolePermissions } | null, item: NavLeaf) {
   if (!user) return false;
-  if (item.roles && !item.roles.includes(user.role)) return false;
   return !item.permission || hasRolePermission(user, item.permission);
 }
 

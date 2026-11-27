@@ -28,6 +28,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DatePicker } from "@/components/ui/date-picker";
 import { plainTextFromHtml, RichTextHtml } from "@/components/ui/rich-text";
 import { useAuth } from "@/contexts/AuthContext";
+import { hasRolePermission } from "@/lib/auth/role-permissions";
 import { fmtFechaHoraZona } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
 import { evidenciaLabel } from "@/lib/evidencia-files";
@@ -114,7 +115,8 @@ export function TicketDetalleDialog({ ticket, onClose, onReabrir, onRegistrarAva
   const { db, user } = useAuth();
   const [reabriendo, setReabriendo] = useState(false);
   const [errorReabrir, setErrorReabrir] = useState("");
-  const isManager = user?.role === "manager";
+  // Las capturas se ven con el permiso de monitoreo, no por rol.
+  const isManager = hasRolePermission(user, "monitoreo.ver");
   const open = !!ticket && ticket.tipo === "ticket";
   const cerrado = ticket?.Tar_Estado === "Finalizada";
   const ticCod = ticket?.Tic_Cod ?? ticket?.Tar_Cod ?? 0;

@@ -240,8 +240,8 @@ export default function HomePage() {
         <Topbar title="Atencion al cliente" subtitle={user?.name || "Asignacion"} />
         <main className="mx-auto w-full min-w-0 max-w-3xl lg:max-w-none animate-fade-in space-y-4 px-4 py-6 sm:px-6">
           <p className="text-sm text-brand-gray-600">
-            Accede a los modulos habilitados para tu rol. El monitoreo, las capturas y la configuracion
-            quedan reservados al encargado.
+            Accede a los modulos habilitados para tu rol. El encargado puede ajustar estos permisos en
+            Configuracion &gt; Usuarios.
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
             {hasRolePermission(user, "tareas.ver") &&

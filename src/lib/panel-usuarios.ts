@@ -1,11 +1,13 @@
 import type { PrismaClient } from "@prisma/client";
 import { resolvePerCod } from "@/lib/auth/resolvePer";
 import {
-  TEAM_MEMBERS,
   matchTeamMember,
   normalizePanelRole,
+  roleLabel,
   type UserRole,
 } from "@/lib/auth/users";
+import { registrarAuditoria, type ActorAuditoria } from "@/lib/auth/auditoria-panel";
+import type { AccionAuditoria } from "@/lib/auth/auditoria-acciones";
 import { getPrisma, sanitizeDbDis } from "@/lib/db";
 import { EMPRESA_TAREAS, tasksEmpCod } from "@/lib/empresa";
 
@@ -185,7 +187,8 @@ export async function setPanelUsuario(
   dbDis: string,
   usuCod: number,
   action: "add" | "remove" | "role",
-  rol?: string
+  rol?: string,
+  audit: { actor?: ActorAuditoria; accion?: AccionAuditoria; detalle?: string } = {}
 ) {
   if (!usuCod || usuCod <= 0) throw new Error("Usu_Cod invalido");
   const prisma = getPrisma(sanitizeDbDis(dbDis));
@@ -204,6 +207,15 @@ export async function setPanelUsuario(
       `UPDATE aud_panel_usuarios SET Pan_Est = 'I', Pan_Actualizado = NOW() WHERE Usu_Cod = ?`,
       usuCod
     );
+    await registrarAuditoria({
+      accion: "usuario_retirado",
+      actor: audit.actor,
+      objetivoUsuCod: usuCod,
+      objetivoNombre: person.Nombre,
+      rol: current,
+      anterior: current ? roleLabel(current) : null,
+      detalle: audit.detalle || "Retirado de la gestion; ya no se monitorea.",
+    });
     return;
   }
 
@@ -241,6 +253,30 @@ export async function setPanelUsuario(
     person.Cedula.replace(/\D/g, "").slice(0, 20) || null,
     nextRol
   );
+
+  const rolAnterior = person.enPanel ? person.Pan_Rol : null;
+  if (!person.enPanel) {
+    await registrarAuditoria({
+      accion: audit.accion || "usuario_agregado",
+      actor: audit.actor,
+      objetivoUsuCod: usuCod,
+      objetivoNombre: person.Nombre,
+      rol: nextRol,
+      nuevo: roleLabel(nextRol),
+      detalle: audit.detalle || `Agregado a la gestion con el rol ${roleLabel(nextRol)}.`,
+    });
+  } else if (rolAnterior !== nextRol) {
+    await registrarAuditoria({
+      accion: audit.accion || "rol_cambiado",
+      actor: audit.actor,
+      objetivoUsuCod: usuCod,
+      objetivoNombre: person.Nombre,
+      rol: nextRol,
+      anterior: rolAnterior ? roleLabel(rolAnterior) : null,
+      nuevo: roleLabel(nextRol),
+      detalle: audit.detalle || "Cambio de rol; debe volver a iniciar sesion.",
+    });
+  }
 }
 
 export async function findPanelActivo(

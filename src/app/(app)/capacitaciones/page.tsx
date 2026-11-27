@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/contexts/AuthContext";
+import { hasRolePermission } from "@/lib/auth/role-permissions";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, Download, Plus } from "lucide-react";
 import Topbar from "@/components/layout/Topbar";
@@ -17,7 +18,8 @@ const formatDate = (value: string) => new Intl.DateTimeFormat("es-VE", { dateSty
 
 export default function CapacitacionesPage() {
   const { user } = useAuth();
-  const isManager = user?.role === "manager";
+  // Elegir responsable y finalizar depende del permiso, no del rol.
+  const isManager = hasRolePermission(user, "capacitaciones.gestionar");
   const projectOptions = CAPACITACION_PROYECTOS;
   const [items, setItems] = useState<Training[]>([]);
   const [members, setMembers] = useState<Member[]>([]);

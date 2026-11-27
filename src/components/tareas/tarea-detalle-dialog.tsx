@@ -255,8 +255,9 @@ export function TareaDetalleDialog({
   reloadKey,
 }: Props) {
   const { user, db } = useAuth();
-  const isManager = user?.role === "manager";
-  const canDesk = user?.role === "manager" || user?.role === "atencion";
+  // Capturas y brief dependen del permiso de monitoreo; editar y asignar, de sus permisos.
+  const isManager = hasRolePermission(user, "monitoreo.ver");
+  const canDesk = user?.role !== "developer";
   const [data, setData] = useState<(TareaDetalle & { can_view_capturas?: boolean }) | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -339,7 +340,7 @@ export function TareaDetalleDialog({
   const canEdit = hasRolePermission(user, "tareas.editar") && (canDesk || (user?.role === "developer" &&
     !!user.usuCod && user.usuCod > 0 &&
     Number(t?.Usu_Creador ?? tarea?.Usu_Creador) === user.usuCod));
-  const canDelete = isManager && hasRolePermission(user, "tareas.eliminar");
+  const canDelete = hasRolePermission(user, "tareas.eliminar");
   const canAvance = hasRolePermission(user, "tareas.avance");
   const asignadoSinPersona =
     (estadoActual === "Asignado" || estadoActual === "En Proceso") && asignados.length === 0;

@@ -3,7 +3,7 @@ import { isUploadedFile } from "@/lib/api";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { hasRolePermission } from "@/lib/auth/role-permissions";
 import { resolvePerCod } from "@/lib/auth/resolvePer";
-import { canAssignWork, canSeeOversight, matchTeamMember } from "@/lib/auth/users";
+import { matchTeamMember } from "@/lib/auth/users";
 import { saveEvidencia, toPublicCaptureUrl } from "@/lib/captures";
 import { isImagePath } from "@/lib/avance-format";
 import { tasksDbDis } from "@/lib/empresa";
@@ -42,8 +42,12 @@ export async function POST(req: NextRequest) {
     }
 
     const db = tasksDbDis();
+    // Quien asigna o supervisa puede adjuntar a cualquier tarea o ticket; el resto, solo a lo suyo.
+    const esMesa =
+      hasRolePermission(session, "monitoreo.ver") ||
+      hasRolePermission(session, ticCod > 0 ? "tickets.convertir" : "tareas.asignar");
     if (ticCod > 0) {
-      if (!canAssignWork(session.role) && !canSeeOversight(session.role)) {
+      if (!esMesa) {
         const scope = await ticketScopeForSession(session);
         const mio = await findTicketAsignado({
           ticCod,
@@ -58,7 +62,7 @@ export async function POST(req: NextRequest) {
           );
         }
       }
-    } else if (!canSeeOversight(session.role) && !canAssignWork(session.role)) {
+    } else if (!esMesa) {
       let access = await getTareaAccess(db, tarCod, session.usuCod);
       if (access && !access.isCreator) {
         const perCod = await resolvePerCod(db, {
